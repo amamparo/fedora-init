@@ -75,6 +75,25 @@ in `files/zsh/zshrc` (robbyrussell theme, `plugins=(git)` only), and makes
 zsh the login shell via `usermod`. A pre-existing `~/.zshrc` that differs is
 backed up to `~/.zshrc.pre-fedora-init`.
 
+### 40-multimedia
+
+RPM Fusion (free + nonfree), then swaps stock Fedora's codec-stripped
+packages for full builds: `intel-media-driver` (H.264/HEVC hardware decode
+on this Intel Lunar Lake ThinkPad — stock has none, which drains battery on
+video) and `ffmpeg`. Verify afterwards with `vainfo` (from `libva-utils`).
+
+### 50-brave
+
+Brave browser from its official repo (`files/brave/brave-browser.repo`,
+gpg-verified).
+
+### 60-gnome-prefs
+
+The handful of desktop settings that differ from stock: dark mode, battery
+percentage, minimize/maximize window buttons, empty dock, touchpad speed,
+and the Ptyxis Moonfly palette (applied on re-run if Ptyxis hasn't launched
+yet). Runs as the desktop user — no sudo.
+
 ## Adding a module
 
 Drop `modules/NN-name.sh` — modules run in filename order. Conventions:
