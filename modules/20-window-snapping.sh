@@ -5,6 +5,7 @@
 # GNOME's native fullscreen toggle.
 #
 set -euo pipefail
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 UUID="rectangle@amamparo"
 SRC="$REPO_ROOT/files/gnome/$UUID"
@@ -36,5 +37,10 @@ PY
 
 # Super+Alt+F -> fullscreen (swap in 'toggle-maximized' if you prefer maximize)
 gsettings set org.gnome.desktop.wm.keybindings toggle-fullscreen "['<Super><Alt>f']"
+
+# GNOME binds Super+Alt+Up/Down to shift-overview-up/down by default, which
+# collides with tile-up/down — whichever registers last wins, nondeterministically.
+gsettings set org.gnome.shell.keybindings shift-overview-up "[]"
+gsettings set org.gnome.shell.keybindings shift-overview-down "[]"
 
 echo "Extension installed and enabled — takes effect after you log out and back in."

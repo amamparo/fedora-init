@@ -22,7 +22,8 @@ Idempotent setup scripts for a fresh Fedora Workstation (GNOME) install, targeti
 - `install.sh` — orchestrator. Exports `REPO_ROOT`, primes sudo once (`sudo -v`), then runs `modules/*.sh` in filename order. Arguments filter modules by filename substring.
 - `modules/NN-name.sh` — one concern per module, executed in `NN` order. Conventions (enforced by review, not tooling):
   - `set -euo pipefail` and idempotent — every module must be safe to re-run
-  - call `sudo` per command (never assume a root shell); install.sh has already cached credentials
+  - derive `REPO_ROOT` with the `${REPO_ROOT:-...}` fallback line (see any module) so the module also works standalone, not just via install.sh
+  - call `sudo` per command (never assume a root shell); install.sh caches credentials and keeps them fresh with a background `sudo -n -v` loop
   - static assets live in `files/<name>/` and are referenced via `$REPO_ROOT`
 - `files/` — assets the modules install verbatim (TLP drop-in config, zshrc, the GNOME extension).
 
@@ -36,6 +37,7 @@ Idempotent setup scripts for a fresh Fedora Workstation (GNOME) install, targeti
 
 ## Gotchas encoded in the modules
 
-- 10-battery: TLP conflicts with `tuned-ppd`/`power-profiles-daemon` (hence `--allowerasing`, the removals, and the masks), and TLP's docs require masking `systemd-rfkill`. powertop is intentionally measurement-only — no autotune service, it would fight TLP over the same sysfs knobs.
-- 20-window-snapping: `gnome-extensions enable` fails if the running shell hasn't scanned the new extension dir yet; the module falls back to editing the `enabled-extensions` gsettings list directly.
+- 10-battery: `tlp` declares `Conflicts: tuned` (`tuned-ppd` merely depends on tuned). The stock stack is removed *before* installing so its orphaned deps get swept in the remove transaction; the removal loop guards with `rpm -q` (exact name match) because `tlp-pd` *provides* `power-profiles-daemon` — a bare `dnf remove` would uninstall tlp-pd on every re-run. `tlp-pd` is what keeps GNOME's power-mode toggle alive. TLP's docs require masking `systemd-rfkill`. powertop is intentionally measurement-only — no autotune service, it would fight TLP over the same sysfs knobs.
+- 20-window-snapping: `gnome-extensions enable` fails if the running shell hasn't scanned the new extension dir yet; the module falls back to editing the `enabled-extensions` gsettings list directly. GNOME's stock `shift-overview-up/down` bindings default to Super+Alt+Up/Down — the same keys as tile-up/down — and Mutter resolves the duplicate nondeterministically, so the module clears them.
+- 30-zsh: oh-my-zsh is installed via shallow `git clone`, not the curl|sh installer — a failed download must abort loudly (`sh -c "$(curl ...)"` silently no-ops when curl fails). The guard checks for `oh-my-zsh.sh` (payload), not the directory, so a broken half-install gets recloned.
 - files/tlp/00-battery.conf deliberately contains only non-default TLP settings; keep it minimal rather than restating defaults.

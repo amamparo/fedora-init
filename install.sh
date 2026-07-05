@@ -21,6 +21,11 @@ done
 ((${#mods[@]})) || { echo "No module matches: $*" >&2; exit 1; }
 
 sudo -v  # prompt for the password once, up front
+# Keep the credential fresh: first-boot dnf downloads can outlast sudo's
+# 5-minute cache, which would re-prompt (or abort) mid-run.
+( while sleep 60; do sudo -n -v || exit; done ) &
+SUDO_KEEPALIVE=$!
+trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null' EXIT
 
 for m in "${mods[@]}"; do
     echo

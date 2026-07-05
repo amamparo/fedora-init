@@ -40,8 +40,9 @@ tunes far more hardware knobs out of the box — this is most of the
 `powertop` is installed purely as a *measurement* tool (`sudo powertop`) —
 TLP already applies equivalent tunings, so no autotune service.
 
-Tradeoff: the power-profile toggle in GNOME quick settings goes away; TLP
-switches profiles automatically on AC/battery instead.
+GNOME's power-mode toggle keeps working: **tlp-pd** serves the
+power-profiles D-Bus API with TLP as the backend (and TLP still switches
+profiles automatically on AC/battery).
 
 ### 20-window-snapping
 
@@ -57,15 +58,20 @@ native keybinding. "Cmd" on a PC keyboard is the **Super** (Windows) key.
 | Super+Alt+↓         | snap bottom, cycling heights 1/2 → 2/3 → 1/3    |
 | Super+Alt+F         | toggle fullscreen (GNOME native)                |
 
+The module clears GNOME's stock Super+Alt+↑/↓ bindings
+(`shift-overview-up/down`), which would otherwise fight the tiling keys.
+
 Prefer maximize over fullscreen? In `modules/20-window-snapping.sh`, change
 `toggle-fullscreen` to `toggle-maximized`. Rebind the arrows via the `as`
 keys in the extension's gschema.
 
 ### 30-zsh
 
-Installs zsh + [oh-my-zsh](https://ohmyz.sh) (unattended), drops in
-`files/zsh/zshrc` (robbyrussell theme, `plugins=(git)` only), and makes zsh
-the login shell via `usermod`.
+Installs zsh + [oh-my-zsh](https://ohmyz.sh) (shallow git clone — all the
+official installer does anyway, but a failed download aborts loudly), drops
+in `files/zsh/zshrc` (robbyrussell theme, `plugins=(git)` only), and makes
+zsh the login shell via `usermod`. A pre-existing `~/.zshrc` that differs is
+backed up to `~/.zshrc.pre-fedora-init`.
 
 ## Adding a module
 
@@ -73,5 +79,6 @@ Drop `modules/NN-name.sh` — modules run in filename order. Conventions:
 
 - `set -euo pipefail`, idempotent (safe to re-run)
 - static assets live under `files/<name>/`, referenced via `$REPO_ROOT`
-  (exported by `install.sh`)
+  (exported by `install.sh`; each module also derives its own fallback so it
+  can run standalone)
 - call `sudo` per command; `install.sh` primes the password once
