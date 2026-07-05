@@ -2,7 +2,7 @@
 #
 # Window snapping: install the bundled "rectangle" GNOME Shell extension
 # (Super+Alt+arrows, cycling 1/2 -> 2/3 -> 1/3) and bind Super+Alt+F to
-# GNOME's native fullscreen toggle.
+# GNOME's native maximize toggle.
 #
 set -euo pipefail
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -35,8 +35,15 @@ if uuid not in current:
     )
 PY
 
-# Super+Alt+F -> fullscreen (swap in 'toggle-maximized' if you prefer maximize)
-gsettings set org.gnome.desktop.wm.keybindings toggle-fullscreen "['<Super><Alt>f']"
+# Super+Alt+F -> maximize: fills the work area but keeps the top bar, unlike
+# fullscreen. Alt+F10 is toggle-maximized's stock binding — keep it. Prefer
+# fullscreen? Set toggle-fullscreen to ['<Super><Alt>f'] alone (leave Alt+F10
+# out; the reset then returns it to toggle-maximized) and point the reset
+# below at toggle-maximized instead. The reset exists because an earlier
+# revision bound toggle-fullscreen to this key, and a key shared by two
+# actions hits the nondeterministic-conflict problem below.
+gsettings set org.gnome.desktop.wm.keybindings toggle-maximized "['<Super><Alt>f', '<Alt>F10']"
+gsettings reset org.gnome.desktop.wm.keybindings toggle-fullscreen
 
 # GNOME's stock bindings collide with all four tiling keys: shift-overview
 # up/down and switch-to-workspace left/right both default to Super+Alt+arrows,

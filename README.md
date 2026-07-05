@@ -56,16 +56,19 @@ native keybinding. "Cmd" on a PC keyboard is the **Super** (Windows) key.
 | Super+Alt+→         | snap right, cycling widths 1/2 → 2/3 → 1/3      |
 | Super+Alt+↑         | snap top, cycling heights 1/2 → 2/3 → 1/3       |
 | Super+Alt+↓         | snap bottom, cycling heights 1/2 → 2/3 → 1/3    |
-| Super+Alt+F         | toggle fullscreen (GNOME native)                |
+| Super+Alt+F         | toggle maximize (GNOME native)                  |
 
 GNOME's stock bindings collide with **all four** tiling keys
 (`shift-overview-up/down` and `switch-to-workspace-left/right` both default
 to Super+Alt+arrows), so the module clears the overview pair and moves
 workspace switching to Super+Alt+PageUp/PageDown.
 
-Prefer maximize over fullscreen? In `modules/20-window-snapping.sh`, change
-`toggle-fullscreen` to `toggle-maximized`. Rebind the arrows via the `as`
-keys in the extension's gschema.
+Maximize fills the work area but keeps the top bar, and Alt+F10 (its stock
+binding) still works. Prefer true fullscreen? In
+`modules/20-window-snapping.sh`, set `toggle-fullscreen` to
+`['<Super><Alt>f']` alone — leave Alt+F10 out — and point the `gsettings
+reset` line at `toggle-maximized` (which gives Alt+F10 back to maximize).
+Rebind the arrows via the `as` keys in the extension's gschema.
 
 ### 30-zsh
 
@@ -85,14 +88,18 @@ video) and `ffmpeg`. Verify afterwards with `vainfo` (from `libva-utils`).
 ### 50-brave
 
 Brave browser from its official repo (`files/brave/brave-browser.repo`,
-gpg-verified).
+gpg-verified), set as the default browser, and every other browser removed —
+Fedora's stock Firefox, plus chromium/epiphany/chrome if present.
 
 ### 60-gnome-prefs
 
 The handful of desktop settings that differ from stock: dark mode, battery
 percentage, minimize/maximize window buttons, empty dock, touchpad speed,
-and the Ptyxis Moonfly palette (applied on re-run if Ptyxis hasn't launched
-yet). Runs as the desktop user — no sudo.
+100% display scale (Fedora defaults to 125%; applied via mutter's D-Bus API
+since Displays ▸ Scale isn't a gsettings key — laptop panel only, so run it
+undocked or set docked layouts in Settings), and the Ptyxis Moonfly palette
+(applied on re-run if Ptyxis hasn't launched yet). Runs as the desktop user
+— no sudo.
 
 ## Adding a module
 
