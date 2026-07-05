@@ -38,9 +38,13 @@ PY
 # Super+Alt+F -> fullscreen (swap in 'toggle-maximized' if you prefer maximize)
 gsettings set org.gnome.desktop.wm.keybindings toggle-fullscreen "['<Super><Alt>f']"
 
-# GNOME binds Super+Alt+Up/Down to shift-overview-up/down by default, which
-# collides with tile-up/down — whichever registers last wins, nondeterministically.
+# GNOME's stock bindings collide with all four tiling keys: shift-overview
+# up/down and switch-to-workspace left/right both default to Super+Alt+arrows,
+# and Mutter resolves duplicates nondeterministically. Clear the overview pair
+# and move workspace switching to Super+Alt+PageUp/PageDown.
 gsettings set org.gnome.shell.keybindings shift-overview-up "[]"
 gsettings set org.gnome.shell.keybindings shift-overview-down "[]"
+gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-left "['<Super><Alt>Page_Up']"
+gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-right "['<Super><Alt>Page_Down']"
 
 echo "Extension installed and enabled — takes effect after you log out and back in."

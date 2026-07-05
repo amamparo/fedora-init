@@ -58,8 +58,10 @@ native keybinding. "Cmd" on a PC keyboard is the **Super** (Windows) key.
 | Super+Alt+↓         | snap bottom, cycling heights 1/2 → 2/3 → 1/3    |
 | Super+Alt+F         | toggle fullscreen (GNOME native)                |
 
-The module clears GNOME's stock Super+Alt+↑/↓ bindings
-(`shift-overview-up/down`), which would otherwise fight the tiling keys.
+GNOME's stock bindings collide with **all four** tiling keys
+(`shift-overview-up/down` and `switch-to-workspace-left/right` both default
+to Super+Alt+arrows), so the module clears the overview pair and moves
+workspace switching to Super+Alt+PageUp/PageDown.
 
 Prefer maximize over fullscreen? In `modules/20-window-snapping.sh`, change
 `toggle-fullscreen` to `toggle-maximized`. Rebind the arrows via the `as`
