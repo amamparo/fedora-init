@@ -1,0 +1,74 @@
+# fedora-init
+
+Idempotent setup for a fresh Fedora Workstation (GNOME) install. Tested
+against Fedora 44 / GNOME 50; the extension also works back to GNOME 48.
+
+## Run it
+
+```sh
+sudo dnf install -y git
+git clone <this-repo> fedora-init && cd fedora-init
+./install.sh
+```
+
+No git? A stock Fedora install already has curl and tar:
+
+```sh
+curl -L <repo-tarball-url> | tar xz && cd fedora-init* && ./install.sh
+```
+
+Then **log out and back in** (Wayland can't hot-reload GNOME Shell).
+
+Run a single module by substring: `./install.sh battery`
+
+## Modules
+
+### 10-battery
+
+Swaps Fedora's default power stack (`tuned` + `tuned-ppd`) for **TLP**, which
+tunes far more hardware knobs out of the box — this is most of the
+"Ubuntu-gets-better-battery" gap. Also drops `files/tlp/00-battery.conf` into
+`/etc/tlp.d/`:
+
+- PCIe ASPM `powersupersave` + CPU EPP `power` on battery
+- ThinkPad charge thresholds **75→80%** for battery longevity
+  (`sudo tlp fullcharge` for a one-off 100% before travel)
+
+`powertop` is installed purely as a *measurement* tool (`sudo powertop`) —
+TLP already applies equivalent tunings, so no autotune service.
+
+Tradeoff: the power-profile toggle in GNOME quick settings goes away; TLP
+switches profiles automatically on AC/battery instead.
+
+### 20-window-snapping
+
+Installs the bundled GNOME Shell extension
+`files/gnome/rectangle@amamparo/` (~120 lines, no third-party deps) and one
+native keybinding. "Cmd" on a PC keyboard is the **Super** (Windows) key.
+
+| Keys                | Action                                          |
+|---------------------|-------------------------------------------------|
+| Super+Alt+←         | snap left, cycling widths 1/2 → 2/3 → 1/3       |
+| Super+Alt+→         | snap right, cycling widths 1/2 → 2/3 → 1/3      |
+| Super+Alt+↑         | snap top, cycling heights 1/2 → 2/3 → 1/3       |
+| Super+Alt+↓         | snap bottom, cycling heights 1/2 → 2/3 → 1/3    |
+| Super+Alt+F         | toggle fullscreen (GNOME native)                |
+
+Prefer maximize over fullscreen? In `modules/20-window-snapping.sh`, change
+`toggle-fullscreen` to `toggle-maximized`. Rebind the arrows via the `as`
+keys in the extension's gschema.
+
+### 30-zsh
+
+Installs zsh + [oh-my-zsh](https://ohmyz.sh) (unattended), drops in
+`files/zsh/zshrc` (robbyrussell theme, `plugins=(git)` only), and makes zsh
+the login shell via `usermod`.
+
+## Adding a module
+
+Drop `modules/NN-name.sh` — modules run in filename order. Conventions:
+
+- `set -euo pipefail`, idempotent (safe to re-run)
+- static assets live under `files/<name>/`, referenced via `$REPO_ROOT`
+  (exported by `install.sh`)
+- call `sudo` per command; `install.sh` primes the password once

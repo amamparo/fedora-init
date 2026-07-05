@@ -1,0 +1,7 @@
+{
+  "uuid": "rectangle@amamparo",
+  "name": "Rectangle",
+  "description": "macOS-Rectangle-style tiling: Super+Alt+arrows snap the focused window to an edge, cycling 1/2 → 2/3 → 1/3.",
+  "shell-version": ["48", "49", "50", "51"],
+  "settings-schema": "org.gnome.shell.extensions.rectangle-amamparo"
+}
