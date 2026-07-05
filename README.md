@@ -5,21 +5,24 @@ against Fedora 44 / GNOME 50; the extension also works back to GNOME 48.
 
 ## Run it
 
-```sh
-sudo dnf install -y git
-git clone <this-repo> fedora-init && cd fedora-init
-./install.sh
-```
-
-No git? A stock Fedora install already has curl and tar:
+One command on a stock Fedora install — needs only curl and tar, which are
+preinstalled:
 
 ```sh
-curl -L <repo-tarball-url> | tar xz && cd fedora-init* && ./install.sh
+curl -fsSL https://github.com/amamparo/fedora-init/archive/main.tar.gz | tar xz && cd fedora-init-main && ./install.sh
 ```
 
 Then **log out and back in** (Wayland can't hot-reload GNOME Shell).
 
-Run a single module by substring: `./install.sh battery`
+Re-run a single module by substring: `./install.sh battery`
+
+Hacking on it? Clone instead:
+
+```sh
+sudo dnf install -y git
+git clone https://github.com/amamparo/fedora-init.git && cd fedora-init
+./install.sh
+```
 
 ## Modules
 
