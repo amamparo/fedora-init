@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Keep documentation in sync
+
+When a change alters behavior, commands, module conventions, keybindings, or gotchas, update the documentation in the same change — this file, README.md, and any module header comments that describe the affected behavior. README.md is the user-facing doc (what the modules do and how to run them); CLAUDE.md is the contributor-facing doc (architecture, conventions, gotchas). A PR that changes what a module does but not the docs is incomplete.
+
 ## What this is
 
 Idempotent setup scripts for a fresh Fedora Workstation (GNOME) install, targeting Fedora 44 / GNOME 50. There is no build, lint, or test tooling — the only entry point is:
