@@ -1,7 +1,7 @@
 # fedora-init
 
 Idempotent setup for a fresh Fedora Workstation (GNOME) install. Tested
-against Fedora 44 / GNOME 50; the extension also works back to GNOME 48.
+against Fedora 44 / GNOME 50; the extensions also work back to GNOME 48.
 
 ## Run it
 
@@ -125,14 +125,16 @@ fingerprint login. The keyring is encrypted with your *password*, and a
 fingerprint match can't stand in for it, so a swipe at the login screen
 always leaves the keyring locked — the prompt fires as soon as anything
 needs a secret (Brave, Google accounts). The module disables fingerprint
-**at the GDM greeter only** (via GDM's system dconf db): the first login
-after boot asks for your password, which silently unlocks the keyring, and
-fingerprint keeps working everywhere else — lock screen, sudo, polkit.
-Takes effect from the next boot.
+**at the GDM login screen only**, by dropping the `files/gdm/` keyfile and
+its lock into `/etc/dconf/db/gdm.d/`: GDM logins ask for your password,
+which silently unlocks the keyring, and fingerprint keeps working
+everywhere else — lock screen, sudo, polkit. Takes effect at the next
+login screen; logging out is enough, no reboot needed.
 
 If the prompt instead says your password "no longer matches" the keyring,
 that's a different problem (the account password was changed outside PAM) —
-fix it in Seahorse (Passwords ▸ Login ▸ right-click ▸ Change Password).
+fix it in Seahorse (`sudo dnf install seahorse`, then Passwords ▸ Login ▸
+right-click ▸ Change Password).
 
 ## Adding a module
 

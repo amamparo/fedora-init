@@ -48,4 +48,4 @@ for m in "${mods[@]}"; do
 done
 
 echo
-echo "Done. Log out and back in so GNOME picks up the extension."
+echo "Done. Log out and back in — GNOME picks up the extensions, and the login screen goes password-only."

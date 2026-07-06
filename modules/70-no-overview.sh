@@ -14,9 +14,15 @@ UUID="no-overview@amamparo"
 SRC="$REPO_ROOT/files/gnome/$UUID"
 DEST="$HOME/.local/share/gnome-shell/extensions/$UUID"
 
-mkdir -p "$DEST"
-cp -rT "$SRC" "$DEST"
-# No schemas/ in this extension, so no glib-compile-schemas step.
+# Mirror the extension into place, same guard as 20-window-snapping: wipe
+# and recopy only when something differs, so unchanged re-runs skip the
+# copy. No schemas/ in this extension, so no compile step (and nothing to
+# --exclude from the diff).
+if ! diff -rq "$SRC" "$DEST" >/dev/null 2>&1; then
+    rm -rf "$DEST"
+    mkdir -p "$DEST"
+    cp -rT "$SRC" "$DEST"
+fi
 
 # Enable it. Same fallback as 20-window-snapping: `gnome-extensions enable`
 # fails if the running shell hasn't scanned the new directory yet, so fall
@@ -38,4 +44,4 @@ if uuid not in current:
     )
 PY
 
-echo "no-overview extension installed — logins land on the desktop after you log out and back in."
+echo "no-overview extension installed — after the next login, sessions land on the desktop (a brief overview flash is expected on GNOME 50)."
