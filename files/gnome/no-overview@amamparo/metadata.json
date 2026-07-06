@@ -1,0 +1,6 @@
+{
+  "uuid": "no-overview@amamparo",
+  "name": "No overview at login",
+  "description": "Start the session on the desktop instead of the Activities overview.",
+  "shell-version": ["48", "49", "50", "51"]
+}

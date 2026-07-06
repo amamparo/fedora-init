@@ -1,0 +1,6 @@
+# fedora-init — installed to /etc/dconf/db/gdm.d/10-disable-fingerprint-login
+# The GDM greeter offers password only, so pam_gnome_keyring gets a password
+# to unlock the login keyring at boot. Greeter-scoped: lock screen, sudo,
+# and polkit fingerprint read other config and keep working.
+[org/gnome/login-screen]
+enable-fingerprint-authentication=false

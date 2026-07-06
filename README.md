@@ -108,6 +108,32 @@ undocked or set docked layouts in Settings), and the Ptyxis Moonfly palette
 (applied on re-run if Ptyxis hasn't launched yet). Runs as the desktop user
 — no sudo.
 
+### 70-no-overview
+
+GNOME opens the Activities overview at every login and has no setting to
+turn that off. Installs the second bundled micro-extension,
+`files/gnome/no-overview@amamparo/` (~10 lines), which hides the overview
+the moment session startup completes, so logins land on the desktop. On
+GNOME 50 the overview still *flashes* briefly — the shell now starts its
+login animation before extensions load, so hiding it is the best any
+extension can do.
+
+### 80-login-keyring
+
+Kills the "login keyring did not get unlocked" prompt that appears after a
+fingerprint login. The keyring is encrypted with your *password*, and a
+fingerprint match can't stand in for it, so a swipe at the login screen
+always leaves the keyring locked — the prompt fires as soon as anything
+needs a secret (Brave, Google accounts). The module disables fingerprint
+**at the GDM greeter only** (via GDM's system dconf db): the first login
+after boot asks for your password, which silently unlocks the keyring, and
+fingerprint keeps working everywhere else — lock screen, sudo, polkit.
+Takes effect from the next boot.
+
+If the prompt instead says your password "no longer matches" the keyring,
+that's a different problem (the account password was changed outside PAM) —
+fix it in Seahorse (Passwords ▸ Login ▸ right-click ▸ Change Password).
+
 ## Adding a module
 
 Drop `modules/NN-name.sh` — modules run in filename order. Conventions:
