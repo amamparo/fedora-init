@@ -13,15 +13,16 @@ Idempotent setup scripts for a fresh Fedora Workstation (GNOME) install, targeti
 ```sh
 ./install.sh            # run every module
 ./install.sh battery    # run modules whose filename contains a substring
+curl -fsSL https://raw.githubusercontent.com/amamparo/fedora-init/main/install.sh | bash   # no checkout
 ```
 
 **Running modules mutates the host system** (installs/removes dnf packages, masks systemd services, changes the login shell). Don't execute them to "test" a change unless the user asks; `bash -n modules/NN-name.sh` is the safe syntax check.
 
 ## Architecture
 
-- `install.sh` — orchestrator. Exports `REPO_ROOT`, primes sudo once (`sudo -v`), then runs `modules/*.sh` in filename order. Arguments filter modules by filename substring.
+- `install.sh` — orchestrator. If it can't find `modules/` next to itself (piped from curl, or a stray lone copy), it bootstraps: downloads the GitHub tarball to a temp dir, re-runs from that copy (forwarding any arguments), and removes it on exit. Otherwise it exports `REPO_ROOT`, primes sudo once (`sudo -v`), then runs `modules/*.sh` in filename order. Arguments filter modules by filename substring.
 - `modules/NN-name.sh` — one concern per module, executed in `NN` order. Conventions (enforced by review, not tooling):
-  - `set -euo pipefail` and idempotent — every module must be safe to re-run
+  - `set -euo pipefail` and idempotent — every module must be safe *and cheap* to re-run: guard dnf transactions with `rpm -q` and file installs with `cmp -s`/`diff -rq` so an unchanged re-run does no network work and only applies what changed in the repo since the last run
   - derive `REPO_ROOT` with the `${REPO_ROOT:-...}` fallback line (see any module) so the module also works standalone, not just via install.sh
   - call `sudo` per command (never assume a root shell); install.sh caches credentials and keeps them fresh with a background `sudo -n -v` loop
   - static assets live in `files/<name>/` and are referenced via `$REPO_ROOT`

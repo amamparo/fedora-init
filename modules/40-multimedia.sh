@@ -7,11 +7,14 @@
 #
 set -euo pipefail
 
-if ! rpm -q rpmfusion-free-release rpmfusion-nonfree-release >/dev/null 2>&1; then
-    sudo dnf install -y \
-        "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
-        "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm"
-fi
+# Guard each release rpm separately: a joint rpm -q re-downloads both when
+# only one is missing.
+for repo in free nonfree; do
+    if ! rpm -q "rpmfusion-$repo-release" >/dev/null 2>&1; then
+        sudo dnf install -y \
+            "https://mirrors.rpmfusion.org/$repo/fedora/rpmfusion-$repo-release-$(rpm -E %fedora).noarch.rpm"
+    fi
+done
 
 # dnf swap is not idempotent (it fails once the from-package is gone), so
 # guard on the target and fall back to a plain install if the source is

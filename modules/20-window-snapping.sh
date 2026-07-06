@@ -11,9 +11,16 @@ UUID="rectangle@amamparo"
 SRC="$REPO_ROOT/files/gnome/$UUID"
 DEST="$HOME/.local/share/gnome-shell/extensions/$UUID"
 
-mkdir -p "$DEST"
-cp -rT "$SRC" "$DEST"
-glib-compile-schemas "$DEST/schemas"
+# Mirror the extension into place. A bare cp -rT would leave files deleted
+# from the repo copy lingering in $DEST, so wipe and recopy — but only when
+# something actually differs, so unchanged re-runs skip the copy and the
+# schema recompile entirely (gschemas.compiled only exists in $DEST).
+if ! diff -rq --exclude=gschemas.compiled "$SRC" "$DEST" >/dev/null 2>&1; then
+    rm -rf "$DEST"
+    mkdir -p "$DEST"
+    cp -rT "$SRC" "$DEST"
+    glib-compile-schemas "$DEST/schemas"
+fi
 
 # Enable it. `gnome-extensions enable` fails if the running shell hasn't
 # scanned the new directory yet, so fall back to editing gsettings directly —

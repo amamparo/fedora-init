@@ -66,7 +66,7 @@ PY
 
 # Ptyxis terminal palette. The profile uuid only exists once Ptyxis has
 # launched, so on a fresh install this may defer to a later re-run.
-uuid="$(gsettings get org.gnome.Ptyxis default-profile-uuid | tr -d "'")"
+uuid="$(gsettings get org.gnome.Ptyxis default-profile-uuid 2>/dev/null | tr -d "'" || true)"
 if [[ -n "$uuid" ]]; then
     dconf write "/org/gnome/Ptyxis/Profiles/$uuid/palette" "'Moonfly'"
 else

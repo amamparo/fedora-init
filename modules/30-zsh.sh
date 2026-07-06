@@ -5,7 +5,9 @@
 set -euo pipefail
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
-sudo dnf install -y zsh git
+if ! rpm -q zsh git >/dev/null 2>&1; then
+    sudo dnf install -y zsh git
+fi
 
 # oh-my-zsh via shallow clone — that's all the official installer does under
 # --unattended --keep-zshrc, and unlike curl|sh a failed clone aborts loudly
@@ -22,14 +24,19 @@ if [[ ! -f "$HOME/.oh-my-zsh/oh-my-zsh.sh" ]]; then
 fi
 
 # Our .zshrc: robbyrussell theme, plugins=(git) and nothing else.
-# One-shot backup if an existing .zshrc would be overwritten with changes.
-if [[ -f "$HOME/.zshrc" ]] && ! cmp -s "$HOME/.zshrc" "$REPO_ROOT/files/zsh/zshrc"; then
-    cp -a "$HOME/.zshrc" "$HOME/.zshrc.pre-fedora-init"
-    echo "existing ~/.zshrc backed up to ~/.zshrc.pre-fedora-init"
+# Backup before overwriting a .zshrc that differs; skip the write (and the
+# backup) entirely when it already matches, so re-runs don't touch the file.
+if ! cmp -s "$HOME/.zshrc" "$REPO_ROOT/files/zsh/zshrc"; then
+    if [[ -f "$HOME/.zshrc" ]]; then
+        cp -a "$HOME/.zshrc" "$HOME/.zshrc.pre-fedora-init"
+        echo "existing ~/.zshrc backed up to ~/.zshrc.pre-fedora-init"
+    fi
+    install -m 0644 "$REPO_ROOT/files/zsh/zshrc" "$HOME/.zshrc"
 fi
-install -m 0644 "$REPO_ROOT/files/zsh/zshrc" "$HOME/.zshrc"
 
-# Default shell
-sudo usermod --shell "$(command -v zsh)" "$USER"
+# Default shell (guarded: usermod under sudo on every re-run is pointless)
+if [[ "$(getent passwd "$USER" | cut -d: -f7)" != "$(command -v zsh)" ]]; then
+    sudo usermod --shell "$(command -v zsh)" "$USER"
+fi
 
 echo "zsh is now the default shell (takes effect on next login)."

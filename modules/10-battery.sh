@@ -22,11 +22,17 @@ for p in tuned tuned-ppd power-profiles-daemon; do
 done
 sudo systemctl mask power-profiles-daemon.service
 
-# --allowerasing: tlp declares Conflicts: tuned; let dnf resolve any leftovers
-sudo dnf install -y --allowerasing tlp tlp-rdw tlp-pd powertop
+# --allowerasing: tlp declares Conflicts: tuned; let dnf resolve any leftovers.
+# Guarded so unchanged re-runs skip dnf (it hits the network for metadata
+# even when everything is already installed).
+if ! rpm -q tlp tlp-rdw tlp-pd powertop >/dev/null 2>&1; then
+    sudo dnf install -y --allowerasing tlp tlp-rdw tlp-pd powertop
+fi
 
 # Our overrides (charge thresholds etc.) on top of TLP's defaults
-sudo install -D -m 0644 "$REPO_ROOT/files/tlp/00-battery.conf" /etc/tlp.d/00-battery.conf
+if ! cmp -s "$REPO_ROOT/files/tlp/00-battery.conf" /etc/tlp.d/00-battery.conf; then
+    sudo install -D -m 0644 "$REPO_ROOT/files/tlp/00-battery.conf" /etc/tlp.d/00-battery.conf
+fi
 
 # TLP owns radio device state; its docs require masking systemd-rfkill
 sudo systemctl mask systemd-rfkill.service systemd-rfkill.socket

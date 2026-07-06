@@ -3,6 +3,8 @@
 // Super+Alt+Left/Right/Up/Down snaps the focused window to that edge of the
 // current monitor's work area. Repeated presses on the same edge cycle the
 // window through 1/2 -> 2/3 -> 1/3 of the span, like Rectangle on macOS.
+// Snapping works from a maximized or fullscreen window too — the state is
+// released first, so Super+Alt+F then an arrow goes straight to a tile.
 
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
@@ -34,12 +36,20 @@ export default class RectangleExtension extends Extension {
 
     _tile(direction) {
         const win = global.display.get_focus_window();
-        if (!win || win.get_window_type() !== Meta.WindowType.NORMAL || !win.allows_resize())
+        if (!win || win.get_window_type() !== Meta.WindowType.NORMAL)
             return;
 
+        // Mutter reports allows_resize() false while a window is maximized or
+        // fullscreen, so release those states before the resizability check —
+        // otherwise arrows can't snap out of Super+Alt+F. The maximized/
+        // fullscreen flags clear synchronously (only the geometry catches up
+        // async), so checking allows_resize() right after is sound.
         if (win.is_fullscreen())
             win.unmake_fullscreen();
         this._unmaximize(win);
+
+        if (!win.allows_resize())
+            return;
 
         const area = win.get_work_area_current_monitor();
         const frame = win.get_frame_rect();

@@ -9,12 +9,15 @@ One command on a stock Fedora install — needs only curl and tar, which are
 preinstalled:
 
 ```sh
-curl -fsSL https://github.com/amamparo/fedora-init/archive/main.tar.gz | tar xz && cd fedora-init-main && ./install.sh
+curl -fsSL https://raw.githubusercontent.com/amamparo/fedora-init/main/install.sh | bash
 ```
 
-Then **log out and back in** (Wayland can't hot-reload GNOME Shell).
+The script fetches the repo tarball into a temp dir itself, so nothing is
+left behind. Then **log out and back in** (Wayland can't hot-reload GNOME
+Shell).
 
-Re-run a single module by substring: `./install.sh battery`
+Re-run a single module by substring: `./install.sh battery` — or without a
+checkout, append `-s battery` after `bash` in the one-liner.
 
 Hacking on it? Clone instead:
 
@@ -63,6 +66,10 @@ GNOME's stock bindings collide with **all four** tiling keys
 to Super+Alt+arrows), so the module clears the overview pair and moves
 workspace switching to Super+Alt+PageUp/PageDown.
 
+The arrows also snap straight out of a maximized (or fullscreen) window —
+Super+Alt+F then Super+Alt+← goes directly to the left half, no need to
+un-maximize first.
+
 Maximize fills the work area but keeps the top bar, and Alt+F10 (its stock
 binding) still works. Prefer true fullscreen? In
 `modules/20-window-snapping.sh`, set `toggle-fullscreen` to
@@ -105,7 +112,8 @@ undocked or set docked layouts in Settings), and the Ptyxis Moonfly palette
 
 Drop `modules/NN-name.sh` — modules run in filename order. Conventions:
 
-- `set -euo pipefail`, idempotent (safe to re-run)
+- `set -euo pipefail`, idempotent — safe to re-run, and guarded (`rpm -q`,
+  `cmp -s`) so an unchanged re-run is a fast no-op
 - static assets live under `files/<name>/`, referenced via `$REPO_ROOT`
   (exported by `install.sh`; each module also derives its own fallback so it
   can run standalone)
