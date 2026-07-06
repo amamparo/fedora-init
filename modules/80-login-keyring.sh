@@ -1,52 +1,90 @@
 #!/usr/bin/env bash
 #
-# Login keyring: make the boot login password-only so pam_gnome_keyring can
-# unlock the GNOME login keyring. The keyring's encryption key is derived
-# from the login password — a fingerprint match yields no key material, and
-# /etc/pam.d/gdm-fingerprint has no pam_gnome_keyring line — so a swipe
-# login leaves the keyring locked and GNOME prompts "The login keyring did
-# not get unlocked..." the moment anything wants a secret (Brave's Safe
-# Storage, Google account tokens).
+# Login keyring: keep fingerprint login AND kill the "login keyring did not
+# get unlocked" prompt — by removing the keyring's password. A fingerprint
+# can never *unlock* the keyring (its encryption key is derived from the
+# login password; a sensor match yields no key material), so instead the
+# login keyring is blanked: gnome-keyring then stores it in plaintext and
+# auto-unlocks it on every login, fingerprint or otherwise. The trade-off:
+# secrets (Brave's Safe Storage key, account tokens) rest unencrypted in
+# ~/.local/share/keyrings — acceptable under LUKS full-disk encryption,
+# which already gates offline access to the same files.
 #
-# The fix is greeter-scoped: enable-fingerprint-authentication is written to
-# GDM's *system* dconf db, which only the login screen reads
-# (DCONF_PROFILE=gdm). Fingerprint keeps working at the in-session lock
-# screen (user dconf) and for sudo/polkit (authselect's with-fingerprint in
-# system-auth) — neither is touched. Takes effect at the next greeter start;
-# logging out is enough (GDM spawns a fresh greeter), no reboot needed.
+# Blanking uses gnome-keyring's org.gnome.keyring
+# InternalUnsupportedGuiltRiddenInterface (what gnome-initial-setup uses to
+# seed the keyring); it needs the *current* keyring password once, so the
+# module prompts for the login password. Runs as the desktop user — the
+# daemon lives on the session bus.
+#
+# An earlier revision instead forced the GDM greeter to password-only; that
+# drop-in is removed here so fingerprint login comes back — but only after
+# the keyring is confirmed blank, so a failed blanking never resurrects the
+# prompt (password login still unlocks an encrypted keyring via PAM).
 #
 set -euo pipefail
-REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
-# Fedora's gdm rpm ships /usr/share/dconf/profile/gdm (with system-db:gdm)
-# already — never create /etc/dconf/profile/gdm, which would shadow the
-# shipped profile and drop its file-db greeter defaults.
-changed=0
-if ! cmp -s "$REPO_ROOT/files/gdm/10-disable-fingerprint-login" \
-        /etc/dconf/db/gdm.d/10-disable-fingerprint-login; then
-    sudo install -D -m 0644 "$REPO_ROOT/files/gdm/10-disable-fingerprint-login" \
-        /etc/dconf/db/gdm.d/10-disable-fingerprint-login
-    changed=1
-fi
-if ! cmp -s "$REPO_ROOT/files/gdm/10-disable-fingerprint-login.locks" \
-        /etc/dconf/db/gdm.d/locks/10-disable-fingerprint-login; then
-    sudo install -D -m 0644 "$REPO_ROOT/files/gdm/10-disable-fingerprint-login.locks" \
-        /etc/dconf/db/gdm.d/locks/10-disable-fingerprint-login
-    changed=1
+KEYRING="$HOME/.local/share/keyrings/login.keyring"
+blank=0
+
+# A blank-password keyring is stored as a text keyfile beginning with
+# "[keyring]"; an encrypted one is binary beginning with "GnomeKeyring".
+if [[ ! -f "$KEYRING" ]]; then
+    echo "No login keyring yet — log in once with your password, then re-run this module."
+elif [[ "$(head -c 9 "$KEYRING")" == "[keyring]" ]]; then
+    echo "Login keyring already has no password."
+    blank=1
+else
+    # /dev/tty, not stdin: under the curl|bash bootstrap stdin is the pipe.
+    read -rs -p "Login password (removes the keyring's password so fingerprint logins stop prompting): " pw < /dev/tty
+    echo
+    # Password via environment, not argv (argv is visible in ps).
+    if KEYRING_PW="$pw" python3 - <<'PY'
+import os
+from gi.repository import Gio, GLib
+
+NAME, PATH = "org.freedesktop.secrets", "/org/freedesktop/secrets"
+bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+
+def call(iface, method, args):
+    return bus.call_sync(NAME, PATH, iface, method, args,
+                         None, Gio.DBusCallFlags.NONE, -1, None)
+
+_, session = call("org.freedesktop.Secret.Service", "OpenSession",
+                  GLib.Variant("(sv)", ("plain", GLib.Variant("s", "")))).unpack()
+
+secret = lambda v: (session, b"", v, "text/plain")
+call("org.gnome.keyring.InternalUnsupportedGuiltRiddenInterface",
+     "ChangeWithMasterPassword",
+     GLib.Variant("(o(oayays)(oayays))",
+                  (f"{PATH}/collection/login",
+                   secret(os.environ["KEYRING_PW"].encode()),
+                   secret(b""))))
+PY
+    then
+        unset pw
+        echo "Login keyring password removed — it now auto-unlocks on every login."
+        blank=1
+    else
+        unset pw
+        echo "That password didn't match the login keyring (changed outside of login" >&2
+        echo "at some point?). Nothing was modified — re-run with the old password," >&2
+        echo "or reset the keyring in Seahorse." >&2
+        exit 1
+    fi
 fi
 
-# dconf update recompiles every system db unconditionally (the old mtime
-# gate died in dconf's 2019 C rewrite), so only run it when a drop-in
-# actually changed.
-if ((changed)); then
-    sudo dconf update
+# Retire the earlier greeter-password-only approach, once safe to do so.
+if ((blank)); then
+    removed=0
+    for f in /etc/dconf/db/gdm.d/10-disable-fingerprint-login \
+             /etc/dconf/db/gdm.d/locks/10-disable-fingerprint-login; do
+        if [[ -e "$f" ]]; then
+            sudo rm "$f"
+            removed=1
+        fi
+    done
+    if ((removed)); then
+        sudo dconf update
+        echo "Fingerprint login re-enabled at the login screen (was disabled by an earlier revision)."
+    fi
 fi
-
-# Auto-login is the same failure class (no password typed, nothing to derive
-# the keyring key from). This repo never enables it, but flag it if present.
-if [[ -f /etc/gdm/custom.conf ]] &&
-    grep -Eiq '^[[:space:]]*(AutomaticLogin|TimedLogin)Enable[[:space:]]*=[[:space:]]*(true|1)[[:space:]]*$' /etc/gdm/custom.conf; then
-    echo "note: GDM auto-login is enabled in /etc/gdm/custom.conf — the keyring will still start locked."
-fi
-
-echo "GDM login goes password-only at the next login screen (logging out is enough); the keyring unlocks with it. Fingerprint still works for the lock screen, sudo, and polkit."

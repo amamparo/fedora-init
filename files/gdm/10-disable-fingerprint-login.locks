@@ -1,5 +1,0 @@
-# fedora-init — installed to /etc/dconf/db/gdm.d/locks/10-disable-fingerprint-login
-# Locked because the gdm dconf profile lists user-db:user before
-# system-db:gdm — an unlocked key could be overridden by a stray value in
-# /var/lib/gdm/.config/dconf/user.
-/org/gnome/login-screen/enable-fingerprint-authentication

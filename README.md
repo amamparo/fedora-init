@@ -121,20 +121,26 @@ extension can do.
 ### 80-login-keyring
 
 Kills the "login keyring did not get unlocked" prompt that appears after a
-fingerprint login. The keyring is encrypted with your *password*, and a
-fingerprint match can't stand in for it, so a swipe at the login screen
-always leaves the keyring locked — the prompt fires as soon as anything
-needs a secret (Brave, Google accounts). The module disables fingerprint
-**at the GDM login screen only**, by dropping the `files/gdm/` keyfile and
-its lock into `/etc/dconf/db/gdm.d/`: GDM logins ask for your password,
-which silently unlocks the keyring, and fingerprint keeps working
-everywhere else — lock screen, sudo, polkit. Takes effect at the next
-login screen; logging out is enough, no reboot needed.
+fingerprint login — while keeping fingerprint login. The keyring is
+encrypted with your *password*, and a fingerprint match can't stand in for
+it (the sensor yields a yes/no, not key material), so the prompt fires as
+soon as anything needs a secret (Brave, Google accounts). The module
+therefore removes the login keyring's password (it asks for your login
+password once to authorize the change): the keyring then auto-unlocks on
+every login — fingerprint, password, or auto-login — and never prompts
+again.
 
-If the prompt instead says your password "no longer matches" the keyring,
-that's a different problem (the account password was changed outside PAM) —
-fix it in Seahorse (`sudo dnf install seahorse`, then Passwords ▸ Login ▸
-right-click ▸ Change Password).
+The trade-off, made deliberately: keyring contents (Brave's cookie/password
+key, account tokens) are stored unencrypted in `~/.local/share/keyrings`.
+With LUKS full-disk encryption that changes little in practice — offline
+access is already gated by the disk password, and anything running as you
+could read the secrets through the unlocked keyring anyway.
+
+The module also removes the greeter password-only config an earlier
+revision installed, restoring fingerprint at the login screen. If it
+reports your password doesn't match the keyring, the account password was
+changed outside PAM at some point — re-run with the old password, or reset
+the keyring in Seahorse (`sudo dnf install seahorse`).
 
 ## Adding a module
 
