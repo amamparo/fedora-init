@@ -13,11 +13,16 @@ preinstalled:
 curl -fsSL https://raw.githubusercontent.com/amamparo/fedora-init/main/install.sh | bash
 ```
 
-The script fetches the repo tarball into a temp dir, installs its own
-toolchain (ansible-core and friends, ~6 small distro rpms — that's the only
-thing it does before Ansible takes over), asks for your sudo password once,
-and runs the playbook. Then **log out and back in** (Wayland can't
-hot-reload GNOME Shell).
+The script fetches the repo tarball into a temp dir, authenticates sudo
+once (fingerprint or password), installs its own toolchain (ansible-core
+and friends, ~6 small distro rpms) plus a one-line sudoers drop-in
+(`/etc/sudoers.d/fedora-init` — `Defaults timestamp_type=global`, so that
+single authentication also covers the play's per-task sudo; Fedora's
+fingerprint-first PAM can't hand a password to ansible's background sudo
+calls, and the very first run asks you to authenticate twice while the
+policy switches over). Then it runs the playbook. Afterwards **log out and
+back in** (Wayland can't hot-reload GNOME Shell). To restore per-terminal
+sudo tickets, delete the drop-in.
 
 Run a subset of roles by substring: `./install.sh battery zsh` — or without
 a checkout, append `-s battery` after `bash` in the one-liner.

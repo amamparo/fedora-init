@@ -31,47 +31,46 @@ cd "$(dirname "$script")"
 # terminal, so reattach.
 [[ -t 0 ]] || exec </dev/tty
 
-# One password prompt for the whole run. Ansible re-supplies it to every
-# per-task sudo (privileged tasks opt in with become), which replaces the old
-# background `sudo -n -v` keepalive loop — sudo's tty-keyed timestamps
-# wouldn't cover Ansible's tty-less sudo invocations anyway.
-IFS= read -rs -p "[sudo] password for $USER (Enter if passwordless): " SUDO_PW < /dev/tty
-echo
+# Authenticate sudo once, interactively — password or fingerprint both work
+# here. Ansible's per-task sudo can NOT be fed a password on this setup:
+# Fedora's fingerprint-first PAM stack (pam_fprintd before pam_unix) blocks
+# inside the fingerprint wait and never reaches a password prompt in
+# ansible's tty-less become context (verified by probing sudo's conversation
+# in exactly that context — silence for 12s+, while ansible gives up at 10).
+# So instead of a become password, sudo keeps ONE per-user timestamp record
+# (the drop-in below) and every become call rides this authentication.
+sudo -v
 
-# Ansible strips leading/trailing whitespace when reading the become
-# password file, so such a password would validate here and then fail every
-# become task mid-play — reject it up front with a real explanation.
-if [[ $SUDO_PW =~ ^[[:space:]] || $SUDO_PW =~ [[:space:]]$ ]]; then
-    echo "error: a sudo password with leading/trailing whitespace cannot be" >&2
-    echo "passed to ansible (it strips password-file edges) — change it first" >&2
-    exit 1
+# sudo's default tty-scoped timestamp records can never match ansible's
+# become calls (each runs on a fresh throwaway pty), so scope the record to
+# the user instead. Deliberate trade-off on a single-user machine: while a
+# record is live (5 min; keepalive below), any process of yours can sudo
+# without re-auth — the tty isolation of sudo tickets is gone. Remove
+# /etc/sudoers.d/fedora-init to restore stock behavior.
+dropin='Defaults timestamp_type=global'
+if [[ "$(sudo cat /etc/sudoers.d/fedora-init 2>/dev/null)" != "$dropin" ]]; then
+    tmpf="$(mktemp)"
+    printf '%s\n' "$dropin" > "$tmpf"
+    visudo -cf "$tmpf"  # never install an unparseable sudoers file
+    sudo install -m 0440 -o root -g root "$tmpf" /etc/sudoers.d/fedora-init
+    rm -f "$tmpf"
+    # The auth above wrote a tty-scoped record; the type just changed, so
+    # authenticate once more to write the global one (first run only).
+    sudo -k
+    echo "sudo timestamp policy installed — authenticate once more:"
+    sudo -v
 fi
 
-# Validate now, in the SAME PAM context ansible's become will use: setsid +
-# fully detached stdio means no terminal anywhere, so pam_fprintd (which
-# runs before pam_unix on fingerprint-enrolled Fedora) bails out instead of
-# engaging — a fingerprint touch can satisfy an interactive `sudo -v` at
-# the terminal, but it can never satisfy ansible's background sudo calls,
-# so validating at the terminal would accept setups the play then fails on.
-if [[ -z $SUDO_PW ]]; then
-    setsid sudo -n -v </dev/null >/dev/null 2>&1 || {
-        echo "sudo needs a password on this machine: a fingerprint satisfies" >&2
-        echo "interactive sudo but cannot authorize ansible's background sudo" >&2
-        echo "calls — re-run and type your password." >&2
-        exit 1
-    }
-else
-    printf '%s\n' "$SUDO_PW" | setsid sudo -S -p '' -v >/dev/null 2>&1 \
-        || { echo "sudo: authentication failed" >&2; exit 1; }
-fi
+# Keep the record fresh: first-run dnf downloads can outlast sudo's 5-minute
+# cache, and a lapsed record would make become's non-interactive sudo fail.
+( while sleep 60; do sudo -n -v || exit; done ) &
+SUDO_KEEPALIVE=$!
+trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null' EXIT
 
 # Toolchain bootstrap, guarded so converged re-runs stay offline. All stock
 # Fedora packages: ansible-core + the two collections the roles use,
 # python3-libdnf5 (dnf5 module backend), python3-psutil (community.general
-# dconf locates the session bus with it), rsync (synchronize). This plain
-# sudo runs at the terminal, so on a fingerprint-enrolled machine the first
-# run may show "Place your finger on the fingerprint reader" here — either
-# touch it or wait for the password fallback.
+# dconf locates the session bus with it), rsync (synchronize).
 pkgs=(ansible-core ansible-collection-community-general
       ansible-collection-ansible-posix python3-libdnf5 python3-psutil rsync)
 if ! rpm -q "${pkgs[@]}" >/dev/null 2>&1; then
@@ -116,22 +115,10 @@ done
 args=(--diff)
 ((${#tags[@]})) && args+=(--tags "$(IFS=,; echo "${tags[*]}")")
 
-# The become password goes to ansible in a 0600 file on /tmp (tmpfs on
-# Fedora Workstation, so memory-backed), removed on exit — never argv or
-# env. Not a /dev/fd process substitution: ansible canonicalizes the path
-# (unfrackpath) before opening it, which resolves an fd symlink to the
-# pseudo-name "pipe:[inode]" and dies with "password file not found". An
-# empty password (passwordless sudo) omits the flag entirely: ansible
-# refuses an empty password file.
-if [[ -n $SUDO_PW ]]; then
-    pwfile="$(mktemp)"  # mktemp creates 0600
-    trap 'rm -f "$pwfile"' EXIT
-    printf '%s\n' "$SUDO_PW" > "$pwfile"
-    ansible-playbook site.yml "${args[@]}" "${passthru[@]}" \
-        --become-password-file "$pwfile"
-else
-    ansible-playbook site.yml "${args[@]}" "${passthru[@]}"
-fi
+# No become password anywhere: each per-task sudo authenticates against the
+# global timestamp primed above. Become's default -n flag means a lapsed
+# record fails fast and loud instead of hanging in PAM.
+ansible-playbook site.yml "${args[@]}" "${passthru[@]}"
 
 echo
 echo "Done. Log out and back in so GNOME picks up the extensions."
