@@ -8,7 +8,7 @@ When a change alters behavior, commands, role conventions, keybindings, or gotch
 
 ## Commit and push at good stopping points
 
-Whenever the work reaches a coherent, self-contained stopping point — a role added, a gotcha fixed, docs synced — commit and push without waiting to be asked. A "good stopping point" means the tree is consistent: docs match behavior (see above), `ansible-playbook site.yml --syntax-check` passes, and the change stands on its own. Branch off `main` first (never commit straight to `main`), use a descriptive message, and push the branch. Do NOT run the playbook to "verify" before committing — the safe checks in the section below are the gate.
+Whenever the work reaches a coherent, self-contained stopping point — a role added, a gotcha fixed, docs synced — commit and push without waiting to be asked. A "good stopping point" means the tree is consistent: docs match behavior (see above), `ansible-playbook site.yml --syntax-check` passes, and the change stands on its own. This repo does NOT use PRs or feature branches: commit straight to `main` with a descriptive message and `git push origin main`. Do NOT run the playbook to "verify" before committing — the safe checks in the section below are the gate.
 
 ## What this is
 
