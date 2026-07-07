@@ -44,8 +44,6 @@
       tags: zsh
     - role: git_workspace
       tags: git-workspace
-    - role: google_drive
-      tags: google-drive
     - role: multimedia
       tags: multimedia
     - role: brave
