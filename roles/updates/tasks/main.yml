@@ -8,12 +8,17 @@
 # resolves against fresh metadata — stale metadata plus mirror lag once
 # 404'd a package (podman-tui) mid-play.
 
+# update_cache is load-bearing: without it, libdnf5 trusts any cache inside
+# its expiry window, and hours-stale metadata can reference rpms already
+# pruned from mirrors (the podman-tui 404). This is what actually delivers
+# the fresh-metadata promise for the rest of the play.
 # noqa: the whole point of this task is latest.
 - name: Upgrade all rpm packages # noqa: package-latest
   become: true
   ansible.builtin.dnf5:
     name: "*"
     state: latest
+    update_cache: true
 
 # Firmware via fwupd — the LVFS updates the Software app shows. Guarded on
 # fwupd being installed (Workstation ships it; minimal installs may not).

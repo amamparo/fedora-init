@@ -221,7 +221,8 @@ caveman` — the role won't re-enable a plugin you turned off.
 ### podman
 
 Podman over Docker, deliberately: Fedora-native, daemonless, rootless by
-default (no root-equivalent `docker` group). `podman-docker` keeps the
+default (no root-equivalent `docker` group) — and kept at the latest
+version on every run. `podman-docker` keeps the
 `docker` CLI working (nag silenced via `/etc/containers/nodocker`),
 `podman-tui` gives a terminal dashboard (containers/images/pods), and the
 user API socket is enabled for docker-API tools — compose and

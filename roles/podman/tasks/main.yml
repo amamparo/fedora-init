@@ -6,21 +6,21 @@
 # docker muscle memory and most tooling keep working. Rootless subuid/subgid
 # ranges are already set up by Fedora's user creation — nothing to manage.
 
-# Guarded on package_facts (the play's pre_task) so a converged re-run does
-# zero network work. podman itself ships with Workstation, but guard all of
-# them: a minimal install may lack it. podman-tui is the official terminal
-# UI from the same containers org, distro-packaged.
-- name: Install podman, the docker CLI shim, and the TUI
+# Deliberately state: latest and unguarded (aaron's call): podman stays
+# current on every run, no-op when it already is. With update_cache the
+# metadata is refetched too — a stale cache once referenced a podman-tui
+# rpm already pruned from mirrors and 404'd the play. This makes podman the
+# second sanctioned network-on-converged-re-run exception, after updates.
+# podman-tui is the official terminal UI from the same containers org.
+- name: Install/refresh podman, the docker CLI shim, and the TUI # noqa: package-latest
   become: true
-  vars:
-    podman_packages:
+  ansible.builtin.dnf5:
+    name:
       - podman
       - podman-docker
       - podman-tui
-  ansible.builtin.dnf5:
-    name: "{{ podman_packages }}"
-    state: present
-  when: podman_packages | difference(ansible_facts.packages.keys() | list) | length > 0
+    state: latest
+    update_cache: true
 
 # The shim prints a "Emulate Docker CLI using podman" nag on every docker
 # invocation until this marker file exists. state: touch with preserved
