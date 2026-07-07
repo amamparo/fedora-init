@@ -1,0 +1,16 @@
+---
+# Steam from RPM Fusion nonfree — the multimedia role enables those repos,
+# which is why this role is ordered after it in site.yml. The steam package
+# pulls its own i686 multilib dependencies.
+
+# The check clause: under --check on a fresh machine the RPM Fusion release
+# rpms were only simulated, so the spec is unresolvable (the multimedia
+# pattern).
+- name: Install Steam
+  become: true
+  ansible.builtin.dnf5:
+    name: steam
+    state: present
+  when: >-
+    'steam' not in ansible_facts.packages
+    and (not ansible_check_mode or 'rpmfusion-nonfree-release' in ansible_facts.packages)

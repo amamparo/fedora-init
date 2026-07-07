@@ -34,9 +34,10 @@ Prove idempotency instead of trusting it:
 ```
 
 On a converged machine that prints every task `ok` or `skipped` with zero
-diffs, zero network traffic, and no prompts beyond sudo. Any dash-prefixed
-argument (`--check`, `--tags`, `-v`...) passes straight through to
-`ansible-playbook`.
+diffs and no prompts beyond sudo — and, outside the updates role (whose
+whole job is asking upstream what changed), zero network traffic. Any
+dash-prefixed argument (`--check`, `--tags`, `-v`...) passes straight
+through to `ansible-playbook`.
 
 Hacking on it? Clone instead:
 
@@ -50,6 +51,13 @@ git clone https://github.com/amamparo/fedora-init.git && cd fedora-init
 
 Each role is one concern, run in order; the tag (= role name with hyphens)
 is what `./install.sh <substring>` matches against.
+
+### updates
+
+Everything Fedora's Software app would report, applied: all rpm updates,
+firmware via fwupd/LVFS (reboot-staged ones get called out), and flatpak
+updates for anything you've added. Runs first so the rest of the play
+resolves against fresh metadata.
 
 ### battery
 
@@ -115,6 +123,11 @@ packages for full builds: `intel-media-driver` (H.264/HEVC hardware decode
 on this Intel Lunar Lake ThinkPad — stock has none, which drains battery on
 video) and `ffmpeg`. Verify afterwards with
 `sudo dnf install libva-utils && vainfo | grep -E 'H264|HEVC'`.
+
+### steam
+
+[Steam](https://store.steampowered.com) from RPM Fusion nonfree (enabled
+by the multimedia role).
 
 ### brave
 

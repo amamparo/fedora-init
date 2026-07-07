@@ -36,6 +36,8 @@
       check_mode: false
       tags: always
   roles:
+    - role: updates
+      tags: updates
     - role: battery
       tags: battery
     - role: window_snapping
@@ -46,6 +48,8 @@
       tags: git-workspace
     - role: multimedia
       tags: multimedia
+    - role: steam
+      tags: steam
     - role: brave
       tags: brave
     - role: gnome_prefs

@@ -1,0 +1,58 @@
+---
+# Bring the system current — everything Fedora's Software app would report:
+# rpm updates (dnf), firmware (fwupd/LVFS), and flatpaks when present.
+#
+# This role is the repo's DELIBERATE exception to the zero-network
+# converged-re-run rule: its concern is drift from upstream, which is
+# undetectable offline. It runs first in site.yml so every later role
+# resolves against fresh metadata — stale metadata plus mirror lag once
+# 404'd a package (podman-tui) mid-play.
+
+# noqa: the whole point of this task is latest.
+- name: Upgrade all rpm packages # noqa: package-latest
+  become: true
+  ansible.builtin.dnf5:
+    name: "*"
+    state: latest
+
+# Firmware via fwupd — the LVFS updates the Software app shows. Guarded on
+# fwupd being installed (Workstation ships it; minimal installs may not).
+# get-updates exit codes, verified on this host: 0 = updates available,
+# 2 = nothing to do.
+- name: Refresh firmware metadata (LVFS)
+  become: true
+  ansible.builtin.command:
+    cmd: fwupdmgr refresh --force
+  changed_when: false
+  when: "'fwupd' in ansible_facts.packages"
+
+- name: Check for firmware updates
+  become: true
+  ansible.builtin.command:
+    cmd: fwupdmgr get-updates
+  register: updates_firmware
+  changed_when: false
+  failed_when: updates_firmware.rc not in [0, 2]
+  when: "'fwupd' in ansible_facts.packages"
+
+- name: Apply firmware updates
+  become: true
+  ansible.builtin.command:
+    cmd: fwupdmgr update --assume-yes --no-reboot-check
+  when: "'fwupd' in ansible_facts.packages and updates_firmware.rc == 0"
+  changed_when: true
+
+- name: Report that firmware updates are staged
+  ansible.builtin.debug:
+    msg: "Firmware updates applied — some only take effect at the next reboot."
+  when: "'fwupd' in ansible_facts.packages and updates_firmware.rc == 0"
+
+# Flatpaks (Workstation ships flatpak; this repo installs none itself, but
+# Software would report updates for any the user added).
+- name: Update flatpaks
+  become: true
+  ansible.builtin.command:
+    cmd: flatpak update --noninteractive
+  register: updates_flatpak
+  when: "'flatpak' in ansible_facts.packages"
+  changed_when: "'Nothing to do' not in updates_flatpak.stdout"
