@@ -122,10 +122,11 @@ Brave browser from its official repo (gpg-verified), set as the default
 browser (declaratively, via mime handlers), and every other browser removed —
 Fedora's stock Firefox, plus chromium/epiphany/chrome if present. Also
 force-installs PWAs via browser policy (Tidal, YouTube TV, tastytrade):
-real apps — own windows, icons, launcher entries — appearing after the
-next Brave launch. Edit the list in `roles/brave/files/policies.json`;
-while an app is listed it can't be uninstalled from Brave's UI, only by
-removing it there.
+real apps — own windows, manifest icons, app-grid launcher entries, no
+Desktop clutter — installed during the play itself (the role nudges Brave
+awake headlessly if it isn't running). Edit the list in
+`roles/brave/files/policies.json`; while an app is listed it can't be
+uninstalled from Brave's UI, only by removing it there.
 
 ### gnome-prefs
 

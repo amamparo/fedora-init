@@ -31,11 +31,14 @@
 
 # PWAs (Tidal, YouTube TV, tastytrade) via Chromium's WebAppInstallForceList
 # policy — the declarative way to install web apps: Brave reads
-# /etc/brave/policies/managed/*.json at startup (path verified in the brave
-# binary itself) and force-installs each app, manifest icons and desktop
-# entries included, on the next launch (needs network then). Trade-off:
-# while listed here they show as admin-installed and can't be removed from
-# the Brave UI — uninstall by removing the entry and re-running.
+# /etc/brave/policies/managed/*.json (path verified in the brave binary
+# itself) and force-installs each app with manifest icons and an app-grid
+# launcher entry; no ~/Desktop icon (create_desktop_shortcut is off).
+# Trade-off: while listed, apps show as admin-installed and can't be
+# removed from the Brave UI — uninstall by removing the entry and
+# re-running. Chromium hot-reloads platform policy files, so a running
+# Brave applies this within seconds; the tasks below cover the
+# not-running case so the apps exist by the end of the play.
 - name: Install Brave PWA policy (Tidal, YouTube TV, tastytrade)
   become: true
   ansible.builtin.copy:
@@ -44,6 +47,76 @@
     owner: root
     group: root
     mode: "0644"
+
+# Convergence probe: every installed PWA materializes a
+# brave-<appid>-Default.desktop launcher entry. App ids aren't predictable
+# offline (derived from each site's manifest), so count entries against the
+# policy list — the count comes from the policy file itself, one source of
+# truth. Honest limitation: the count is a heuristic — PWAs the user
+# installed by hand also match the glob, so this can under-trigger, never
+# over-trigger; precise matching would need the manifest-derived app ids.
+- name: Count installed Brave PWA launcher entries
+  ansible.builtin.command:
+    argv:
+      - find
+      - "{{ lookup('env', 'HOME') }}/.local/share/applications"
+      - -maxdepth
+      - "1"
+      - -name
+      - brave-*-Default.desktop
+  register: brave_pwa_entries
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check whether Brave is running
+  ansible.builtin.command:
+    cmd: pgrep -x brave
+  register: brave_running
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# When entries are missing and Brave isn't running, nudge it awake with no
+# window so the policy applies now instead of at the user's next launch.
+# (If Brave IS running, the policy hot-reload already handles it — the
+# wait below just observes.) nohup + & because the browser process doesn't
+# exit; the spawned instance is shut down again afterwards.
+- name: Launch Brave headlessly to apply the PWA policy # noqa: command-instead-of-shell no-changed-when — backgrounding needs a shell; cleanup task reports the change
+  ansible.builtin.shell:
+    cmd: nohup brave --no-startup-window --no-first-run >/dev/null 2>&1 & echo $!
+  register: brave_nudge
+  when:
+    - not ansible_check_mode
+    - brave_pwa_entries.stdout_lines | length < (lookup('file', 'policies.json') | from_json).WebAppInstallForceList | length
+    - brave_running.rc != 0
+
+- name: Wait for the PWA launcher entries to materialize
+  ansible.builtin.command:
+    argv:
+      - find
+      - "{{ lookup('env', 'HOME') }}/.local/share/applications"
+      - -maxdepth
+      - "1"
+      - -name
+      - brave-*-Default.desktop
+  register: brave_pwa_wait
+  until: brave_pwa_wait.stdout_lines | length >= (lookup('file', 'policies.json') | from_json).WebAppInstallForceList | length
+  retries: 30
+  delay: 2
+  changed_when: brave_pwa_entries.stdout_lines | length < brave_pwa_wait.stdout_lines | length
+  when:
+    - not ansible_check_mode
+    - brave_pwa_entries.stdout_lines | length < (lookup('file', 'policies.json') | from_json).WebAppInstallForceList | length
+
+# Put things back: only the instance this role spawned gets stopped —
+# never a browser the user had open.
+- name: Stop the nudge Brave instance
+  ansible.builtin.command:
+    cmd: kill {{ brave_nudge.stdout | trim }}
+  when: brave_nudge is not skipped
+  changed_when: true
+  failed_when: false
 
 # Default browser for the desktop user — no become here. The old module's
 # xdg-settings under sudo would have written root's ~/.config/mimeapps.list
