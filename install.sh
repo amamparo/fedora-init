@@ -47,23 +47,31 @@ if [[ $SUDO_PW =~ ^[[:space:]] || $SUDO_PW =~ [[:space:]]$ ]]; then
     exit 1
 fi
 
-# Validate now (and prime the timestamp for the dnf bootstrap below) rather
-# than failing mid-play. sudo -K first: a still-valid cached timestamp would
-# otherwise vouch for a mistyped password. An empty entry is accepted only
-# when sudo genuinely needs no password (NOPASSWD).
-sudo -K
+# Validate now, in the SAME PAM context ansible's become will use: setsid +
+# fully detached stdio means no terminal anywhere, so pam_fprintd (which
+# runs before pam_unix on fingerprint-enrolled Fedora) bails out instead of
+# engaging — a fingerprint touch can satisfy an interactive `sudo -v` at
+# the terminal, but it can never satisfy ansible's background sudo calls,
+# so validating at the terminal would accept setups the play then fails on.
 if [[ -z $SUDO_PW ]]; then
-    sudo -n -v 2>/dev/null \
-        || { echo "sudo: a password is required" >&2; exit 1; }
+    setsid sudo -n -v </dev/null >/dev/null 2>&1 || {
+        echo "sudo needs a password on this machine: a fingerprint satisfies" >&2
+        echo "interactive sudo but cannot authorize ansible's background sudo" >&2
+        echo "calls — re-run and type your password." >&2
+        exit 1
+    }
 else
-    printf '%s\n' "$SUDO_PW" | sudo -S -v 2>/dev/null \
+    printf '%s\n' "$SUDO_PW" | setsid sudo -S -p '' -v >/dev/null 2>&1 \
         || { echo "sudo: authentication failed" >&2; exit 1; }
 fi
 
 # Toolchain bootstrap, guarded so converged re-runs stay offline. All stock
 # Fedora packages: ansible-core + the two collections the roles use,
 # python3-libdnf5 (dnf5 module backend), python3-psutil (community.general
-# dconf locates the session bus with it), rsync (synchronize).
+# dconf locates the session bus with it), rsync (synchronize). This plain
+# sudo runs at the terminal, so on a fingerprint-enrolled machine the first
+# run may show "Place your finger on the fingerprint reader" here — either
+# touch it or wait for the password fallback.
 pkgs=(ansible-core ansible-collection-community-general
       ansible-collection-ansible-posix python3-libdnf5 python3-psutil rsync)
 if ! rpm -q "${pkgs[@]}" >/dev/null 2>&1; then
