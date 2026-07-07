@@ -218,6 +218,20 @@ verbatim, active automatically from the first message. Switch compression
 with `/caveman [lite|full|ultra]`, or disable with `claude plugin disable
 caveman` — the role won't re-enable a plugin you turned off.
 
+### claude-desktop
+
+[Claude Desktop](https://claude.com/download) — the GUI chat app, installed
+for **local MCP servers** (a browser PWA can't spawn them). Anthropic ships
+no Fedora build (the official Linux beta is Debian/Ubuntu-only), so this uses
+the [aaddrick/claude-desktop-debian](https://github.com/aaddrick/claude-desktop-debian)
+rpm, which repackages Anthropic's official Linux `.deb` and serves it from a
+signed DNF repo — new versions arrive through the `updates` role's
+`dnf upgrade`. Launch it and sign in once. Configure MCP servers in
+`~/.config/Claude/claude_desktop_config.json` (quit the app before editing —
+it rewrites that file on exit). Note this is an *unofficial* repackaging
+signed with the maintainer's key, not Anthropic's; switch to an official
+Fedora rpm if one ships.
+
 ### podman
 
 Podman over Docker, deliberately: Fedora-native, daemonless, rootless by

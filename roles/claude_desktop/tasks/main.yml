@@ -1,0 +1,65 @@
+---
+# Claude Desktop — the GNOME chat GUI, wanted here for LOCAL stdio MCP
+# servers (a browser PWA can't spawn processes, an Electron wrapper of
+# claude.ai has no MCP host — neither cuts it).
+#
+# Anthropic ships NO Fedora build: the official Claude Desktop for Linux
+# beta (2026-06-30) is Debian/Ubuntu-only and the docs say so outright
+# ("Fedora and RHEL: only Debian-based distributions are supported today").
+# So the install path is aaddrick/claude-desktop-debian, which since its
+# v3.0.0 repackages Anthropic's OFFICIAL Linux .deb (a thin repack, not the
+# old Windows-installer-extraction hack) into an rpm served from a signed
+# DNF repo. That makes this a plain vendor-repo role — the vscode/tailscale
+# pattern exactly: drop the .repo file, dnf install, and new versions then
+# arrive through the updates role's `dnf upgrade` (the app does NOT
+# self-update on Linux — Anthropic's own docs; dnf is the intended channel).
+#
+# MCP is configured by the user at ~/.config/Claude/claude_desktop_config.json
+# (same stdio schema as macOS/Windows). The role deliberately does NOT manage
+# that file: the servers are a per-user choice, and the app rewrites the file
+# on exit ("quit Claude Desktop before you hand-edit it"), so a role-owned
+# copy would fight it.
+#
+# Trust note: this is unofficial-squared — an unofficial repackaging of an
+# app Anthropic doesn't officially ship for Fedora, pulled through a single
+# maintainer's self-hosted domain and signed with THEIR key, not Anthropic's.
+# Accepted deliberately; migrate to the official repo if Anthropic ever ships
+# a Fedora rpm (the package Provides: claude-desktop, easing that swap).
+
+# The vendor's served .repo file verbatim EXCEPT one added line:
+# skip_if_unavailable=1. The rest is byte-diffable against
+# https://pkg.claude-desktop-debian.dev/rpm/claude-desktop-unofficial.repo.
+# The deviation is load-bearing here: unlike Microsoft/Tailscale, this is one
+# person's self-hosted domain, and the updates role runs `dnf upgrade` on `*`
+# — a dead vendor host would hard-fail EVERY system-update run without the
+# flag. Precedent: the ghostty COPR file ships skip_if_unavailable too.
+# gpgcheck=1 + repo_gpgcheck=1 with the gpgkey URL in the file means dnf
+# imports and verifies the maintainer's key on install — no rpm --import (the
+# vscode lesson: rpm 6 names imported keys by full fingerprint, so the classic
+# gpg-pubkey-<short-keyid> guard never matches).
+- name: Install the Claude Desktop (unofficial) rpm repo file
+  become: true
+  ansible.builtin.copy:
+    src: claude-desktop-unofficial.repo
+    dest: /etc/yum.repos.d/claude-desktop-unofficial.repo
+    owner: root
+    group: root
+    mode: "0644"
+  register: claude_desktop_repo
+
+# The brave/vscode/tailscale pattern: the package_facts guard keeps converged
+# re-runs offline (dnf5 refreshes repo metadata over the network even for a
+# no-op transaction), and the check-mode clause skips when --check only
+# simulated the repo file (dnf5 resolves — and fails — even in check mode).
+# Guard on the EXACT rpm name claude-desktop-unofficial, never the virtual
+# `claude-desktop` it Provides: the convention forbids virtual-provides
+# matching, and a future official Anthropic rpm named claude-desktop would
+# false-match and silently skip the install.
+- name: Install Claude Desktop
+  become: true
+  ansible.builtin.dnf5:
+    name: claude-desktop-unofficial
+    state: present
+  when:
+    - "'claude-desktop-unofficial' not in ansible_facts.packages"
+    - not (ansible_check_mode and claude_desktop_repo is changed)
