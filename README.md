@@ -142,6 +142,27 @@ reports your password doesn't match the keyring, the account password was
 changed outside PAM at some point — re-run with the old password, or reset
 the keyring in Seahorse (`sudo dnf install seahorse`).
 
+### 90-vscode
+
+VS Code from [Microsoft's official repo](https://code.visualstudio.com/docs/setup/linux)
+(`files/vscode/vscode.repo`, the documented content verbatim, gpg-verified).
+Updates then arrive with normal `dnf upgrade`.
+
+### 91-jetbrains-toolbox
+
+[JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/) from the
+official tarball (sha256-verified — JetBrains ships no rpm), installed
+headlessly into `~/.local/share/JetBrains/Toolbox`. The Toolbox window
+opens at the next login to sign in and install IDEs, and the app keeps
+itself up to date from then on. Entirely user-level, no sudo.
+
+### 92-claude-code
+
+[Claude Code](https://code.claude.com/docs) via Anthropic's native
+installer: the launcher lands at `~/.local/bin/claude` (on PATH via the
+zshrc from 30-zsh) and self-updates from then on. Run `claude` once to
+sign in.
+
 ## Adding a module
 
 Drop `modules/NN-name.sh` — modules run in filename order. Conventions:
