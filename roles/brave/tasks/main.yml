@@ -39,6 +39,17 @@
 # re-running. Chromium hot-reloads platform policy files, so a running
 # Brave applies this within seconds; the tasks below cover the
 # not-running case so the apps exist by the end of the play.
+# The brave rpm knows this path but doesn't create it (verified: fresh
+# install has no /etc/brave at all), and copy won't make parent dirs.
+- name: Ensure Brave's managed-policy dir exists
+  become: true
+  ansible.builtin.file:
+    path: /etc/brave/policies/managed
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Install Brave PWA policy (Tidal, YouTube TV, tastytrade)
   become: true
   ansible.builtin.copy:
