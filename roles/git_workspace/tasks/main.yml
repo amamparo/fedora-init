@@ -50,7 +50,7 @@
 # Existence only — no mode: Nautilus creates this dir itself (0700 here);
 # managing perms on a dir other software owns rewrites them on every
 # machine where they differ.
-- name: Ensure the GTK bookmarks dir exists
+- name: Ensure the GTK bookmarks dir exists # noqa: risky-file-permissions — deliberately unmanaged, see comment
   ansible.builtin.file:
     path: "{{ lookup('env', 'HOME') }}/.config/gtk-3.0"
     state: directory
