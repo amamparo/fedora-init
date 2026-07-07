@@ -50,6 +50,8 @@
       tags: brave
     - role: gnome_prefs
       tags: gnome-prefs
+    - role: ghostty
+      tags: ghostty
     - role: no_overview
       tags: no-overview
     - role: login_keyring

@@ -47,34 +47,3 @@
   ansible.builtin.debug:
     msg: "{{ display_scale.msg }}"
   when: not display_scale.applied
-
-# Ptyxis terminal palette. The default-profile-uuid key only exists once
-# Ptyxis has launched for the first time, so on a fresh install this defers
-# to a later re-run. The probe is read-only: changed_when: false keeps it
-# honest, and check_mode: false lets it run under --check so the
-# conditionals below stay truthful; failed_when: false covers Ptyxis (or its
-# schema) not being installed at all.
-- name: Probe for the Ptyxis default profile uuid
-  ansible.builtin.command:
-    cmd: gsettings get org.gnome.Ptyxis default-profile-uuid
-  register: ptyxis_probe
-  changed_when: false
-  failed_when: false
-  check_mode: false
-
-# gsettings prints the uuid GVariant-quoted ('3f8c...'); strip the quotes.
-- name: Extract the Ptyxis profile uuid
-  ansible.builtin.set_fact:
-    ptyxis_uuid: "{{ ptyxis_probe.stdout | default('') | trim | regex_replace(\"'\", '') }}"
-
-- name: Set the Ptyxis palette to Moonfly
-  community.general.dconf:
-    key: "/org/gnome/Ptyxis/Profiles/{{ ptyxis_uuid }}/palette"
-    value: "'Moonfly'"
-    state: present
-  when: ptyxis_uuid | length > 0
-
-- name: Report that the Ptyxis palette was deferred
-  ansible.builtin.debug:
-    msg: "Ptyxis hasn't launched yet — re-run this role later for the Moonfly palette."
-  when: ptyxis_uuid | length == 0

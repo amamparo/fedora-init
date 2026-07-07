@@ -132,11 +132,19 @@ uninstalled from Brave's UI, only by removing it there.
 
 The handful of desktop settings that differ from stock: dark mode, battery
 percentage, minimize/maximize window buttons, empty dock, touchpad speed,
-100% display scale (Fedora defaults to 125%; applied via mutter's D-Bus API
-since Displays ▸ Scale isn't a gsettings key — laptop panel only, so run it
-undocked or set docked layouts in Settings), and the Ptyxis Moonfly palette
-(Ptyxis has to have launched once; re-run the role later on a fresh
-install). Runs as the desktop user — no privilege escalation.
+and 100% display scale (Fedora defaults to 125%; applied via mutter's D-Bus
+API since Displays ▸ Scale isn't a gsettings key — laptop panel only, so
+run it undocked or set docked layouts in Settings). Runs as the desktop
+user — no privilege escalation.
+
+### ghostty
+
+[Ghostty](https://ghostty.org) as the terminal, from the COPR its own
+install docs point Fedora at, themed Moonfly (edit
+`roles/ghostty/files/config` — it's repo-owned). Fedora's stock Ptyxis is
+removed once ghostty is in place, so it's gone from app search and
+launching entirely; searching "terminal" finds Ghostty (its desktop entry
+ships the keyword).
 
 ### no-overview
 

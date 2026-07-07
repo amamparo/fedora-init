@@ -1,0 +1,59 @@
+---
+# Ghostty (ghostty.org) as the terminal, replacing Fedora's stock Ptyxis.
+# The rpm comes from the scottames/ghostty COPR — the repo ghostty's own
+# install docs point Fedora users at. Community build, gpg-signed with its
+# COPR key; files/ghostty.repo is the COPR-served file verbatim (including
+# its skip_if_unavailable). Ghostty's desktop entry ships
+# Keywords=terminal;tty;pty; (verified in the rpm), so GNOME app search
+# finds it for "terminal" with no desktop-file override.
+
+- name: Install the ghostty COPR repo file
+  become: true
+  ansible.builtin.copy:
+    src: ghostty.repo
+    dest: /etc/yum.repos.d/ghostty-copr.repo
+    owner: root
+    group: root
+    mode: "0644"
+  register: ghostty_repo
+
+# The brave/vscode pattern: package_facts guard keeps converged re-runs
+# offline; the check clause skips when --check only simulated the repo file
+# (dnf5 resolves — and fails — even in check mode).
+- name: Install ghostty
+  become: true
+  ansible.builtin.dnf5:
+    name: ghostty
+    state: present
+  when:
+    - "'ghostty' not in ansible_facts.packages"
+    - not (ansible_check_mode and ghostty_repo is changed)
+
+- name: Ensure ~/.config/ghostty exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/ghostty"
+    state: directory
+    mode: "0755"
+
+# Repo-owned config (theme = Moonfly — bundled with ghostty, verified in
+# the rpm at /usr/share/ghostty/themes/Moonfly). Edits belong in
+# roles/ghostty/files/config; re-runs overwrite the installed copy.
+- name: Install the ghostty config
+  ansible.builtin.copy:
+    src: config
+    dest: "{{ lookup('env', 'HOME') }}/.config/ghostty/config"
+    mode: "0644"
+
+# Ptyxis goes only AFTER ghostty is in place — never leave the machine
+# terminal-less (the brave role's ordering rule, applied to terminals).
+# Removing the package is what makes it "inaccessible": binary, desktop
+# entry, and app-search presence all go with it. Guarded for the offline
+# re-run; autoremove sweeps its now-unused deps (the dnf5 module doesn't,
+# by default — the battery-role note).
+- name: Remove Ptyxis (ghostty is the terminal now)
+  become: true
+  ansible.builtin.dnf5:
+    name: ptyxis
+    state: absent
+    autoremove: true
+  when: "'ptyxis' in ansible_facts.packages"

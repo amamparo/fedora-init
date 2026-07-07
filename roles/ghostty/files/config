@@ -1,0 +1,5 @@
+# fedora-init — installed to ~/.config/ghostty/config
+# Moonfly, carried over from the retired Ptyxis palette (ghostty bundles
+# the same iTerm2-Color-Schemes export). Edit HERE, not in ~ — this file
+# is repo-owned and re-runs overwrite the installed copy.
+theme = Moonfly
