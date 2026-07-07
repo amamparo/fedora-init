@@ -108,6 +108,16 @@ key + [github.com/settings/keys](https://github.com/settings/keys) when it
 makes one), a `~/git` checkout dir, and a Files sidebar bookmark for it
 (label yours however you like — the role won't rename it back).
 
+### google-drive
+
+Google Drive as the stash that survives reinstalls, via
+[rclone](https://rclone.org) (distro-packaged, no daemon). Two one-time
+interactive steps the role reminds you about until done: `rclone config
+create drive drive` (browser OAuth), and Settings ▸ Online Accounts ▸
+Google for Drive in the Files sidebar. Then
+`rclone copy ~/thing drive:stash/thing`, `rclone bisync` for two-way, or
+`rclone mount drive: ~/Drive`.
+
 ### multimedia
 
 RPM Fusion (free + nonfree), then swaps stock Fedora's codec-stripped
