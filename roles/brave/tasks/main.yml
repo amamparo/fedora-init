@@ -81,8 +81,9 @@
 # window so the policy applies now instead of at the user's next launch.
 # (If Brave IS running, the policy hot-reload already handles it — the
 # wait below just observes.) nohup + & because the browser process doesn't
-# exit; the spawned instance is shut down again afterwards.
-- name: Launch Brave headlessly to apply the PWA policy # noqa: command-instead-of-shell no-changed-when — backgrounding needs a shell; cleanup task reports the change
+# exit; the spawned instance is shut down again afterwards. noqa:
+# backgrounding needs a shell, and the cleanup task reports the change.
+- name: Launch Brave headlessly to apply the PWA policy # noqa: command-instead-of-shell no-changed-when
   ansible.builtin.shell:
     cmd: nohup brave --no-startup-window --no-first-run >/dev/null 2>&1 & echo $!
   register: brave_nudge
