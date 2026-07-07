@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 When a change alters behavior, commands, role conventions, keybindings, or gotchas, update the documentation in the same change — this file, README.md, and any task-file header comments that describe the affected behavior. README.md is the user-facing doc (what the roles do and how to run them); CLAUDE.md is the contributor-facing doc (architecture, conventions, gotchas). A PR that changes what a role does but not the docs is incomplete.
 
+## Commit and push at good stopping points
+
+Whenever the work reaches a coherent, self-contained stopping point — a role added, a gotcha fixed, docs synced — commit and push without waiting to be asked. A "good stopping point" means the tree is consistent: docs match behavior (see above), `ansible-playbook site.yml --syntax-check` passes, and the change stands on its own. Branch off `main` first (never commit straight to `main`), use a descriptive message, and push the branch. Do NOT run the playbook to "verify" before committing — the safe checks in the section below are the gate.
+
 ## What this is
 
 An Ansible playbook that configures a fresh Fedora Workstation (GNOME) install, targeting Fedora 44 / GNOME 50. The only entry point is:
