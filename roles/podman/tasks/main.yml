@@ -7,18 +7,20 @@
 # ranges are already set up by Fedora's user creation — nothing to manage.
 
 # Guarded on package_facts (the play's pre_task) so a converged re-run does
-# zero network work. podman itself ships with Workstation, but guard both:
-# a minimal install may lack it.
-- name: Install podman and the docker CLI shim
-  ansible.builtin.dnf5:
-    name:
+# zero network work. podman itself ships with Workstation, but guard all of
+# them: a minimal install may lack it. podman-tui is the official terminal
+# UI from the same containers org, distro-packaged.
+- name: Install podman, the docker CLI shim, and the TUI
+  become: true
+  vars:
+    podman_packages:
       - podman
       - podman-docker
+      - podman-tui
+  ansible.builtin.dnf5:
+    name: "{{ podman_packages }}"
     state: present
-  become: true
-  when: >-
-    'podman' not in ansible_facts.packages
-    or 'podman-docker' not in ansible_facts.packages
+  when: podman_packages | difference(ansible_facts.packages.keys() | list) | length > 0
 
 # The shim prints a "Emulate Docker CLI using podman" nag on every docker
 # invocation until this marker file exists. state: touch with preserved

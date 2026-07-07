@@ -87,3 +87,54 @@
         path: "{{ claude_installer.path }}"
         state: absent
       when: claude_installer.path is defined
+
+# --- caveman (github.com/JuliusBrussee/caveman) ---------------------------
+# A Claude Code plugin that compresses agent output (~65% fewer tokens)
+# while keeping code, commands, and errors verbatim. On Claude Code it
+# activates automatically once installed — installing IS activating. Lives
+# in this role because it's pure add-on: nothing about it makes sense
+# without the CLI above. Plugin state is under ~/.claude/plugins
+# (known_marketplaces.json, marketplaces/, cache/, installed_plugins.json).
+
+# failed_when: false, not a hard dependency check: on a fresh --check the
+# install above was only simulated, so the binary doesn't exist — the rc
+# gates the tasks below instead of crashing the dry run. On a real run
+# claude always exists by this point (pre-existing or just installed).
+- name: List installed Claude Code plugins
+  ansible.builtin.command:
+    cmd: claude plugin list
+  environment:
+    PATH: "{{ lookup('env', 'HOME') }}/.local/bin:{{ lookup('env', 'PATH') }}"
+  register: caveman_plugins
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Probe for the caveman marketplace
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.claude/plugins/marketplaces/caveman"
+  register: caveman_marketplace
+  check_mode: false
+
+# The https URL, deliberately not the JuliusBrussee/caveman shorthand: the
+# shorthand clones over SSH (git@github.com:...), which fails on a fresh
+# machine whose new key isn't enrolled with GitHub yet.
+- name: Add the caveman plugin marketplace
+  ansible.builtin.command:
+    cmd: claude plugin marketplace add https://github.com/JuliusBrussee/caveman
+  environment:
+    PATH: "{{ lookup('env', 'HOME') }}/.local/bin:{{ lookup('env', 'PATH') }}"
+  when: caveman_plugins.rc == 0 and not caveman_marketplace.stat.exists
+  changed_when: true
+
+# Guarded on presence, deliberately not on enabled-state: install enables
+# the plugin, and if the user later turns it off (`claude plugin disable
+# caveman`, or "normal mode" in a session), re-enabling on every run would
+# fight that — the same reasoning as the Toolbox autostart entry.
+- name: Install and enable the caveman plugin
+  ansible.builtin.command:
+    cmd: claude plugin install caveman@caveman
+  environment:
+    PATH: "{{ lookup('env', 'HOME') }}/.local/bin:{{ lookup('env', 'PATH') }}"
+  when: caveman_plugins.rc == 0 and 'caveman@caveman' not in caveman_plugins.stdout
+  changed_when: true

@@ -184,22 +184,19 @@ itself up to date from then on. Entirely user-level, no sudo.
 [Claude Code](https://code.claude.com/docs) via Anthropic's native
 installer: the launcher lands at `~/.local/bin/claude` (on PATH via the
 zshrc from the zsh role) and self-updates from then on. Run `claude` once
-to sign in.
-
-### caveman
-
-[Caveman](https://github.com/JuliusBrussee/caveman), a Claude Code plugin
-that compresses agent output (~65% fewer tokens) while keeping code,
-commands, and errors verbatim. Installed from its plugin marketplace and
-active automatically from the first message; switch compression with
-`/caveman [lite|full|ultra]`, or disable with `claude plugin disable
+to sign in. Also installs the
+[caveman](https://github.com/JuliusBrussee/caveman) plugin — compresses
+agent output (~65% fewer tokens) while keeping code, commands, and errors
+verbatim, active automatically from the first message. Switch compression
+with `/caveman [lite|full|ultra]`, or disable with `claude plugin disable
 caveman` — the role won't re-enable a plugin you turned off.
 
 ### podman
 
 Podman over Docker, deliberately: Fedora-native, daemonless, rootless by
 default (no root-equivalent `docker` group). `podman-docker` keeps the
-`docker` CLI working (nag silenced via `/etc/containers/nodocker`), and the
+`docker` CLI working (nag silenced via `/etc/containers/nodocker`),
+`podman-tui` gives a terminal dashboard (containers/images/pods), and the
 user API socket is enabled for docker-API tools — compose and
 testcontainers mostly auto-detect it; if one doesn't, point it at
 `DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock`.
