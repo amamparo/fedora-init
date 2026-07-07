@@ -6,3 +6,7 @@ ZSH_THEME="robbyrussell"
 plugins=(git)
 
 source "$ZSH/oh-my-zsh.sh"
+
+# mise: runtime versions (node/python/java) — hooks cd to apply per-project
+# pins. Guarded so the shell works before the mise role has run.
+command -v mise >/dev/null && eval "$(mise activate zsh)"

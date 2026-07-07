@@ -1,0 +1,33 @@
+---
+# mise (mise.jdx.dev): one runtime version manager instead of
+# pyenv + nvm + jenv — installs AND pins python, node, and JDKs (jenv never
+# even installed JDKs) per project or globally, reads existing
+# .nvmrc/.python-version files, and activates through a single zshrc hook
+# with none of nvm's shell-startup drag: PATH manipulation, no shims.
+#
+# From mise's official rpm repo (files/mise.repo, fetched verbatim — note
+# the vendor serves the repo from mise.en.dev while docs live at
+# mise.jdx.dev; both endpoints verified live). The shell hook is in
+# roles/zsh/files/zshrc, guarded on the binary existing. Runtimes are
+# deliberately NOT provisioned here — they're per-project decisions:
+#   mise use -g node@lts python@3.13 java@temurin-21   # globals
+#   mise use node@22                                   # this project only
+
+- name: Install mise rpm repo file
+  become: true
+  ansible.builtin.copy:
+    src: mise.repo
+    dest: /etc/yum.repos.d/mise.repo
+    owner: root
+    group: root
+    mode: "0644"
+  register: mise_repo
+
+- name: Install mise
+  become: true
+  ansible.builtin.dnf5:
+    name: mise
+    state: present
+  when:
+    - "'mise' not in ansible_facts.packages"
+    - not (ansible_check_mode and mise_repo is changed)

@@ -204,6 +204,22 @@ user API socket is enabled for docker-API tools — compose and
 testcontainers mostly auto-detect it; if one doesn't, point it at
 `DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock`.
 
+### tailscale
+
+[Tailscale](https://tailscale.com) from its official repo, daemon enabled
+at boot. Login is a browser flow no script can do: run `sudo tailscale up`
+once — the role reminds you for as long as that's pending.
+
+### mise
+
+[mise](https://mise.jdx.dev) instead of pyenv + nvm + jenv: one manager
+that installs *and* pins python, node, and JDKs (jenv never installed
+anything) per project or globally, reads existing
+`.nvmrc`/`.python-version` files, and hooks the shell once from the zshrc —
+no shims, none of nvm's startup drag. Get runtimes with
+`mise use -g node@lts python@3.13 java@temurin-21`, or drop the `-g` inside
+a project.
+
 ## Adding a role
 
 Drop `roles/<name>/` with a `tasks/main.yml` and add it to `site.yml` —
