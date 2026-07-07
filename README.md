@@ -224,6 +224,9 @@ roles run in the order listed there, tagged with the role name
 (underscores become hyphens). Conventions, in brief (CLAUDE.md has the full
 contributor rules):
 
+- one concern per role, and add-ons live in their host's role (the caveman
+  plugin is part of claude-code, podman-tui part of podman) — new role only
+  for a new standalone concern
 - declarative modules over shell; every remaining command guarded and
   `changed_when`-honest, so `./install.sh --check` stays truthful
 - package tasks guarded on `ansible_facts.packages` — an unchanged re-run
