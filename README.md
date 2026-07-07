@@ -120,7 +120,12 @@ video) and `ffmpeg`. Verify afterwards with
 
 Brave browser from its official repo (gpg-verified), set as the default
 browser (declaratively, via mime handlers), and every other browser removed —
-Fedora's stock Firefox, plus chromium/epiphany/chrome if present.
+Fedora's stock Firefox, plus chromium/epiphany/chrome if present. Also
+force-installs PWAs via browser policy (Tidal, YouTube TV, tastytrade):
+real apps — own windows, icons, launcher entries — appearing after the
+next Brave launch. Edit the list in `roles/brave/files/policies.json`;
+while an app is listed it can't be uninstalled from Brave's UI, only by
+removing it there.
 
 ### gnome-prefs
 

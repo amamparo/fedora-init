@@ -29,6 +29,22 @@
     - "'brave-browser' not in ansible_facts.packages"
     - not (ansible_check_mode and brave_repo is changed)
 
+# PWAs (Tidal, YouTube TV, tastytrade) via Chromium's WebAppInstallForceList
+# policy — the declarative way to install web apps: Brave reads
+# /etc/brave/policies/managed/*.json at startup (path verified in the brave
+# binary itself) and force-installs each app, manifest icons and desktop
+# entries included, on the next launch (needs network then). Trade-off:
+# while listed here they show as admin-installed and can't be removed from
+# the Brave UI — uninstall by removing the entry and re-running.
+- name: Install Brave PWA policy (Tidal, YouTube TV, tastytrade)
+  become: true
+  ansible.builtin.copy:
+    src: policies.json
+    dest: /etc/brave/policies/managed/fedora-init.json
+    owner: root
+    group: root
+    mode: "0644"
+
 # Default browser for the desktop user — no become here. The old module's
 # xdg-settings under sudo would have written root's ~/.config/mimeapps.list
 # instead of the user's; xdg_mime is the same trap. This is the declarative

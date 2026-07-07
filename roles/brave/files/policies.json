@@ -1,0 +1,7 @@
+{
+  "WebAppInstallForceList": [
+    { "url": "https://listen.tidal.com", "default_launch_container": "window", "create_desktop_shortcut": true },
+    { "url": "https://tv.youtube.com", "default_launch_container": "window", "create_desktop_shortcut": true },
+    { "url": "https://my.tastytrade.com", "default_launch_container": "window", "create_desktop_shortcut": true }
+  ]
+}
