@@ -178,6 +178,15 @@ installer: the launcher lands at `~/.local/bin/claude` (on PATH via the
 zshrc from the zsh role) and self-updates from then on. Run `claude` once
 to sign in.
 
+### caveman
+
+[Caveman](https://github.com/JuliusBrussee/caveman), a Claude Code plugin
+that compresses agent output (~65% fewer tokens) while keeping code,
+commands, and errors verbatim. Installed from its plugin marketplace and
+active automatically from the first message; switch compression with
+`/caveman [lite|full|ultra]`, or disable with `claude plugin disable
+caveman` — the role won't re-enable a plugin you turned off.
+
 ## Adding a role
 
 Drop `roles/<name>/` with a `tasks/main.yml` and add it to `site.yml` —

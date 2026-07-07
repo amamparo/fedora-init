@@ -58,3 +58,5 @@
       tags: jetbrains-toolbox
     - role: claude_code
       tags: claude-code
+    - role: caveman
+      tags: caveman
