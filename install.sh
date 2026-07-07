@@ -108,12 +108,19 @@ done
 args=(--diff)
 ((${#tags[@]})) && args+=(--tags "$(IFS=,; echo "${tags[*]}")")
 
-# The become password rides a /dev/fd pipe — never argv, env, or disk. An
-# empty password (NOPASSWD sudo) is omitted entirely: ansible refuses an
-# empty password file, and passwordless sudo needs none.
+# The become password goes to ansible in a 0600 file on /tmp (tmpfs on
+# Fedora Workstation, so memory-backed), removed on exit — never argv or
+# env. Not a /dev/fd process substitution: ansible canonicalizes the path
+# (unfrackpath) before opening it, which resolves an fd symlink to the
+# pseudo-name "pipe:[inode]" and dies with "password file not found". An
+# empty password (passwordless sudo) omits the flag entirely: ansible
+# refuses an empty password file.
 if [[ -n $SUDO_PW ]]; then
+    pwfile="$(mktemp)"  # mktemp creates 0600
+    trap 'rm -f "$pwfile"' EXIT
+    printf '%s\n' "$SUDO_PW" > "$pwfile"
     ansible-playbook site.yml "${args[@]}" "${passthru[@]}" \
-        --become-password-file <(printf '%s\n' "$SUDO_PW")
+        --become-password-file "$pwfile"
 else
     ansible-playbook site.yml "${args[@]}" "${passthru[@]}"
 fi
