@@ -195,6 +195,15 @@ active automatically from the first message; switch compression with
 `/caveman [lite|full|ultra]`, or disable with `claude plugin disable
 caveman` — the role won't re-enable a plugin you turned off.
 
+### podman
+
+Podman over Docker, deliberately: Fedora-native, daemonless, rootless by
+default (no root-equivalent `docker` group). `podman-docker` keeps the
+`docker` CLI working (nag silenced via `/etc/containers/nodocker`), and the
+user API socket is enabled for docker-API tools — compose and
+testcontainers mostly auto-detect it; if one doesn't, point it at
+`DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock`.
+
 ## Adding a role
 
 Drop `roles/<name>/` with a `tasks/main.yml` and add it to `site.yml` —

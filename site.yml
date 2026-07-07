@@ -62,3 +62,5 @@
       tags: claude-code
     - role: caveman
       tags: caveman
+    - role: podman
+      tags: podman

@@ -1,0 +1,48 @@
+---
+# Podman as the container runtime — chosen over Docker deliberately:
+# Fedora-native packages, daemonless, rootless by default (no docker group,
+# which is root-equivalent), quadlet/systemd integration. podman-docker
+# provides the /usr/bin/docker CLI shim and the docker-compatible API, so
+# docker muscle memory and most tooling keep working. Rootless subuid/subgid
+# ranges are already set up by Fedora's user creation — nothing to manage.
+
+# Guarded on package_facts (the play's pre_task) so a converged re-run does
+# zero network work. podman itself ships with Workstation, but guard both:
+# a minimal install may lack it.
+- name: Install podman and the docker CLI shim
+  ansible.builtin.dnf5:
+    name:
+      - podman
+      - podman-docker
+    state: present
+  become: true
+  when: >-
+    'podman' not in ansible_facts.packages
+    or 'podman-docker' not in ansible_facts.packages
+
+# The shim prints a "Emulate Docker CLI using podman" nag on every docker
+# invocation until this marker file exists. state: touch with preserved
+# times is the idempotent-touch pattern — reports ok when the file already
+# exists instead of bumping its mtime every run.
+- name: Silence the docker-shim nag (/etc/containers/nodocker)
+  ansible.builtin.file:
+    path: /etc/containers/nodocker
+    state: touch
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve
+  become: true
+
+# The user-scope API socket is what docker-API tools (compose,
+# testcontainers) talk to: unix:///run/user/<uid>/podman/podman.sock, most
+# auto-detect it. scope: user rides the session bus — NO become, the same
+# rule as dconf. The check-mode clause: systemd_service fails on units that
+# don't exist even under --check (the battery-role gotcha), and on a fresh
+# --check the install above was only simulated.
+- name: Enable and start the user podman API socket
+  ansible.builtin.systemd_service:
+    name: podman.socket
+    scope: user
+    enabled: true
+    state: started
+  when: not ansible_check_mode or 'podman' in ansible_facts.packages
