@@ -1,0 +1,81 @@
+---
+# Git workspace: a GitHub-ready ed25519 SSH key, the ~/git checkout dir,
+# and a Files (Nautilus) sidebar bookmark for it. All user-level — no
+# become anywhere.
+
+- name: Ensure ~/.ssh exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.ssh"
+    state: directory
+    mode: "0700"
+
+# ed25519 is GitHub's recommended key type. No passphrase, deliberately —
+# the same trade-off as the blanked login keyring: under LUKS full-disk
+# encryption, offline access is already gated by the disk password, and a
+# passphrase would reintroduce per-use prompts. creates: makes this
+# presence-guarded: NEVER regenerate an existing key (it may be enrolled
+# with GitHub; a silent replacement would break every remote).
+- name: Generate a GitHub-ready ed25519 SSH key
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -t
+      - ed25519
+      - -N
+      - ""
+      - -C
+      - aaronmamparo@gmail.com
+      - -q
+      - -f
+      - "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519"
+    creates: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519"
+  register: git_workspace_keygen
+
+# GitHub can't be enrolled from here — surface the public key and where to
+# paste it, but only when the key was just made (not ansible_check_mode:
+# under --check on a fresh machine the key doesn't exist to read).
+- name: Show the new public key to enroll at GitHub
+  ansible.builtin.debug:
+    msg:
+      - "New SSH key — add it at https://github.com/settings/keys:"
+      - "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/id_ed25519.pub') }}"
+  when: git_workspace_keygen is changed and not ansible_check_mode
+
+- name: Ensure ~/git exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/git"
+    state: directory
+    mode: "0755"
+
+# Existence only — no mode: Nautilus creates this dir itself (0700 here);
+# managing perms on a dir other software owns rewrites them on every
+# machine where they differ.
+- name: Ensure the GTK bookmarks dir exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/gtk-3.0"
+    state: directory
+
+# Nautilus (GTK4 included) still reads ~/.config/gtk-3.0/bookmarks; format
+# is "URI [label]" per line, picked up live — no logout needed. Probe for
+# the URI rather than lineinfile-with-regexp: a regexp rewrite would reset
+# a label the user renamed in Files, the same fighting-the-user trap as the
+# Toolbox autostart entry.
+- name: Probe for the ~/git bookmark
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -E
+      - "^file://{{ lookup('env', 'HOME') }}/git( |$)"
+      - "{{ lookup('env', 'HOME') }}/.config/gtk-3.0/bookmarks"
+  register: git_workspace_bookmark
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Bookmark ~/git in the Files sidebar
+  ansible.builtin.lineinfile:
+    path: "{{ lookup('env', 'HOME') }}/.config/gtk-3.0/bookmarks"
+    line: "file://{{ lookup('env', 'HOME') }}/git git"
+    create: true
+    mode: "0644"
+  when: git_workspace_bookmark.rc != 0

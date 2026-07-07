@@ -42,6 +42,8 @@
       tags: window-snapping
     - role: zsh
       tags: zsh
+    - role: git_workspace
+      tags: git-workspace
     - role: multimedia
       tags: multimedia
     - role: brave

@@ -100,6 +100,14 @@ auto-updated afterwards), drops in `roles/zsh/files/zshrc` (robbyrussell
 theme, `plugins=(git)` only), and makes zsh the login shell. A pre-existing
 `~/.zshrc` that differs is backed up once to `~/.zshrc.pre-fedora-init`.
 
+### git-workspace
+
+GitHub-ready ed25519 SSH key (no passphrase — same LUKS trade-off as
+login-keyring; never regenerates an existing key, and prints the public
+key + [github.com/settings/keys](https://github.com/settings/keys) when it
+makes one), a `~/git` checkout dir, and a Files sidebar bookmark for it
+(label yours however you like — the role won't rename it back).
+
 ### multimedia
 
 RPM Fusion (free + nonfree), then swaps stock Fedora's codec-stripped
