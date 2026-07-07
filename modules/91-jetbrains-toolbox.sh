@@ -8,16 +8,22 @@
 # for terms/sign-in. Entirely user-level: no sudo, and no FUSE — that was
 # the pre-2.6.2 AppImage era; the 3.x bundle needs only glibc.
 #
-# Toolbox self-updates in place, so the installed launcher's presence is the
-# terminal state: re-runs make no network calls, and no version pinning.
-# Never run the installer under sudo — it derives the target home from
-# getpwuid(), ignoring $HOME, and would install into root's home.
+# Toolbox self-updates in place, so once the launcher and its desktop entry
+# exist the module is done: re-runs make no network calls, no version
+# pinning. Never run the installer under sudo — it derives the target home
+# from getpwuid(), ignoring $HOME, and would install into root's home.
 #
 set -euo pipefail
 
 TOOLBOX_BIN="$HOME/.local/share/JetBrains/Toolbox/bin/jetbrains-toolbox"
+# Probed alongside the binary: --install's background child writes it seconds
+# after the foreground exits, so a reboot in that window leaves the binary
+# present with no desktop integration — a half-install the re-run must redo.
+# The applications entry, not the autostart one: users may legitimately turn
+# "launch at login" off, and re-installing would fight that.
+TOOLBOX_DESKTOP="$HOME/.local/share/applications/jetbrains-toolbox.desktop"
 
-if [[ ! -x "$TOOLBOX_BIN" ]]; then
+if [[ ! -x "$TOOLBOX_BIN" || ! -f "$TOOLBOX_DESKTOP" ]]; then
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
 
