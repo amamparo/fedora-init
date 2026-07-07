@@ -1,7 +1,8 @@
 # fedora-init
 
-Idempotent setup for a fresh Fedora Workstation (GNOME) install. Tested
-against Fedora 44 / GNOME 50; the extensions also work back to GNOME 48.
+Idempotent setup for a fresh Fedora Workstation (GNOME) install, as a local
+Ansible playbook. Tested against Fedora 44 / GNOME 50; the bundled shell
+extensions also work back to GNOME 48.
 
 ## Run it
 
@@ -12,12 +13,25 @@ preinstalled:
 curl -fsSL https://raw.githubusercontent.com/amamparo/fedora-init/main/install.sh | bash
 ```
 
-The script fetches the repo tarball into a temp dir itself, so nothing is
-left behind. Then **log out and back in** (Wayland can't hot-reload GNOME
-Shell).
+The script fetches the repo tarball into a temp dir, installs its own
+toolchain (ansible-core and friends, ~6 small distro rpms — that's the only
+thing it does before Ansible takes over), asks for your sudo password once,
+and runs the playbook. Then **log out and back in** (Wayland can't
+hot-reload GNOME Shell).
 
-Re-run a single module by substring: `./install.sh battery` — or without a
-checkout, append `-s battery` after `bash` in the one-liner.
+Run a subset of roles by substring: `./install.sh battery zsh` — or without
+a checkout, append `-s battery` after `bash` in the one-liner.
+
+Prove idempotency instead of trusting it:
+
+```sh
+./install.sh --check        # dry run: shows what would change, changes nothing
+```
+
+On a converged machine that prints every task `ok` or `skipped` with zero
+diffs, zero network traffic, and no prompts beyond sudo. Any dash-prefixed
+argument (`--check`, `--tags`, `-v`...) passes straight through to
+`ansible-playbook`.
 
 Hacking on it? Clone instead:
 
@@ -27,13 +41,16 @@ git clone https://github.com/amamparo/fedora-init.git && cd fedora-init
 ./install.sh
 ```
 
-## Modules
+## Roles
 
-### 10-battery
+Each role is one concern, run in order; the tag (= role name with hyphens)
+is what `./install.sh <substring>` matches against.
+
+### battery
 
 Swaps Fedora's default power stack (`tuned` + `tuned-ppd`) for **TLP**, which
 tunes far more hardware knobs out of the box — this is most of the
-"Ubuntu-gets-better-battery" gap. Also drops `files/tlp/00-battery.conf` into
+"Ubuntu-gets-better-battery" gap. Also drops a config overlay into
 `/etc/tlp.d/`:
 
 - PCIe ASPM `powersupersave` + CPU EPP `power` on battery
@@ -41,17 +58,16 @@ tunes far more hardware knobs out of the box — this is most of the
   (`sudo tlp fullcharge` for a one-off 100% before travel)
 
 `powertop` is installed purely as a *measurement* tool (`sudo powertop`) —
-TLP already applies equivalent tunings, so no autotune service.
+TLP already applies equivalent tunings, so no autotune service. GNOME's
+power-mode toggle keeps working: **tlp-pd** serves the power-profiles D-Bus
+API with TLP as the backend. Verify with `sudo tlp-stat -s`.
 
-GNOME's power-mode toggle keeps working: **tlp-pd** serves the
-power-profiles D-Bus API with TLP as the backend (and TLP still switches
-profiles automatically on AC/battery).
-
-### 20-window-snapping
+### window-snapping
 
 Installs the bundled GNOME Shell extension
-`files/gnome/rectangle@amamparo/` (~120 lines, no third-party deps) and one
-native keybinding. "Cmd" on a PC keyboard is the **Super** (Windows) key.
+`roles/window_snapping/files/rectangle@amamparo/` (~120 lines, no
+third-party deps) and one native keybinding. "Cmd" on a PC keyboard is the
+**Super** (Windows) key.
 
 | Keys                | Action                                          |
 |---------------------|-------------------------------------------------|
@@ -63,72 +79,66 @@ native keybinding. "Cmd" on a PC keyboard is the **Super** (Windows) key.
 
 GNOME's stock bindings collide with **all four** tiling keys
 (`shift-overview-up/down` and `switch-to-workspace-left/right` both default
-to Super+Alt+arrows), so the module clears the overview pair and moves
+to Super+Alt+arrows), so the role clears the overview pair and moves
 workspace switching to Super+Alt+PageUp/PageDown.
 
 The arrows also snap straight out of a maximized (or fullscreen) window —
-Super+Alt+F then Super+Alt+← goes directly to the left half, no need to
-un-maximize first.
+Super+Alt+F then Super+Alt+← goes directly to the left half. Maximize fills
+the work area but keeps the top bar, and Alt+F10 (its stock binding) still
+works. Prefer true fullscreen? See the comment in
+`roles/window_snapping/tasks/main.yml`.
 
-Maximize fills the work area but keeps the top bar, and Alt+F10 (its stock
-binding) still works. Prefer true fullscreen? In
-`modules/20-window-snapping.sh`, set `toggle-fullscreen` to
-`['<Super><Alt>f']` alone — leave Alt+F10 out — and point the `gsettings
-reset` line at `toggle-maximized` (which gives Alt+F10 back to maximize).
-Rebind the arrows via the `as` keys in the extension's gschema.
+### zsh
 
-### 30-zsh
+Installs zsh + [oh-my-zsh](https://ohmyz.sh) (shallow git clone, never
+auto-updated afterwards), drops in `roles/zsh/files/zshrc` (robbyrussell
+theme, `plugins=(git)` only), and makes zsh the login shell. A pre-existing
+`~/.zshrc` that differs is backed up once to `~/.zshrc.pre-fedora-init`.
 
-Installs zsh + [oh-my-zsh](https://ohmyz.sh) (shallow git clone — all the
-official installer does anyway, but a failed download aborts loudly), drops
-in `files/zsh/zshrc` (robbyrussell theme, `plugins=(git)` only), and makes
-zsh the login shell via `usermod`. A pre-existing `~/.zshrc` that differs is
-backed up to `~/.zshrc.pre-fedora-init`.
-
-### 40-multimedia
+### multimedia
 
 RPM Fusion (free + nonfree), then swaps stock Fedora's codec-stripped
 packages for full builds: `intel-media-driver` (H.264/HEVC hardware decode
 on this Intel Lunar Lake ThinkPad — stock has none, which drains battery on
-video) and `ffmpeg`. Verify afterwards with `vainfo` (from `libva-utils`).
+video) and `ffmpeg`. Verify afterwards with
+`sudo dnf install libva-utils && vainfo | grep -E 'H264|HEVC'`.
 
-### 50-brave
+### brave
 
-Brave browser from its official repo (`files/brave/brave-browser.repo`,
-gpg-verified), set as the default browser, and every other browser removed —
+Brave browser from its official repo (gpg-verified), set as the default
+browser (declaratively, via mime handlers), and every other browser removed —
 Fedora's stock Firefox, plus chromium/epiphany/chrome if present.
 
-### 60-gnome-prefs
+### gnome-prefs
 
 The handful of desktop settings that differ from stock: dark mode, battery
 percentage, minimize/maximize window buttons, empty dock, touchpad speed,
 100% display scale (Fedora defaults to 125%; applied via mutter's D-Bus API
 since Displays ▸ Scale isn't a gsettings key — laptop panel only, so run it
 undocked or set docked layouts in Settings), and the Ptyxis Moonfly palette
-(applied on re-run if Ptyxis hasn't launched yet). Runs as the desktop user
-— no sudo.
+(Ptyxis has to have launched once; re-run the role later on a fresh
+install). Runs as the desktop user — no privilege escalation.
 
-### 70-no-overview
+### no-overview
 
 GNOME opens the Activities overview at every login and has no setting to
-turn that off. Installs the second bundled micro-extension,
-`files/gnome/no-overview@amamparo/` (~10 lines), which hides the overview
-the moment session startup completes, so logins land on the desktop. On
-GNOME 50 the overview still *flashes* briefly — the shell now starts its
-login animation before extensions load, so hiding it is the best any
-extension can do.
+turn that off. Installs the second bundled micro-extension
+(`roles/no_overview/files/no-overview@amamparo/`, ~10 lines), which hides
+the overview the moment session startup completes, so logins land on the
+desktop. On GNOME 50 the overview still *flashes* briefly — the shell
+starts its login animation before extensions load, so hiding it is the
+best any extension can do.
 
-### 80-login-keyring
+### login-keyring
 
 Kills the "login keyring did not get unlocked" prompt that appears after a
 fingerprint login — while keeping fingerprint login. The keyring is
 encrypted with your *password*, and a fingerprint match can't stand in for
 it (the sensor yields a yes/no, not key material), so the prompt fires as
-soon as anything needs a secret (Brave, Google accounts). The module
-therefore removes the login keyring's password (it asks for your login
-password once to authorize the change): the keyring then auto-unlocks on
-every login — fingerprint, password, or auto-login — and never prompts
-again.
+soon as anything needs a secret (Brave, Google accounts). The role
+therefore removes the login keyring's password — it asks for your login
+password once, and only when the keyring actually needs blanking: the
+keyring then auto-unlocks on every login and never prompts again.
 
 The trade-off, made deliberately: keyring contents (Brave's cookie/password
 key, account tokens) are stored unencrypted in `~/.local/share/keyrings`.
@@ -136,19 +146,19 @@ With LUKS full-disk encryption that changes little in practice — offline
 access is already gated by the disk password, and anything running as you
 could read the secrets through the unlocked keyring anyway.
 
-The module also removes the greeter password-only config an earlier
-revision installed, restoring fingerprint at the login screen. If it
-reports your password doesn't match the keyring, the account password was
-changed outside PAM at some point — re-run with the old password, or reset
-the keyring in Seahorse (`sudo dnf install seahorse`).
+The role also removes the greeter password-only config an earlier revision
+installed, restoring fingerprint at the login screen. If it reports your
+password doesn't match the keyring, the account password was changed
+outside PAM at some point — re-run with the old password, or reset the
+keyring in Seahorse (`sudo dnf install seahorse`).
 
-### 90-vscode
+### vscode
 
 VS Code from [Microsoft's official repo](https://code.visualstudio.com/docs/setup/linux)
-(`files/vscode/vscode.repo`, the documented content verbatim, gpg-verified).
-Updates then arrive with normal `dnf upgrade`.
+(`roles/vscode/files/vscode.repo`, the documented content verbatim,
+gpg-verified). Updates then arrive with normal `dnf upgrade`.
 
-### 91-jetbrains-toolbox
+### jetbrains-toolbox
 
 [JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/) from the
 official tarball (sha256-verified — JetBrains ships no rpm), installed
@@ -156,20 +166,25 @@ headlessly into `~/.local/share/JetBrains/Toolbox`. The Toolbox window
 opens at the next login to sign in and install IDEs, and the app keeps
 itself up to date from then on. Entirely user-level, no sudo.
 
-### 92-claude-code
+### claude-code
 
 [Claude Code](https://code.claude.com/docs) via Anthropic's native
 installer: the launcher lands at `~/.local/bin/claude` (on PATH via the
-zshrc from 30-zsh) and self-updates from then on. Run `claude` once to
-sign in.
+zshrc from the zsh role) and self-updates from then on. Run `claude` once
+to sign in.
 
-## Adding a module
+## Adding a role
 
-Drop `modules/NN-name.sh` — modules run in filename order. Conventions:
+Drop `roles/<name>/` with a `tasks/main.yml` and add it to `site.yml` —
+roles run in the order listed there, tagged with the role name
+(underscores become hyphens). Conventions, in brief (CLAUDE.md has the full
+contributor rules):
 
-- `set -euo pipefail`, idempotent — safe to re-run, and guarded (`rpm -q`,
-  `cmp -s`) so an unchanged re-run is a fast no-op
-- static assets live under `files/<name>/`, referenced via `$REPO_ROOT`
-  (exported by `install.sh`; each module also derives its own fallback so it
-  can run standalone)
-- call `sudo` per command; `install.sh` primes the password once
+- declarative modules over shell; every remaining command guarded and
+  `changed_when`-honest, so `./install.sh --check` stays truthful
+- package tasks guarded on `ansible_facts.packages` — an unchanged re-run
+  must do zero network work
+- `become: true` per task, only for system mutations; anything touching the
+  user session (dconf, `$HOME`, session D-Bus) runs as the user
+- static assets live in `roles/<name>/files/`
+- lint with `ansible-lint --offline` before committing

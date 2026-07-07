@@ -1,0 +1,11 @@
+---
+# The bash module ran `tlp start` unconditionally at the end of every run.
+# As a handler it fires only when the TLP stack or its config actually
+# changed — same effect (apply the new settings now rather than at the next
+# boot/AC transition), but converged re-runs stay quiet. Runs at end of play,
+# which is fine: it only re-reads /etc/tlp.d and pokes sysfs.
+- name: tlp start
+  become: true
+  ansible.builtin.command:
+    cmd: tlp start
+  changed_when: true

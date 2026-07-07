@@ -1,0 +1,76 @@
+# Shared install-a-bundled-GNOME-extension steps. Callers include this with:
+#   ext_uuid:        extension uuid, e.g. rectangle@amamparo
+#   ext_role:        role whose files/ holds the extension source
+#   ext_has_schemas: whether schemas/ exists and needs glib-compile-schemas
+#
+# Wayland can't hot-reload GNOME Shell: changes take effect at next login.
+
+# rsync creates only the final path component; on a fresh account the whole
+# ~/.local/share/gnome-shell/extensions/ chain may be missing (the bash
+# modules had mkdir -p).
+- name: Ensure the user extension dir exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/gnome-shell/extensions"
+    state: directory
+    mode: "0755"
+
+# Mirror semantics matter: files deleted from the repo copy must disappear
+# from the installed copy too, which plain copy can't do. synchronize is the
+# one stock module with real mirroring AND a true rsync --dry-run in check
+# mode. The rsync_opts are load-bearing for convergence:
+#   --exclude=gschemas.compiled  it exists only in the installed copy;
+#                                without this, delete would remove it every
+#                                run and re-runs would never converge
+#   --checksum                   compare by content, not mtime/size — repo
+#                                checkouts and curl|bash tarballs carry
+#                                different mtimes for identical files
+#   --omit-dir-times             glib-compile-schemas rewrites schemas/
+#                                (tmp+rename) bumping the dir mtime, which
+#                                would otherwise re-report changed — and
+#                                re-compile — forever
+- name: "Mirror into the user extension dir: {{ ext_uuid }}"
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/roles/{{ ext_role }}/files/{{ ext_uuid }}/"
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/gnome-shell/extensions/{{ ext_uuid }}/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--exclude=gschemas.compiled"
+      - "--checksum"
+      - "--omit-dir-times"
+  register: ext_sync
+
+- name: "Compile settings schemas for {{ ext_uuid }}"
+  ansible.builtin.command:
+    cmd: >-
+      glib-compile-schemas
+      {{ lookup('env', 'HOME') }}/.local/share/gnome-shell/extensions/{{ ext_uuid }}/schemas
+  when: ext_has_schemas and ext_sync is changed
+  changed_when: true
+
+# Enablement is ADDITIVE, like the bash modules' `gnome-extensions enable`:
+# the repo's extensions (gnome_extensions_enabled in site.yml) are merged
+# into the current list, never overwriting it — a plain write of the repo
+# list would silently disable Fedora's vendor-default extensions
+# (background-logo) and anything the user enabled by hand. The probe reads
+# the EFFECTIVE value via gsettings, not `dconf read`: vendor defaults live
+# in gschema overrides, invisible in the user dconf db until first written.
+- name: Read the effective enabled-extensions list
+  ansible.builtin.command:
+    cmd: gsettings get org.gnome.shell enabled-extensions
+  register: ext_enabled_probe
+  changed_when: false
+  check_mode: false
+
+# regex_findall pulls the quoted uuids out of the GVariant text ("@as []"
+# when empty), and python's list repr is valid GVariant for a string array.
+# The dconf module read-compares first, so once the key holds the merged
+# list re-runs report ok. This races the running shell in theory (last
+# writer wins), but so did the bash fallback path.
+- name: Enable the repo's GNOME extensions
+  community.general.dconf:
+    key: /org/gnome/shell/enabled-extensions
+    value: >-
+      {{ (ext_enabled_probe.stdout | regex_findall("'([^']+)'") + gnome_extensions_enabled)
+         | unique | list | string }}
+    state: present

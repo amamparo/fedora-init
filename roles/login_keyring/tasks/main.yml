@@ -1,0 +1,118 @@
+---
+# Login keyring: keep fingerprint login AND kill the "login keyring did not
+# get unlocked" prompt — by removing the keyring's password. A fingerprint
+# can never *unlock* the keyring (its encryption key is derived from the
+# login password; a sensor match yields no key material), so instead the
+# login keyring is blanked: gnome-keyring then stores it in plaintext and
+# auto-unlocks it on every login, fingerprint or otherwise. The trade-off:
+# secrets (Brave's Safe Storage key, account tokens) rest unencrypted in
+# ~/.local/share/keyrings — acceptable under LUKS full-disk encryption,
+# which already gates offline access to the same files.
+#
+# The blanking itself lives in library/login_keyring.py: gnome-keyring's
+# org.gnome.keyring.InternalUnsupportedGuiltRiddenInterface
+# (ChangeWithMasterPassword — internal but stable; gnome-initial-setup
+# relies on it), which needs the *current* keyring password once — hence the
+# gated prompt below. The daemon lives on the session bus and the keyring
+# file in $HOME, so everything here runs as the desktop user: NO become
+# anywhere except the /etc greeter-drop-in cleanup at the end.
+
+# State detection needs no D-Bus: a blank-password keyring is a *plaintext*
+# keyfile beginning "[keyring]"; an encrypted one is binary beginning
+# "GnomeKeyring". gather_facts is off, so $HOME comes from the env lookup,
+# not ansible_env.
+- name: Check whether the login keyring exists
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/keyrings/login.keyring"
+  register: login_keyring_stat
+
+# Read-only probe: changed_when/check_mode keep it running (and honest)
+# under --check so keyring_state stays truthful below; failed_when covers
+# the file vanishing between the stat and the read.
+- name: Read the login keyring's file magic
+  ansible.builtin.command:
+    argv:
+      - head
+      - -c
+      - "9"
+      - "{{ lookup('env', 'HOME') }}/.local/share/keyrings/login.keyring"
+  when: login_keyring_stat.stat.exists
+  register: login_keyring_magic
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# absent → log in once (GNOME only creates the login keyring at a password
+# login); blank → nothing to do; encrypted → prompt and blank it.
+- name: Classify the login keyring state
+  ansible.builtin.set_fact:
+    keyring_state: >-
+      {{ 'absent' if not login_keyring_stat.stat.exists
+         else 'blank' if login_keyring_magic.stdout | default('') == '[keyring]'
+         else 'encrypted' }}
+
+- name: Report that there is no login keyring to blank yet
+  ansible.builtin.debug:
+    msg: "No login keyring yet — log in once with your password, then re-run this role."
+  when: keyring_state == 'absent'
+
+# A *gated* pause, not vars_prompt: vars_prompt fires unconditionally at
+# play start, so converged re-runs (and every --check) would demand a
+# password nothing needs. Skipped in check mode too — the module below can
+# report would-change from the file magic alone. echo keeps the password
+# off the screen and no_log keeps the registered result out of -v output;
+# install.sh reattaches stdin to /dev/tty under the curl|bash bootstrap so
+# this prompt can read the terminal (the old bash module read /dev/tty
+# itself). pause renders the prompt with its own trailing colon.
+- name: Prompt for the login password
+  ansible.builtin.pause:
+    prompt: "Login password (removes the keyring's password so fingerprint logins stop prompting)"
+    echo: false
+  register: login_keyring_password
+  no_log: true
+  when: keyring_state == 'encrypted' and not ansible_check_mode
+
+# Session bus: no become — under root the daemon isn't reachable and the
+# keyring isn't ours. The password travels as a no_log module arg over the
+# local connection's stdin pipe — never argv (visible in ps), never the
+# process environment (the old bash module's channel). In check mode the
+# pause above was skipped, so the password is omitted and the module only
+# reads the file magic. On a wrong password the module fails with the
+# "reset the keyring in Seahorse" message and changes nothing — the same
+# hard stop as the old exit 1.
+- name: Remove the login keyring's password (blank it)
+  login_keyring:
+    password: "{{ login_keyring_password.user_input | default(omit) }}"
+  register: login_keyring_blank
+  when: keyring_state == 'encrypted'
+
+# An earlier revision instead forced the GDM greeter to password-only;
+# those drop-ins are removed here so fingerprint login comes back — but
+# only once the keyring is confirmed blank (the probe said so, or the
+# module just blanked it), so a failed blanking never resurrects the
+# unlock prompt: password login still unlocks an encrypted keyring via
+# PAM, fingerprint login never can.
+- name: Retire the earlier greeter password-only drop-ins
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/dconf/db/gdm.d/10-disable-fingerprint-login
+    - /etc/dconf/db/gdm.d/locks/10-disable-fingerprint-login
+  when: keyring_state == 'blank' or login_keyring_blank.keyring | default('') == 'blank'
+  register: greeter_dropins
+
+# Immediately, not as a handler: a handler flushes at end of play, and if a
+# later role failed after the drop-ins were deleted the compiled gdm
+# database would keep the fingerprint-disable keys with nothing left on
+# disk for a re-run to notice — an unhealable half-state. `is changed`
+# reproduces the old removed=1 flag (and is skip-safe when the loop was
+# skipped); command doesn't execute under --check, so check mode stays
+# honest. Rebuilding the gdm *system* db needs become.
+- name: Rebuild the gdm dconf database # noqa: no-handler — deliberately inline, see comment above
+  become: true
+  ansible.builtin.command:
+    cmd: dconf update
+  when: greeter_dropins is changed
+  changed_when: true

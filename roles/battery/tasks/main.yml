@@ -1,0 +1,105 @@
+---
+# Battery: replace Fedora's default power stack (tuned + tuned-ppd) with TLP.
+#
+# TLP tunes far more knobs out of the box (this is most of the Ubuntu-vs-Fedora
+# battery gap) and adds ThinkPad charge thresholds. tlp-pd keeps GNOME's
+# power-mode toggle working by serving the power-profiles D-Bus API with TLP
+# as the backend. powertop is installed only as a measurement tool — TLP
+# already applies its tunings, so no autotune service (the two would fight
+# over the same sysfs knobs).
+
+# Remove the stock stack first so its now-unused deps get swept in the same
+# transaction. autoremove is what makes that sweep happen: the dnf5 module,
+# unlike the CLI, wires clean_requirements_on_remove to this flag and
+# defaults it OFF. Guard each item against ansible_facts.packages — exact
+# rpm-name match — for the same reason the bash module used rpm -q: tlp-pd
+# *provides* power-profiles-daemon, so an unguarded remove of that name
+# would tear out tlp-pd on every re-run. The facts are gathered once at play
+# start, so if removing tuned already dragged out tuned-ppd as a dependent,
+# the tuned-ppd iteration still runs — harmless, the dnf5 module no-ops on
+# state=absent for a package that is already gone (unlike the dnf5 CLI,
+# which errors).
+- name: Remove the stock power stack (tuned, tuned-ppd, power-profiles-daemon)
+  become: true
+  ansible.builtin.dnf5:
+    name: "{{ item }}"
+    state: absent
+    autoremove: true
+  loop:
+    - tuned
+    - tuned-ppd
+    - power-profiles-daemon
+  when: item in ansible_facts.packages
+
+# Mask power-profiles-daemon so a later reinstall can't revive it behind
+# TLP's back. systemctl mask happily masks a unit whose file is gone (the
+# removal above deleted it), but ansible.builtin.systemd_service probes the
+# unit's LoadState first and fails on not-found units — including under
+# --check (ansible/ansible-modules-core#5527, ansible/ansible#86347) — so
+# this one goes through plain systemctl, kept idempotent by the mask symlink
+# it creates.
+- name: Mask power-profiles-daemon.service # noqa: command-instead-of-module
+  become: true
+  ansible.builtin.command:
+    cmd: systemctl mask power-profiles-daemon.service
+    creates: /etc/systemd/system/power-profiles-daemon.service
+
+# allowerasing: tlp declares Conflicts: tuned; let dnf resolve any leftovers.
+# Guarded on the package facts so unchanged re-runs skip dnf entirely — the
+# dnf5 module refreshes repo metadata over the network even when the
+# transaction would be a no-op.
+- name: Install the TLP stack (tlp, tlp-rdw, tlp-pd, powertop)
+  become: true
+  vars:
+    battery_tlp_stack:
+      - tlp
+      - tlp-rdw
+      - tlp-pd
+      - powertop
+  ansible.builtin.dnf5:
+    name: "{{ battery_tlp_stack }}"
+    state: present
+    allowerasing: true
+  when: battery_tlp_stack | difference(ansible_facts.packages.keys() | list) | length > 0
+  notify: tlp start
+
+# Our overrides (charge thresholds etc.) on top of TLP's defaults.
+# files/00-battery.conf deliberately contains only non-default settings.
+- name: Install TLP overrides to /etc/tlp.d
+  become: true
+  ansible.builtin.copy:
+    src: 00-battery.conf
+    dest: /etc/tlp.d/00-battery.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: tlp start
+
+# TLP owns radio device state; its docs require masking systemd-rfkill.
+# These units ship with systemd itself, so — unlike power-profiles-daemon
+# above — the systemd_service module can mask them safely.
+- name: Mask systemd-rfkill (TLP owns radio device state)
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: true
+  loop:
+    - systemd-rfkill.service
+    - systemd-rfkill.socket
+
+# systemd_service hard-fails on not-found units even under --check (the
+# same module behavior the power-profiles-daemon mask above works around).
+# On a check-mode fresh run the install was only simulated, so these units
+# don't exist yet — skip instead of aborting the whole check run. Real runs
+# are unguarded, matching the bash module's `systemctl enable --now`; the
+# unit basename equals the rpm name for both items.
+- name: Enable and start TLP services
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - tlp.service
+    - tlp-pd.service
+  when: not ansible_check_mode or (item | splitext | first) in ansible_facts.packages

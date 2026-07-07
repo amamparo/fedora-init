@@ -1,0 +1,68 @@
+# Brave: the only browser on this machine, from Brave's official rpm repo.
+# The repo file ships gpgcheck=1 with the signing-key URL, so dnf imports and
+# verifies the key on install — no separate rpm_key step needed. Order is
+# load-bearing: repo file, install, set the default, and only THEN remove the
+# other browsers, so the http/https handlers never dangle.
+
+- name: Install Brave rpm repo file
+  become: true
+  ansible.builtin.copy:
+    src: brave-browser.repo
+    dest: /etc/yum.repos.d/brave-browser.repo
+    owner: root
+    group: root
+    mode: "0644"
+  register: brave_repo
+
+# Guarded on package_facts (see site.yml): dnf5 refreshes repo metadata even
+# for a no-op transaction, and a converged re-run must do zero network work.
+# The check-mode clause: under --check the repo file above is not actually
+# written, and dnf5 resolves (and NOT_FOUND-fails) even in check mode — skip
+# the install when check mode would have just created the repo; the copy
+# task already reports that pending change.
+- name: Install Brave
+  become: true
+  ansible.builtin.dnf5:
+    name: brave-browser
+    state: present
+  when:
+    - "'brave-browser' not in ansible_facts.packages"
+    - not (ansible_check_mode and brave_repo is changed)
+
+# Default browser for the desktop user — no become here. The old module's
+# xdg-settings under sudo would have written root's ~/.config/mimeapps.list
+# instead of the user's; xdg_mime is the same trap. This is the declarative
+# equivalent of `xdg-settings set default-web-browser brave-browser.desktop`
+# on GNOME, which claims exactly these five MIME types (about/unknown
+# included — xdg-settings' set_browser_gnome3 sets them too). (xdg_mime
+# needs community.general >= 10.7.0; it queries before writing, so a
+# converged re-run reports ok.)
+- name: Make Brave the default browser for the desktop user
+  community.general.xdg_mime:
+    handler: brave-browser.desktop
+    mime_types:
+      - x-scheme-handler/http
+      - x-scheme-handler/https
+      - x-scheme-handler/about
+      - x-scheme-handler/unknown
+      - text/html
+
+# Remove the other browsers (Fedora ships Firefox), after the default points
+# at Brave. Guard each with package_facts: the dnf5 CLI errors out (rather
+# than no-ops) when asked to remove a package that isn't installed — and the
+# guard also keeps converged re-runs offline. autoremove: the module,
+# unlike the CLI, does NOT sweep now-unused dependencies by default
+# (clean_requirements_on_remove is wired to this flag), and the bash flow
+# relied on that sweep.
+- name: Remove other browsers
+  become: true
+  ansible.builtin.dnf5:
+    name: "{{ item }}"
+    state: absent
+    autoremove: true
+  loop:
+    - firefox
+    - chromium
+    - epiphany
+    - google-chrome-stable
+  when: item in ansible_facts.packages

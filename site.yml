@@ -1,0 +1,60 @@
+# fedora-init — one play, run locally as the desktop user.
+#
+# become is FALSE at play level and opted into per task: half this workload
+# (dconf, gsettings, xdg-mime, the session-bus D-Bus modules, user-level
+# installers) must run as the login user on the session bus, and a play-level
+# become would silently write root's dconf — the classic failure the old
+# bash modules guarded against with "no sudo here" comments.
+#
+# Roles run in the old NN-module order. Tags carry the old module names, so
+# `./install.sh battery` still works (install.sh substring-matches bare args
+# against role names).
+- name: fedora-init
+  hosts: localhost
+  gather_facts: false
+  become: false
+  # Handlers (tlp start) replace side effects the bash modules ran
+  # unconditionally on every run. A notification lost to a mid-play abort is
+  # never re-fired by a converged re-run, so flush handlers even when a task
+  # fails — restoring the bash recovery-run behavior.
+  force_handlers: true
+  vars:
+    # The extensions this repo installs — merged additively into
+    # /org/gnome/shell/enabled-extensions by roles/common/gnome_extension.yml
+    # (vendor-default and user-enabled extensions are preserved).
+    gnome_extensions_enabled:
+      - rectangle@amamparo
+      - no-overview@amamparo
+  pre_tasks:
+    # The rpm -q guard layer: dnf5 hits the network for metadata even when a
+    # transaction is a no-op, so every package task guards on these facts to
+    # keep unchanged re-runs offline. check_mode: false so the guards stay
+    # truthful under --check. Keys are exact rpm names — virtual provides
+    # (tlp-pd provides power-profiles-daemon) can't cause false matches.
+    - name: Gather installed-package facts
+      ansible.builtin.package_facts:
+      check_mode: false
+      tags: always
+  roles:
+    - role: battery
+      tags: battery
+    - role: window_snapping
+      tags: window-snapping
+    - role: zsh
+      tags: zsh
+    - role: multimedia
+      tags: multimedia
+    - role: brave
+      tags: brave
+    - role: gnome_prefs
+      tags: gnome-prefs
+    - role: no_overview
+      tags: no-overview
+    - role: login_keyring
+      tags: login-keyring
+    - role: vscode
+      tags: vscode
+    - role: jetbrains_toolbox
+      tags: jetbrains-toolbox
+    - role: claude_code
+      tags: claude-code

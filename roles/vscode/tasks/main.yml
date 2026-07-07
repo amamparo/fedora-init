@@ -1,0 +1,40 @@
+---
+# VS Code: Visual Studio Code from Microsoft's official rpm repo.
+#
+# The repo file is the content code.visualstudio.com/docs/setup/linux
+# documents, verbatim — autorefresh/type are zypper-isms dnf5 silently
+# ignores; keep them so the file stays diffable against the docs.
+# gpgcheck=1 with the key URL in the repo file, so dnf imports and verifies
+# Microsoft's key on install, same as the brave role. No rpm --import step:
+# the classic guard for that (rpm -q gpg-pubkey-<short-keyid>) never matches
+# under Fedora 44's rpm 6, which names imported keys by full fingerprint —
+# letting dnf handle the key sidesteps that whole class of stale guard.
+
+# Idempotent by content checksum (the old module's cmp -s guard): a converged
+# re-run compares the local files and does nothing — no network involved.
+- name: Install Microsoft's VS Code repo file
+  become: true
+  ansible.builtin.copy:
+    src: vscode.repo
+    dest: /etc/yum.repos.d/vscode.repo
+    mode: '0644'
+  register: vscode_repo
+
+# Microsoft's docs precede the install with `dnf check-update`, deliberately
+# dropped here: it exits 100 whenever any updates are available, which is
+# what aborted the old set -e script. dnf5 refreshes metadata on install
+# anyway, and once the repo is in place new VS Code releases arrive via
+# normal `dnf upgrade`. Guarded on the play's package facts so a converged
+# re-run never reaches dnf5 — the module refreshes repo metadata over the
+# network even when the transaction would be a no-op. The check-mode
+# clause: under --check the repo file is not actually written and dnf5
+# resolves (and fails) even in check mode — skip when check mode would have
+# just created the repo; the copy task already reports that pending change.
+- name: Install VS Code
+  become: true
+  ansible.builtin.dnf5:
+    name: code
+    state: present
+  when:
+    - "'code' not in ansible_facts.packages"
+    - not (ansible_check_mode and vscode_repo is changed)

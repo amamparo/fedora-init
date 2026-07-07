@@ -1,0 +1,84 @@
+# Multimedia: RPM Fusion + full codec stack. Stock Fedora ships a
+# codec-stripped Intel media driver and ffmpeg-free, so there is NO
+# H.264/HEVC hardware video decode out of the box — a real battery cost on
+# video calls and streaming. Swap in the full builds from RPM Fusion.
+#
+# Verify hw decode afterwards with:
+#   sudo dnf install libva-utils && vainfo | grep -E 'H264|HEVC'
+---
+# Guard each release rpm separately: a joint guard would re-download both
+# when only one is missing. The URL embeds the Fedora version; with
+# gather_facts off there is no distribution fact, but controller == target
+# here, so a pipe lookup of `rpm -E %fedora` is exact.
+#
+# disable_gpg_check is required here, and it matches the old trust model:
+# the dnf5 CLI leaves localpkg_gpgcheck off by default (why the old
+# `dnf install -y <url>` worked unverified), but the ansible dnf5 MODULE
+# forces it ON unless disable_gpg_check is set — and a fresh install has no
+# RPM Fusion key in the rpmdb (fedora-gpg-keys carries none), so without
+# the opt-out the release rpm fails signature validation. The release rpm
+# then drops the RPM Fusion repo keys into /etc/pki/rpm-gpg, so every
+# subsequent package from these repos IS signature-checked.
+- name: Install RPM Fusion free release rpm
+  ansible.builtin.dnf5:
+    name: "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-{{ lookup('pipe', 'rpm -E %fedora') }}.noarch.rpm"
+    state: present
+    disable_gpg_check: true
+  become: true
+  when: "'rpmfusion-free-release' not in ansible_facts.packages"
+
+- name: Install RPM Fusion nonfree release rpm
+  ansible.builtin.dnf5:
+    name: "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-{{ lookup('pipe', 'rpm -E %fedora') }}.noarch.rpm"
+    state: present
+    disable_gpg_check: true
+  become: true
+  when: "'rpmfusion-nonfree-release' not in ansible_facts.packages"
+
+# The old module's swap_pkg dance (dnf swap is not idempotent — it fails
+# once the from-package is gone, so guard on the TARGET and fall back to a
+# plain install) becomes: install the full build guarded on the target,
+# then a guarded removal of the stock package. allowerasing alone matches
+# `dnf swap` only where the packages explicitly Conflict (ffmpeg vs
+# ffmpeg-free); the Intel driver pair coexists (Provides only, disjoint
+# file paths), so the stock driver needs its own removal. Removal comes
+# AFTER the install so there is never a driverless window, and the module's
+# state=absent no-ops once the package is gone, keeping re-runs clean.
+#
+# The `not ansible_check_mode or <release rpm present>` clauses: under
+# --check on a fresh system the release-rpm installs above are only
+# simulated, so these specs are unresolvable (dnf5 fails before its
+# check-mode branch) — skip the unpreviewable task instead of crashing.
+
+# Codec-capable Intel media driver, replacing libva-intel-media-driver.
+# The driver choice is hardware-specific: this is the Intel Lunar Lake
+# ThinkPad T14s Gen 6, not AMD.
+- name: Install the full Intel media driver
+  ansible.builtin.dnf5:
+    name: intel-media-driver
+    state: present
+    allowerasing: true
+  become: true
+  when: >-
+    'intel-media-driver' not in ansible_facts.packages
+    and (not ansible_check_mode or 'rpmfusion-nonfree-release' in ansible_facts.packages)
+
+- name: Remove the codec-stripped stock Intel driver (dnf swap parity)
+  ansible.builtin.dnf5:
+    name: libva-intel-media-driver
+    state: absent
+  become: true
+  when: "'libva-intel-media-driver' in ansible_facts.packages"
+
+# Full ffmpeg for GStreamer/mpv/GNOME Videos consumers, replacing
+# ffmpeg-free (a real Conflicts pair, so allowerasing swaps it in one
+# transaction).
+- name: Install full ffmpeg (replaces ffmpeg-free)
+  ansible.builtin.dnf5:
+    name: ffmpeg
+    state: present
+    allowerasing: true
+  become: true
+  when: >-
+    'ffmpeg' not in ansible_facts.packages
+    and (not ansible_check_mode or 'rpmfusion-free-release' in ansible_facts.packages)

@@ -1,0 +1,111 @@
+# zsh: make zsh the login shell, install oh-my-zsh (git plugin only).
+#
+# Everything under ~ here runs WITHOUT become: oh-my-zsh and .zshrc belong to
+# the desktop user, and a root-owned ~/.oh-my-zsh or ~/.zshrc would break the
+# user's shell — the classic sudo-in-$HOME failure this repo guards against.
+---
+# Guarded on package_facts (the play's pre_task) so a converged re-run does
+# zero network work — dnf5 refreshes metadata even for a no-op transaction.
+- name: Install zsh and git
+  ansible.builtin.dnf5:
+    name:
+      - zsh
+      - git
+    state: present
+  become: true
+  when: "'zsh' not in ansible_facts.packages or 'git' not in ansible_facts.packages"
+
+# oh-my-zsh via shallow clone — that's all the official installer does under
+# --unattended --keep-zshrc, and unlike curl|sh a failed clone aborts loudly
+# instead of leaving a shell that sources a missing oh-my-zsh.sh forever.
+# Guard on the payload file, not the directory: a dir without oh-my-zsh.sh is
+# a broken half-install, so move it aside and reclone.
+- name: Probe for the oh-my-zsh payload (~/.oh-my-zsh/oh-my-zsh.sh)
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.oh-my-zsh/oh-my-zsh.sh"
+  register: omz_payload
+  check_mode: false
+
+- name: Probe for the ~/.oh-my-zsh directory
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.oh-my-zsh"
+  register: omz_dir
+  check_mode: false
+
+# Move-aside happens in two steps: clear any .broken left by an earlier
+# rescue first, or mv would nest the new wreck inside the old one.
+- name: Remove a previous ~/.oh-my-zsh.broken before rescuing another wreck
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.oh-my-zsh.broken"
+    state: absent
+  when: omz_dir.stat.exists and not omz_payload.stat.exists
+
+- name: "Warning: broken ~/.oh-my-zsh moved aside to ~/.oh-my-zsh.broken"
+  ansible.builtin.command:
+    argv:
+      - mv
+      - "{{ lookup('env', 'HOME') }}/.oh-my-zsh"
+      - "{{ lookup('env', 'HOME') }}/.oh-my-zsh.broken"
+  when: omz_dir.stat.exists and not omz_payload.stat.exists
+  changed_when: true
+
+# Gated on the payload probe, NOT left to the git module's own idempotency:
+# for an existing clone the module fetches origin on every run to compare
+# revisions, which would break the zero-network converged re-run (and silently
+# turn this into an oh-my-zsh auto-updater, which the bash module never was).
+- name: Clone oh-my-zsh (shallow) # noqa: latest[git] — tracks the default branch by design, and only runs when the payload is missing
+  ansible.builtin.git:
+    repo: https://github.com/ohmyzsh/ohmyzsh.git
+    dest: "{{ lookup('env', 'HOME') }}/.oh-my-zsh"
+    depth: 1
+  when: not omz_payload.stat.exists
+
+# Our .zshrc: robbyrussell theme, plugins=(git) and nothing else.
+# Backup before overwriting a .zshrc that differs; skip the write (and the
+# backup) entirely when it already matches, so re-runs don't touch the file.
+# The backup name ~/.zshrc.pre-fedora-init is referenced by README.md.
+- name: Probe for an existing ~/.zshrc
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.zshrc"
+  register: zshrc_stat
+  check_mode: false
+
+# cmp -s: rc 0 = identical, 1 = differs, 2 = missing. Runs under --check too
+# (check_mode: false — read-only) so the backup conditional stays truthful.
+- name: Probe whether ~/.zshrc already matches the repo copy
+  ansible.builtin.command:
+    argv:
+      - cmp
+      - -s
+      - "{{ lookup('env', 'HOME') }}/.zshrc"
+      - "{{ role_path }}/files/zshrc"
+  register: zshrc_cmp
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# One-time by construction: after a converged run cmp rc == 0 and this skips,
+# so the backup is never clobbered by a later re-run.
+- name: Back up the existing ~/.zshrc to ~/.zshrc.pre-fedora-init
+  ansible.builtin.copy:
+    src: "{{ lookup('env', 'HOME') }}/.zshrc"
+    dest: "{{ lookup('env', 'HOME') }}/.zshrc.pre-fedora-init"
+    remote_src: true
+    mode: preserve
+  when: zshrc_stat.stat.exists and zshrc_cmp.rc != 0
+
+- name: Install ~/.zshrc
+  ansible.builtin.copy:
+    src: zshrc
+    dest: "{{ lookup('env', 'HOME') }}/.zshrc"
+    mode: "0644"
+
+# Declarative replacement for the old getent-guard + usermod: the user module
+# compares the current passwd entry and only rewrites it on drift, so a
+# converged re-run reports ok without invoking usermod. Takes effect on next
+# login.
+- name: Make zsh the login shell
+  ansible.builtin.user:
+    name: "{{ lookup('env', 'USER') }}"
+    shell: /usr/bin/zsh
+  become: true

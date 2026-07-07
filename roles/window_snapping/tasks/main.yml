@@ -1,0 +1,64 @@
+# Window snapping: install the bundled "rectangle" GNOME Shell extension
+# (Super+Alt+arrows, cycling 1/2 -> 2/3 -> 1/3) and bind Super+Alt+F to
+# GNOME's native maximize toggle. Everything here is user-session state
+# (extension dir in $HOME, the user's dconf) — no become anywhere; running
+# these as root would install/configure for root instead of the login user.
+#
+# Wayland can't hot-reload GNOME Shell: the extension and keybindings take
+# full effect only after logging out and back in.
+
+# Mirror + schema-compile + enable, shared with no_overview. Enablement is
+# declarative there (the complete enabled-extensions list lives in site.yml),
+# so no enable step belongs in this role.
+- name: Install the rectangle extension
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: gnome_extension
+  vars:
+    ext_uuid: rectangle@amamparo
+    ext_role: window_snapping
+    ext_has_schemas: true
+
+# Super+Alt+F -> maximize: fills the work area but keeps the top bar, unlike
+# fullscreen. Alt+F10 is toggle-maximized's stock binding — keep it; a bare
+# single-key set would silently drop it. Prefer fullscreen? Set
+# toggle-fullscreen to ['<Super><Alt>f'] alone (leave Alt+F10 out; the reset
+# then returns it to toggle-maximized) and point the reset below at
+# toggle-maximized instead.
+- name: Bind Super+Alt+F to toggle-maximized (alongside stock Alt+F10)
+  community.general.dconf:
+    key: /org/gnome/desktop/wm/keybindings/toggle-maximized
+    value: "['<Super><Alt>f', '<Alt>F10']"
+    state: present
+
+# The reset (state: absent) exists because an earlier revision bound
+# toggle-fullscreen to the same key, and a key shared by two actions hits
+# Mutter's nondeterministic-conflict problem below — machines that ran that
+# revision would otherwise keep two actions on one key.
+- name: Reset toggle-fullscreen to its default
+  community.general.dconf:
+    key: /org/gnome/desktop/wm/keybindings/toggle-fullscreen
+    state: absent
+
+# GNOME's stock bindings collide with all four tiling keys: shift-overview
+# up/down and switch-to-workspace left/right both default to Super+Alt+arrows,
+# and Mutter resolves duplicates nondeterministically. Clear the overview pair
+# and move workspace switching to Super+Alt+PageUp/PageDown. The colliders
+# live in two different schemas — check BOTH org.gnome.shell.keybindings and
+# org.gnome.desktop.wm.keybindings before adding any new binding.
+- name: Clear the stock bindings that collide with the tiling keys
+  community.general.dconf:
+    key: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+  loop:
+    - key: /org/gnome/shell/keybindings/shift-overview-up
+      value: "@as []"
+    - key: /org/gnome/shell/keybindings/shift-overview-down
+      value: "@as []"
+    - key: /org/gnome/desktop/wm/keybindings/switch-to-workspace-left
+      value: "['<Super><Alt>Page_Up']"
+    - key: /org/gnome/desktop/wm/keybindings/switch-to-workspace-right
+      value: "['<Super><Alt>Page_Down']"
+  loop_control:
+    label: "{{ item.key }}"

@@ -1,0 +1,30 @@
+# No overview at login: GNOME Shell (40+) opens the Activities overview at
+# every session start and has no setting to turn that off — no gsettings key
+# exists (upstream gnome-shell!4009 would add one; unmerged as of GNOME 50).
+# Install the bundled micro-extension (files/no-overview@amamparo) that hides
+# it the moment startup completes. On GNOME 50 the overview still flashes
+# briefly: extensions initialize after the startup animation has begun, so
+# the extension can only hide it once `startup-complete` fires — the
+# `sessionMode.hasOverview` override that older extensions used no longer
+# works, and hiding after the fact is the best an extension can do.
+#
+# Do NOT add a second hide-overview mechanism (e.g. dash-to-dock's setting)
+# alongside this one — running two at once is a reported crash source.
+#
+# Everything here touches the user session ($HOME, the user's dconf), so no
+# task in this role may run under become.
+
+# No schemas/ in this extension, so ext_has_schemas: false — the shared task
+# file skips glib-compile-schemas (and has nothing to exclude from the
+# mirror). Enabling is declarative: the shared file writes the play's
+# complete gnome_extensions_enabled list, which includes this uuid.
+# Wayland can't hot-reload GNOME Shell — the extension takes effect at the
+# next login, when sessions land on the desktop.
+- name: Install and enable the no-overview extension
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: gnome_extension
+  vars:
+    ext_uuid: no-overview@amamparo
+    ext_role: no_overview
+    ext_has_schemas: false

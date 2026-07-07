@@ -1,0 +1,80 @@
+# GNOME prefs: the handful of desktop settings that differ from stock
+# Fedora. Everything in this role talks to the user session — dconf,
+# gsettings, mutter's session-bus D-Bus API — and must run as the desktop
+# user. NO become anywhere here: under root the writes would land in root's
+# dconf and the session bus wouldn't even be reachable.
+
+# community.general.dconf takes GVariant *text*, not YAML types: strings
+# carry their own inner quotes ("'prefer-dark'"), booleans and doubles are
+# bare ("true", "0.19"), and the empty dock must be the typed "@as []" — a
+# bare "[]" is untyped and invalid for dconf.
+- name: Apply GNOME desktop preferences
+  community.general.dconf:
+    key: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+  loop:
+    - { key: /org/gnome/desktop/interface/color-scheme, value: "'prefer-dark'" }
+    - { key: /org/gnome/desktop/interface/show-battery-percentage, value: "true" }
+    - { key: /org/gnome/desktop/wm/preferences/button-layout, value: "'appmenu:minimize,maximize,close'" }
+    # empty dock — "@as []" carries the string-array type annotation
+    - { key: /org/gnome/shell/favorite-apps, value: "@as []" }
+    - { key: /org/gnome/desktop/peripherals/touchpad/speed, value: "0.19" }
+  loop_control:
+    label: "{{ item.key }}"
+
+# Displays > Scale: 100% (Fedora defaults this panel to 125%). Monitor scale
+# is not a gsettings key — it lives in monitors.xml, owned by mutter's
+# DisplayConfig D-Bus API; ApplyMonitorsConfig method 2 persists there AND
+# applies live (see library/mutter_display_scale.py). The module applies only
+# when the built-in panel ("is-builtin" in the monitor props — a bare
+# logical-monitor count would misfire docked lid-closed) is the sole active
+# display: positions are in scale-dependent logical pixels, and mutter
+# *rejects* a re-scaled layout whose monitors then overlap ("Logical monitors
+# overlap") rather than repositioning it — a hard failure, not a fixup.
+# monitors.xml keys configs by the set of connected monitors anyway, so the
+# docked layout is a separate config arranged in Settings. Check mode only
+# calls the read-only GetCurrentState. Session bus: no become.
+- name: Set the built-in panel to 100% display scale
+  mutter_display_scale:
+    scale: 1.0
+  register: display_scale
+
+# The module reports the docked case as ok-with-message, which ansible never
+# shows at default verbosity — surface it like the bash module's echo did
+# (applied is false only for the not-sole-display skip).
+- name: Report why the display scale was left alone
+  ansible.builtin.debug:
+    msg: "{{ display_scale.msg }}"
+  when: not display_scale.applied
+
+# Ptyxis terminal palette. The default-profile-uuid key only exists once
+# Ptyxis has launched for the first time, so on a fresh install this defers
+# to a later re-run. The probe is read-only: changed_when: false keeps it
+# honest, and check_mode: false lets it run under --check so the
+# conditionals below stay truthful; failed_when: false covers Ptyxis (or its
+# schema) not being installed at all.
+- name: Probe for the Ptyxis default profile uuid
+  ansible.builtin.command:
+    cmd: gsettings get org.gnome.Ptyxis default-profile-uuid
+  register: ptyxis_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# gsettings prints the uuid GVariant-quoted ('3f8c...'); strip the quotes.
+- name: Extract the Ptyxis profile uuid
+  ansible.builtin.set_fact:
+    ptyxis_uuid: "{{ ptyxis_probe.stdout | default('') | trim | regex_replace(\"'\", '') }}"
+
+- name: Set the Ptyxis palette to Moonfly
+  community.general.dconf:
+    key: "/org/gnome/Ptyxis/Profiles/{{ ptyxis_uuid }}/palette"
+    value: "'Moonfly'"
+    state: present
+  when: ptyxis_uuid | length > 0
+
+- name: Report that the Ptyxis palette was deferred
+  ansible.builtin.debug:
+    msg: "Ptyxis hasn't launched yet — re-run this role later for the Moonfly palette."
+  when: ptyxis_uuid | length == 0

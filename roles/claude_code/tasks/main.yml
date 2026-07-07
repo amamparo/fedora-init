@@ -1,0 +1,89 @@
+---
+# Claude Code via Anthropic's native installer (the documented default:
+# curl https://claude.ai/install.sh | bash).
+#
+# The installer puts the launcher at ~/.local/bin/claude — a symlink into
+# ~/.local/share/claude/versions/ — and the binary self-updates in the
+# background from then on, so the launcher's presence is the terminal state.
+# The guards matter: the installer has no already-installed check and
+# re-downloads the full ~260 MB binary on every run. ~/.local/bin is on PATH
+# via roles/zsh/files/zshrc.
+#
+# Everything here runs as the desktop user — the installer writes only under
+# $HOME, and its docs warn against sudo installs — so no task in this role
+# takes become.
+
+# follow: true because the launcher is a symlink into
+# ~/.local/share/claude/versions/ — the bash guard was `[[ -x ]]`, which
+# follows links and checks the exec bit, so a dangling or non-executable
+# leftover must count as "not installed" and get healed by a reinstall.
+- name: Probe for the native launcher (~/.local/bin/claude)
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin/claude"
+    follow: true
+  register: claude_launcher
+  check_mode: false
+
+# command -v too: an existing npm or dnf install also counts — the docs warn
+# against stacking a second copy on top. `command -v` is a shell builtin,
+# hence the shell module; rc 0 = some claude is already on PATH.
+- name: Probe for any claude already on PATH (command -v) # noqa: command-instead-of-shell
+  ansible.builtin.shell:
+    cmd: command -v claude
+  register: claude_on_path
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# The installer is downloaded to a file first, then run: piping curl straight
+# into bash can execute a truncated script when the download dies mid-stream,
+# while get_url either delivers the whole script or fails the play loudly.
+- name: Install Claude Code via the native installer
+  when: >-
+    not (claude_launcher.stat.exists and claude_launcher.stat.executable | default(false))
+    and claude_on_path.rc != 0
+  block:
+    # tempfile has no check-mode support: under --check it is skipped and
+    # registers no .path, so the follow-up tasks guard on that instead of
+    # crashing on an undefined variable.
+    - name: Create a temp file to hold the installer
+      ansible.builtin.tempfile:
+        state: file
+        prefix: claude-install.
+        suffix: .sh
+      register: claude_installer
+
+    # force: true because tempfile just created dest — get_url's default
+    # (force: false) would see the existing empty file and skip the download.
+    # 0700 keeps the script private to the user (it is run via bash below,
+    # so the exec bit is belt-and-braces).
+    - name: Download the installer (https://claude.ai/install.sh)
+      ansible.builtin.get_url:
+        url: https://claude.ai/install.sh
+        dest: "{{ claude_installer.path }}"
+        mode: "0700"
+        force: true
+      when: claude_installer.path is defined
+
+    # No creates: guard — reaching this task means the block guard found the
+    # launcher missing, dangling, or non-executable, and the installer must
+    # run to heal all three (creates would skip the non-executable case).
+    # The bootstrap exits nonzero on every real failure path — verified
+    # against its actual source — so its rc is the only assert needed; a
+    # failed install fails this task and the always: below still cleans up.
+    - name: Run the installer (first run of `claude` prompts sign-in)
+      ansible.builtin.command:
+        argv:
+          - bash
+          - "{{ claude_installer.path }}"
+      changed_when: true
+      when: claude_installer.path is defined
+
+  always:
+    # The bash module's `trap 'rm -f "$installer"' EXIT`: drop the downloaded
+    # installer whether the run succeeded or died mid-way.
+    - name: Remove the downloaded installer
+      ansible.builtin.file:
+        path: "{{ claude_installer.path }}"
+        state: absent
+      when: claude_installer.path is defined

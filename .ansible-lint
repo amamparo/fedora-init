@@ -1,0 +1,10 @@
+# fedora-init lint policy. Run with:
+#   ansible-lint --offline
+skip_list:
+  # The shared roles/common/tasks/gnome_extension.yml takes ext_* vars as its
+  # parameter interface, and short registered probe names (omz_payload,
+  # zshrc_cmp) read better than role-prefixed ones in a repo with one play.
+  - var-naming[no-role-prefix]
+  # The play is named after the repo ("fedora-init"); handler names mirror
+  # the commands they run ("tlp start", "dconf update").
+  - name[casing]

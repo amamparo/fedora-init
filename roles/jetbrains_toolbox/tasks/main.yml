@@ -1,0 +1,154 @@
+---
+# JetBrains Toolbox from the official tarball (JetBrains ships no rpm). The
+# launcher's undocumented --install flag does a headless self-install into
+# ~/.local/share/JetBrains/Toolbox — the same layout a first GUI launch
+# creates: app bundle, desktop entries, the jetbrains:// URI handler, and an
+# autostart entry, so the Toolbox window opens (minimized) at the next login
+# for terms/sign-in.
+#
+# Toolbox self-updates in place, so once the launcher and its desktop entry
+# exist this role is done: presence is the terminal state — a converged
+# re-run makes no network calls, and there is no version pinning.
+#
+# Entirely user-level: no FUSE (that was the pre-2.6.2 AppImage era; the 3.x
+# bundle needs only glibc) and NO become on any task. Never run the installer
+# as root — it derives the target home from getpwuid(), ignoring $HOME, and
+# under become it would install into root's home.
+
+- name: Probe for the Toolbox launcher binary
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/JetBrains/Toolbox/bin/jetbrains-toolbox"
+  register: toolbox_bin
+  check_mode: false
+
+# Probed alongside the binary: --install's background child writes the
+# desktop entries seconds after the foreground exits, so a reboot in that
+# window leaves the binary present with no desktop integration — a
+# half-install the re-run must redo. The applications entry, not the
+# autostart one: users may legitimately turn "launch at login" off, and
+# re-installing would fight that.
+- name: Probe for the Toolbox desktop entry
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/applications/jetbrains-toolbox.desktop"
+  register: toolbox_desktop
+  check_mode: false
+
+# Install when either artifact is missing (the bash module's `-x` test: a
+# present but non-executable binary counts as missing too). Nothing inside
+# the block supports check mode (tempfile, uri, get_url, unarchive, command
+# all skip under --check), so every task after tempfile guards on
+# toolbox_tmp.path — under --check the block degrades to a clean cascade of
+# skips instead of an undefined-variable error; a real run is unaffected.
+- name: Install JetBrains Toolbox
+  when: >-
+    not (toolbox_bin.stat.executable | default(false))
+    or not toolbox_desktop.stat.exists
+  block:
+    - name: Create a scratch directory for the download
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: jetbrains-toolbox.
+      register: toolbox_tmp
+
+    # Latest-tarball URL via the download endpoint — a redirect, no JSON.
+    # follow_redirects: none + the 3xx status list makes anything but a
+    # redirect fail loudly (the bash module accepted any 3xx via curl's
+    # %{redirect_url}, so a vendor switch to 301/307 must not break us).
+    # uri returns every response header lower-cased on the registered
+    # result, so the Location header is toolbox_redirect.location.
+    - name: Resolve the latest Toolbox tarball URL
+      ansible.builtin.uri:
+        url: "https://data.services.jetbrains.com/products/download?code=TBA&platform=linux"
+        follow_redirects: none
+        status_code: [301, 302, 303, 307, 308]
+      register: toolbox_redirect
+      when: toolbox_tmp.path is defined
+
+    # The sidecar checksum next to the tarball; its content is a single
+    # sha256sum-style line, "<hash> *<filename>".
+    - name: Fetch the tarball's sidecar sha256
+      ansible.builtin.uri:
+        url: "{{ toolbox_redirect.location }}.sha256"
+        return_content: true
+      register: toolbox_sha
+      when: toolbox_tmp.path is defined
+
+    # get_url verifies the download itself. Pass the literal hex hash (first
+    # whitespace-delimited field), not get_url's checksum-URL form: that form
+    # matches the destination filename against the sidecar's entries, and the
+    # "*filename" binary-mode marker can break the match. The original
+    # filename is kept purely for debuggability of a failed run.
+    - name: Download the Toolbox tarball (sha256-verified)
+      ansible.builtin.get_url:
+        url: "{{ toolbox_redirect.location }}"
+        dest: "{{ toolbox_tmp.path }}/{{ toolbox_redirect.location | basename }}"
+        checksum: "sha256:{{ toolbox_sha.content | split | first }}"
+        mode: "0644"
+      when: toolbox_tmp.path is defined
+
+    # unarchive does not create dest ("the given path must exist"), so make
+    # the extraction subdir first.
+    - name: Create the extraction directory
+      ansible.builtin.file:
+        path: "{{ toolbox_tmp.path }}/toolbox"
+        state: directory
+        mode: "0755"
+      when: toolbox_tmp.path is defined
+
+    - name: Unpack the tarball
+      ansible.builtin.unarchive:
+        src: "{{ toolbox_tmp.path }}/{{ toolbox_redirect.location | basename }}"
+        dest: "{{ toolbox_tmp.path }}/toolbox"
+        remote_src: true
+        extra_opts:
+          - --strip-components=1
+      when: toolbox_tmp.path is defined
+
+    # The headless self-install. changed_when: true — reaching this task
+    # means the guard found Toolbox missing or half-installed, so it always
+    # installs. No creates: guard here: in the half-install case the binary
+    # already exists, and creates would skip the very re-install that heals
+    # the missing desktop integration.
+    - name: Run jetbrains-toolbox --install
+      ansible.builtin.command:
+        argv:
+          - "{{ toolbox_tmp.path }}/toolbox/bin/jetbrains-toolbox"
+          - --install
+      changed_when: true
+      when: toolbox_tmp.path is defined
+
+    # Only the bundle copy into Toolbox/bin is synchronous; desktop entries
+    # and the daemon are finished by a background child moments after
+    # --install returns — so assert the binary landed, nothing more (probing
+    # the .desktop files here would race that child). Registered under a NEW
+    # name on purpose: Ansible re-evaluates the block's inherited when: for
+    # every task, so overwriting toolbox_bin with a now-passing probe would
+    # flip it false and silently skip both this assert and the always:
+    # cleanup, leaking the tempdir.
+    - name: Re-probe the launcher binary
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'HOME') }}/.local/share/JetBrains/Toolbox/bin/jetbrains-toolbox"
+      register: toolbox_bin_after
+      check_mode: false
+      when: toolbox_tmp.path is defined
+
+    - name: Assert --install produced the launcher
+      ansible.builtin.assert:
+        that:
+          - toolbox_bin_after.stat.exists
+          - toolbox_bin_after.stat.executable
+        fail_msg: >-
+          --install produced no
+          ~/.local/share/JetBrains/Toolbox/bin/jetbrains-toolbox — the
+          undocumented flag may have changed
+      when: toolbox_tmp.path is defined
+
+  always:
+    # The bash module's `trap 'rm -rf "$tmp"' EXIT`. Deleting the tempdir
+    # while --install's background child is still running is fine — Linux
+    # keeps deleted-but-open files alive until the last fd closes.
+    - name: Remove the scratch directory
+      ansible.builtin.file:
+        path: "{{ toolbox_tmp.path }}"
+        state: absent
+      when: toolbox_tmp.path is defined
