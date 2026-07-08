@@ -1,0 +1,347 @@
+---
+# REAPER DAW + the Reapertips theme, essential icons, fonts, extensions, and
+# first-run settings.
+#
+# REAPER ships no rpm and no dnf repo: the documented Linux install is the
+# official tarball's install-reaper.sh (verified: --install /opt,
+# --integrate-sys-desktop for the system .desktop entry, --usr-local-bin-symlink
+# for /usr/local/bin/reaper). The binary does NOT self-update on Linux and the
+# updates role can't see it, so "latest" means latest at install time and the
+# launcher's presence is the terminal state (the jetbrains_toolbox rule).
+# https://www.reaper.fm/latestversion/ serves the current version as the first
+# line of plain text; the tarball URL is derived from it (7.77 ->
+# files/7.x/reaper777_linux_x86_64.tar.xz — verified live). x86_64 is
+# hardcoded like multimedia's intel-media-driver: this repo targets one
+# machine, not a fleet.
+#
+# Everything below the install itself is user-session state under
+# ~/.config/REAPER (the resource path) — NO become anywhere there, the dconf
+# rule: run as root it would configure root's REAPER.
+#
+# REAPER is licensed shareware (60-day evaluation, then buy a license): the
+# role installs and configures it, the nag screen is between aaron and Cockos.
+
+- name: Probe for an installed REAPER (/opt/REAPER/reaper)
+  ansible.builtin.stat:
+    path: /opt/REAPER/reaper
+  register: reaper_binary
+  check_mode: false
+
+- name: Install REAPER via the official tarball
+  when: not reaper_binary.stat.exists
+  block:
+    # tempfile has no check-mode support: under --check it's skipped and
+    # registers no .path — downstream tasks guard on that (claude_code
+    # pattern) so a fresh --check stays clean.
+    - name: Create a temp dir to hold the tarball
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: reaper-install.
+      register: reaper_tmp
+
+    # First line only: the endpoint appends changelog lines after the
+    # version. check_mode: false is safe — read-only network probe — but the
+    # whole block is guarded, so it only ever runs when REAPER is missing;
+    # a converged re-run never touches the network (hard requirement).
+    - name: Look up the latest REAPER version (reaper.fm/latestversion)
+      ansible.builtin.uri:
+        url: https://www.reaper.fm/latestversion/
+        return_content: true
+      register: reaper_latest
+      when: reaper_tmp.path is defined
+      changed_when: false
+
+    - name: Derive the tarball URL from the version
+      ansible.builtin.set_fact:
+        # "7.77" -> "777"; the files/ tree is bucketed by major ("7.x").
+        reaper_version: "{{ reaper_latest.content.splitlines() | first | trim }}"
+      when: reaper_tmp.path is defined
+
+    - name: Download the REAPER tarball
+      ansible.builtin.get_url:
+        url: >-
+          https://www.reaper.fm/files/{{ reaper_version.split('.')[0] }}.x/reaper{{ reaper_version | replace('.', '') }}_linux_x86_64.tar.xz
+        dest: "{{ reaper_tmp.path }}/reaper.tar.xz"
+        mode: "0644"
+      when: reaper_tmp.path is defined
+
+    - name: Unpack the tarball
+      ansible.builtin.unarchive:
+        src: "{{ reaper_tmp.path }}/reaper.tar.xz"
+        dest: "{{ reaper_tmp.path }}"
+        remote_src: true
+      when: reaper_tmp.path is defined
+
+    # The installer writes /opt and /usr/share desktop entries: the one
+    # system mutation in this role, so the one become. --quiet suppresses
+    # the interactive prompts (verified against the script's usage text).
+    - name: Run install-reaper.sh (installs to /opt, desktop entry, PATH symlink)
+      ansible.builtin.command:
+        argv:
+          - bash
+          - "{{ reaper_tmp.path }}/reaper_linux_x86_64/install-reaper.sh"
+          - --install
+          - /opt
+          - --integrate-sys-desktop
+          - --usr-local-bin-symlink
+          - --quiet
+      become: true
+      when: reaper_tmp.path is defined
+      changed_when: true
+
+  always:
+    - name: Remove the downloaded tarball and temp dir
+      ansible.builtin.file:
+        path: "{{ reaper_tmp.path }}"
+        state: absent
+      when: reaper_tmp.path is defined
+
+# --- fonts the theme calls for ---------------------------------------------
+# The Quick Start Guide's step 1: Roboto Bold + Fira Sans (Regular/Bold).
+# Roboto is stock Fedora (google-roboto-fonts) — dnf, package-facts guarded.
+# Fira Sans has no Fedora package (checked: `dnf5 search fira` is empty), so
+# the theme's own ttfs are bundled and installed per-user; fontconfig picks
+# up ~/.local/share/fonts automatically, fc-cache just makes it immediate.
+
+- name: Install Roboto (theme font, stock Fedora package)
+  ansible.builtin.dnf5:
+    name: google-roboto-fonts
+    state: present
+  become: true
+  when: "'google-roboto-fonts' not in ansible_facts.packages"
+
+- name: Ensure the user font dir exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/fonts"
+    state: directory
+    mode: "0755"
+
+- name: Install the Fira Sans fonts (bundled with the theme)
+  ansible.builtin.copy:
+    src: "fonts/{{ item }}"
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/fonts/{{ item }}"
+    mode: "0644"
+  loop:
+    - FiraSans-Regular.ttf
+    - FiraSans-Bold.ttf
+  notify: Refresh the font cache
+
+# --- Reapertips theme + icons ----------------------------------------------
+# The GUI install ("drag the .ReaperThemeZip into REAPER") decomposes into:
+# the file landing in <resource>/ColorThemes/ and reaper.ini's lastthemefn5
+# pointing at it (selection is part of the settings seed below). REAPER loads
+# the theme zipped — never extract it.
+
+- name: Ensure the REAPER resource dirs exist
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - ColorThemes
+    - Data/toolbar_icons
+    - Data/track_icons
+    - UserPlugins
+    - Scripts
+
+- name: Install the Reapertips theme (CC BY-NC-SA 4.0, by Alejandro Hernandez)
+  ansible.builtin.copy:
+    src: Reapertips Theme.ReaperThemeZip
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/Reapertips Theme.ReaperThemeZip"
+    mode: "0644"
+
+# The theme's Linux extra: libSwell-user.colortheme darkens REAPER's
+# GTK-less Swell widgets (dialogs, menus) to match the theme — the tarball
+# build has no GTK theming, this file IS the Linux dark mode. Goes in the
+# resource path root per the bundled !howtouse.txt.
+- name: Install the Swell color theme (dark dialogs/menus on Linux)
+  ansible.builtin.copy:
+    src: libSwell-user.colortheme
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/libSwell-user.colortheme"
+    mode: "0644"
+
+# Icon packs merge ADDITIVELY into Data/ — deliberately not the
+# gnome_extension mirror: --delete would remove icons aaron imports by hand,
+# and REAPER treats these dirs as a user-extended pool, not a repo-owned
+# tree. --checksum/--omit-dir-times are the same convergence guards as
+# gnome_extension (git-checkout vs tarball mtimes differ for identical
+# content). files/toolbar_icons is the pre-merged union of the theme pack
+# (86/scale), the Essential Icons pack's "Style Reapertips Theme" (matches
+# the theme; verified zero filename overlap), and the 3 icons unique to that
+# pack's Update/ dir (its other 123 files are byte-identical to the main
+# pack). All Reapertips icons are RT_-prefixed for easy filtering/removal.
+- name: Merge the toolbar icons into the resource path
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/toolbar_icons/"
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/toolbar_icons/"
+    recursive: true
+    rsync_opts:
+      - "--checksum"
+      - "--omit-dir-times"
+
+- name: Merge the track icons into the resource path
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/track_icons/"
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/track_icons/"
+    recursive: true
+    rsync_opts:
+      - "--checksum"
+      - "--omit-dir-times"
+
+# The theme's color palette for the Rodilab Color Palette script (a ReaPack
+# package — installing scripts through ReaPack isn't automatable offline, so
+# loading this stays a manual step surfaced in the nudge below).
+- name: Stage the Reapertips color palette (for the Rodilab script)
+  ansible.builtin.copy:
+    src: ReapertipsTheme_ColorPalette.txt
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt"
+    mode: "0644"
+
+- name: Install the Reapertips license/attribution alongside the assets
+  ansible.builtin.copy:
+    src: reapertips-license.txt
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/reapertips-license.txt"
+    mode: "0644"
+
+# --- SWS + ReaPack extensions -----------------------------------------------
+# Both are Perfect Setup recommendations and pure file drops into the
+# resource path. Presence of the .so is terminal (same network discipline as
+# the REAPER install: fetch only when missing, offline re-run untouched).
+
+- name: Probe for the SWS extension
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/UserPlugins/reaper_sws-x86_64.so"
+  register: sws_plugin
+  check_mode: false
+
+- name: Install the SWS extension
+  when: not sws_plugin.stat.exists
+  block:
+    - name: Create a temp dir for the SWS tarball
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: sws-install.
+      register: sws_tmp
+
+    # The homepage's featured download is the only stable "latest" pointer
+    # (no /latest endpoint, no GitHub releases with binaries). The href is
+    # relative: download/featured/sws-<ver>-Linux-x86_64.tar.xz.
+    - name: Find the current SWS Linux build on sws-extension.org
+      ansible.builtin.uri:
+        url: https://www.sws-extension.org/
+        return_content: true
+      register: sws_page
+      when: sws_tmp.path is defined
+      changed_when: false
+
+    - name: Download the SWS tarball
+      ansible.builtin.get_url:
+        url: >-
+          https://www.sws-extension.org/{{ sws_page.content | regex_search('href="(download/featured/sws-[^"]*-Linux-x86_64\.tar\.xz)"', '\1') | first }}
+        dest: "{{ sws_tmp.path }}/sws.tar.xz"
+        mode: "0644"
+      when: sws_tmp.path is defined
+
+    - name: Unpack the SWS tarball
+      ansible.builtin.unarchive:
+        src: "{{ sws_tmp.path }}/sws.tar.xz"
+        dest: "{{ sws_tmp.path }}"
+        remote_src: true
+      when: sws_tmp.path is defined
+
+    # The tarball is a resource-path overlay (verified layout: UserPlugins/
+    # with the .so, Scripts/ with the python bridge, Data/ with grooves) —
+    # copy the whole tree over ~/.config/REAPER. rsync without --delete for
+    # the same merge-not-mirror reason as the icons.
+    - name: Copy the SWS payload into the resource path
+      ansible.posix.synchronize:
+        src: "{{ sws_tmp.path }}/"
+        dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/"
+        recursive: true
+        rsync_opts:
+          - "--exclude=sws.tar.xz"
+          - "--checksum"
+          - "--omit-dir-times"
+      when: sws_tmp.path is defined
+
+  always:
+    - name: Remove the SWS temp dir
+      ansible.builtin.file:
+        path: "{{ sws_tmp.path }}"
+        state: absent
+      when: sws_tmp.path is defined
+
+- name: Probe for ReaPack
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/UserPlugins/reaper_reapack-x86_64.so"
+  register: reapack_plugin
+  check_mode: false
+
+# Single .so straight from the project's stable latest-release URL; no
+# tarball, no scrape. GitHub's /releases/latest/download/ redirects to the
+# current version.
+- name: Install ReaPack
+  ansible.builtin.get_url:
+    url: https://github.com/cfillion/reapack/releases/latest/download/reaper_reapack-x86_64.so
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/UserPlugins/reaper_reapack-x86_64.so"
+    mode: "0644"
+  when: not reapack_plugin.stat.exists
+
+# --- first-run settings (Reapertips "Perfect Setup") ------------------------
+# reaper.ini is rewritten by REAPER on every exit — managing it converged
+# would fight the app the same way claude_desktop_config.json would (the
+# rewrite-at-runtime trap), so the role SEEDS it only when absent: on a
+# fresh machine REAPER's first run adopts these values and fills in its own
+# defaults for everything else; after that the file belongs to REAPER.
+# Every key in the template was verified against mespotine's config-var
+# documentation (github.com/mespotine/ultraschall-and-reaper-docs) — the
+# guide's suggestions whose keys could NOT be verified are deliberately left
+# to the manual nudge below rather than guessed.
+
+- name: Probe for an existing reaper.ini
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
+  register: reaper_ini
+  check_mode: false
+
+# The seed points auto-save backups and the peak cache at dedicated dirs
+# (the guide's "all backups/peaks in one folder" advice) — they must exist
+# before REAPER first tries to write into them.
+- name: Ensure the backup and peak-cache dirs exist
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/Music/REAPER/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - Backups
+    - Peaks
+
+- name: Seed reaper.ini with the Perfect Setup preferences (first run only)
+  ansible.builtin.template:
+    src: reaper.ini.j2
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
+    mode: "0644"
+  when: not reaper_ini.stat.exists
+  register: reaper_seeded
+
+# What the guide suggests but can't be encoded honestly: settings whose ini
+# keys aren't verifiable (7.0+ features postdating the config-var docs),
+# live in per-context mouse-modifier maps, or need interactive flows.
+# Printed once, on the run that seeded the config — the tailscale-up
+# pattern.
+- name: Remaining manual setup (not automatable)
+  ansible.builtin.debug:
+    msg:
+      - "REAPER installed with the Reapertips theme preselected. Manual steps remaining:"
+      - "1. Run `reaper` once — evaluation/license notice, then the theme loads."
+      - "2. Extensions > ReaPack > Synchronize packages (installs the default repos)."
+      - "   The Rodilab Color Palette script lives there — load ~/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt into it."
+      - "3. Preferences > Appearance > Track Control Panels: 'Folder collapse button cycles track heights' -> Normal, hidden."
+      - "4. Preferences > Appearance: 'Visual track spacer size' -> 24; Preferences > Appearance > Media: untick 'Draw selection indicator on items'."
+      - "5. Preferences > Audio > Playback: untick 'Tiny fade in on playback start'; Audio > Loop/Lane Recording: 'discard incomplete first/last takes' at 90%."
+      - "6. Preferences > Editing Behavior > MIDI Editor: 'One MIDI editor per: project' + 'Open all selected MIDI items'."
+      - "7. Preferences > Mouse Modifiers: Arrange view/middle drag -> Hand scroll; Media item fade/left drag -> Relative edge edit."
+      - "   Also: MIDI piano roll/left click -> Insert note; Media item edge/left drag -> 'Limit edits to source media content'."
+      - "8. Options: untick 'Show all takes (when room)'; File > Project Settings > 'Save as default project settings'."
+      - "9. Theme adjuster tweaks (Actions > 'Script: Default_7.0_theme_adjuster.lua'): TCP Dim track panel, Show folder indicator, etc."
+  when: reaper_seeded is changed and not ansible_check_mode

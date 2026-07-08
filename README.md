@@ -294,6 +294,39 @@ no shims, none of nvm's startup drag. Get runtimes with
 `mise use -g node@lts python@3.13 java@temurin-21`, or drop the `-g` inside
 a project.
 
+### reaper
+
+[REAPER](https://www.reaper.fm) (DAW) via the official Linux tarball's
+installer — latest version at install time, into `/opt/REAPER` with a
+desktop entry and a `reaper` symlink on PATH. It's licensed shareware:
+the 60-day evaluation starts on first run; buy a license when it fits.
+On top of the bare install the role sets up the full
+[Reapertips](https://reapertips.com) experience (theme and icons by
+Alejandro Hernandez, CC BY-NC-SA 4.0 — attribution installed alongside):
+
+- **Reapertips theme v1.90** installed and preselected, with its Fira
+  Sans/Roboto fonts and the Linux `libSwell-user.colortheme` (dark
+  dialogs/menus — the tarball build has no GTK theming without it).
+- **Toolbar + track icons**: the theme's own pack merged with the
+  Essential Icons pack ("Style Reapertips Theme" variants, 840+ icons,
+  all `RT_`-prefixed). Merged additively — hand-imported icons are never
+  deleted.
+- **SWS and ReaPack extensions** dropped into `UserPlugins` (fetched only
+  when missing, like the REAPER install itself).
+- **First-run settings** from the Reapertips "Perfect Setup" guide seeded
+  into `reaper.ini` — *only when the file doesn't exist yet*; after
+  REAPER's first run the file belongs to REAPER. Includes: theme
+  selection, new-project startup, auto-save every 3 minutes to
+  `~/Music/REAPER/Backups`, peak caches in `~/Music/REAPER/Peaks`,
+  straight grid lines, no auto-fades or loop-source on new items,
+  Time timebase, clean recording filenames, smoother meters, snappier
+  media buffering.
+
+The guide's suggestions that can't be encoded safely (mouse modifiers,
+folder-collapse mode, MIDI editor prefs, ReaPack synchronize, the Rodilab
+color palette) are printed as a checklist on the run that seeds the
+config.
+
 ## Adding a role
 
 Drop `roles/<name>/` with a `tasks/main.yml` and add it to `site.yml` —

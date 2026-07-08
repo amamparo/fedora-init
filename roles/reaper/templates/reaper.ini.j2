@@ -1,0 +1,46 @@
+; Seeded by fedora-init (roles/reaper) — first run only. REAPER owns this
+; file from its first exit onward; the role never rewrites an existing one.
+; Keys verified against mespotine's Reaper-ConfigVariables documentation.
+; Values encode the Reapertips "Perfect Setup" + Quick Start suggestions.
+[REAPER]
+; Theme: the bundled Reapertips .ReaperThemeZip (loaded zipped, never extracted)
+lastthemefn5={{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/Reapertips Theme.ReaperThemeZip
+; Startup: open a new project (19), not the last session — faster startup
+loadlastproj=19
+; Auto-save: to timestamped files in one dedicated dir (saveopts &8),
+; every 3 minutes (autosaveint), only while not recording (autosavemode 0);
+; no .rpp-bak renames (saveopts &1 off) — the one-backup-folder workflow
+saveopts=8
+autosaveint=3
+autosavemode=0
+autosavedir={{ lookup('env', 'HOME') }}/Music/REAPER/Backups
+; Peaks: all .reapeaks caches in one alternate path (altpeaks &1)
+altpeaks=1
+altpeakspath={{ lookup('env', 'HOME') }}/Music/REAPER/Peaks
+; Appearance: straight grid lines instead of dotted
+griddot=0
+; Grid: bigger minimum line spacing (px) — uncluttered when zoomed out
+projgridmin=18
+; Playback: keep playing past the end of the project
+stopprojlen=0
+; Recording: no save/delete/rename prompt on stop
+promptendrec=0
+; Recording: clean filenames — track name + pass number
+recfile_wildcards=$track- $recpass00
+; Recording: waveform preview at 30 Hz (value is 1000/Hz)
+recupdatems=33
+; Track meters: 30 Hz update, 40 dB/s decay — smoother meters
+vuupdfreq=30
+vudecay=40
+; Buffering: media buffer 600 ms / 50% prebuffer — snappier transport
+workbufmsex=600
+prebufperb=50
+; Project default (the "Save as default project settings" slot):
+; timebase for items/envelopes/markers = Time — no stretch/pitch on BPM change
+itemtimelock=0
+; Media item defaults: no automatic fade-in/fade-out on new items
+; (splitautoxfade &8=1 turns the fade-length checkbox OFF — inverted bit)
+splitautoxfade=8
+; Media item defaults: no "loop source" on new/imported/recorded items —
+; dragging an item edge extends instead of looping
+loopnewitems=0

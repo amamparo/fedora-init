@@ -78,3 +78,5 @@
       tags: tailscale
     - role: mise
       tags: mise
+    - role: reaper
+      tags: reaper
