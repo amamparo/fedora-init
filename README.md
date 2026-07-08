@@ -313,6 +313,15 @@ Alejandro Hernandez, CC BY-NC-SA 4.0 — attribution installed alongside):
   deleted.
 - **SWS and ReaPack extensions** dropped into `UserPlugins` (fetched only
   when missing, like the REAPER install itself).
+- **REAPER MCP server** ([TwelveTake-Studios/reaper-mcp](https://github.com/TwelveTake-Studios/reaper-mcp),
+  pinned v1.5.1) pre-installed via `uv` and **activated in Claude Desktop**
+  — so Claude can drive REAPER (compose, mix, render; 163 tools). A stock-Lua
+  bridge auto-starts inside REAPER via native `Scripts/__startup.lua`; the
+  server registers under `mcpServers.reaper` in `claude_desktop_config.json`
+  (one key merged in — the rest of the file is left to Claude Desktop). It
+  drives the DAW with full ReaScript access and is fetched from PyPI; the
+  role prints a one-time nudge to review the pinned source. Restart Claude
+  Desktop and launch REAPER once (keep it open, bridge running) to use it.
 - **Natural horizontal scrolling**: two-finger horizontal scroll pans the
   arrange view and MIDI editor in the touchpad-natural direction (REAPER's
   stock binding scrolls the other way). Added only when no horizontal-wheel
