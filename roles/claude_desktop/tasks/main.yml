@@ -93,7 +93,11 @@
 # Rebuild the user mimeinfo cache so the claude:// handler + the shell's
 # StartupWMClass map pick up the shadowed entry. Only on change — the copy
 # above is the idempotency gate; running it every converged pass would churn.
-- name: Refresh the desktop database for the shadowed launcher
+- name: Refresh the desktop database for the shadowed launcher # noqa: no-handler
+  # Inline, not a handler: the refresh is specific to this one launcher dir and
+  # is meaningful only as the immediate consequence of the copy above — keeping
+  # it adjacent makes that single-consumer dependency explicit, and the
+  # `is changed` gate already delivers the run-only-on-change a handler would.
   ansible.builtin.command: >-
     update-desktop-database {{ lookup('env', 'HOME') }}/.local/share/applications
   when: claude_desktop_override is changed
