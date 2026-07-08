@@ -8,6 +8,24 @@
 # resolves against fresh metadata — stale metadata plus mirror lag once
 # 404'd a package (podman-tui) mid-play.
 
+# The one safe parallelism in a dnf-dominated play: libdnf5 downloads only
+# 3 packages concurrently by default, and every dnf transaction in this
+# repo (this upgrade included) inherits the setting. Bumping it makes the
+# download phase INSIDE each serial dnf step concurrent without touching
+# task order — the transactions themselves can never overlap (one rpm
+# lock). 8 is the sweet spot commonly used with Fedora's mirror network;
+# past ~10 mirrors throttle and gains vanish. First task in the first role
+# so even this play's own upgrade benefits.
+- name: Let dnf download 8 packages in parallel (default 3)
+  become: true
+  community.general.ini_file:
+    path: /etc/dnf/dnf.conf
+    section: main
+    option: max_parallel_downloads
+    value: "8"
+    no_extra_spaces: true
+    mode: "0644"
+
 # update_cache is load-bearing: without it, libdnf5 trusts any cache inside
 # its expiry window, and hours-stale metadata can reference rpms already
 # pruned from mirrors (the podman-tui 404). This is what actually delivers
