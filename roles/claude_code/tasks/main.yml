@@ -138,3 +138,51 @@
     PATH: "{{ lookup('env', 'HOME') }}/.local/bin:{{ lookup('env', 'PATH') }}"
   when: caveman_plugins.rc == 0 and 'caveman@caveman' not in caveman_plugins.stdout
   changed_when: true
+
+# --- ultracode by default -------------------------------------------------
+# ultracode = xhigh reasoning effort + a standing dynamic-workflow
+# orchestration mandate (multi-agent fan-out on every substantive task). Per
+# the settings schema it is SESSION-SCOPED — "typically provided via
+# --settings; interactive toggles never persist it" — so the in-session
+# toggle can't make it the default. The only lever is a persistent settings
+# source, and ~/.claude/settings.json is read every session. Requires
+# workflows enabled (default on the user's plan) and an xhigh-capable model
+# (the settings.json `model`, opus, qualifies).
+#
+# Merge ONE key, never own the file: Claude Code rewrites settings.json at
+# runtime (model/theme/effort are interactively settable and persisted), so
+# a whole-file copy would fight the app on every interactive change — the
+# same reason claude_desktop deliberately leaves claude_desktop_config.json
+# unmanaged. Runs LAST in the role so it reads the file after the caveman
+# install has written its enabledPlugins/marketplace keys, and re-merges
+# them forward. $HOME file the installer never sudo-writes, so NO become.
+- name: Read the current Claude Code settings (absent on a fresh machine)
+  ansible.builtin.slurp:
+    src: "{{ lookup('env', 'HOME') }}/.claude/settings.json"
+  register: claude_settings_raw
+  # No file yet before `claude` has ever written one: tolerate and treat as
+  # empty rather than failing the play.
+  failed_when: false
+  check_mode: false
+
+- name: Parse settings, defaulting to empty when the file is absent or blank
+  ansible.builtin.set_fact:
+    claude_settings: >-
+      {{ (claude_settings_raw.content | b64decode | from_json)
+         if (claude_settings_raw.content is defined
+             and (claude_settings_raw.content | b64decode | trim | length) > 0)
+         else {} }}
+
+# Guard keys on the LOGICAL value (is ultracode already true?), never on file
+# bytes: this write renders canonical JSON that won't match Claude Code's own
+# on-disk formatting, so a bytes comparison would report changed — and
+# rewrite — on every run, flip-flopping against the app forever. Gating on
+# the value means the one-time reformat lands once (the run that first adds
+# the key) and the task is skipped thereafter. ultracode is a recognized
+# schema key, so Claude Code preserves it across its own rewrites.
+- name: Enable ultracode by default (xhigh effort + dynamic workflows)
+  ansible.builtin.copy:
+    dest: "{{ lookup('env', 'HOME') }}/.claude/settings.json"
+    content: "{{ claude_settings | combine({'ultracode': true}) | to_nice_json }}\n"
+    mode: "0644"
+  when: not (claude_settings.ultracode | default(false) | bool)

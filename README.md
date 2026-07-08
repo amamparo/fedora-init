@@ -239,7 +239,12 @@ to sign in. Also installs the
 agent output (~65% fewer tokens) while keeping code, commands, and errors
 verbatim, active automatically from the first message. Switch compression
 with `/caveman [lite|full|ultra]`, or disable with `claude plugin disable
-caveman` — the role won't re-enable a plugin you turned off.
+caveman` — the role won't re-enable a plugin you turned off. Finally, sets
+**ultracode** as the default in `~/.claude/settings.json` (xhigh reasoning
+effort plus standing multi-agent workflow orchestration) — the in-session
+toggle never persists, so a settings key is the only way to make it the
+default. Only this one key is merged in; the rest of the file is left for
+Claude Code to manage.
 
 ### claude-desktop
 
