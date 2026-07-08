@@ -324,6 +324,57 @@
   when: not reaper_ini.stat.exists
   register: reaper_seeded
 
+# --- reversed horizontal scroll (touchpad-natural panning) ------------------
+# Two-finger horizontal scroll arrives as REAPER's "HorizWheel" input, which
+# is NOT a mouse-modifier context (the binary has TCP/MCP wheel contexts
+# only) but a keyboard-section binding: reaper-kb.ini `KEY <mod> <key> <cmd>
+# <section>`, where modifier 255 + key 216 is the bare horizontal wheel
+# (encoding per mespotine's filetype docs, cross-checked against real-world
+# keymaps). The stock default scrolls opposite to touchpad-natural panning;
+# REAPER ships reversed twins of the scroll actions — Main 977 and MIDI
+# Editor (section 32060) 40660 — so the fix is one binding per section.
+#
+# reaper-kb.ini is rewritten by REAPER whenever shortcuts change in-app, but
+# unlike reaper.ini the written state PRESERVES these lines once adopted —
+# so this is the additive-probe class, not the seed-if-absent class: add the
+# binding only when NO HorizWheel binding exists in that section (any
+# command id counts — a later in-app rebinding must win, the Nautilus
+# bookmark rule). rc!=0 covers both a missing line and a missing file.
+# Caveat: edits made while REAPER is running are lost on its exit (it dumps
+# the in-memory keymap); the probe just re-adds on the next run.
+
+- name: Probe for an arrange-view horizontal-wheel binding
+  ansible.builtin.command:
+    cmd: grep -E '^KEY 255 216 [0-9]+ 0\s*$' {{ lookup('env', 'HOME') }}/.config/REAPER/reaper-kb.ini
+  register: reaper_hwheel_main
+  failed_when: false
+  changed_when: false
+  check_mode: false
+
+- name: Probe for a MIDI-editor horizontal-wheel binding
+  ansible.builtin.command:
+    cmd: grep -E '^KEY 255 216 [0-9]+ 32060\s*$' {{ lookup('env', 'HOME') }}/.config/REAPER/reaper-kb.ini
+  register: reaper_hwheel_midi
+  failed_when: false
+  changed_when: false
+  check_mode: false
+
+- name: Bind HorizWheel to reversed scroll in the arrange view
+  ansible.builtin.lineinfile:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper-kb.ini"
+    line: KEY 255 216 977 0
+    create: true
+    mode: "0644"
+  when: reaper_hwheel_main.rc != 0
+
+- name: Bind HorizWheel to reversed scroll in the MIDI editor
+  ansible.builtin.lineinfile:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper-kb.ini"
+    line: KEY 255 216 40660 32060
+    create: true
+    mode: "0644"
+  when: reaper_hwheel_midi.rc != 0
+
 # What the guide suggests but can't be encoded honestly: settings whose ini
 # keys aren't verifiable (7.0+ features postdating the config-var docs),
 # live in per-context mouse-modifier maps, or need interactive flows.

@@ -313,6 +313,10 @@ Alejandro Hernandez, CC BY-NC-SA 4.0 — attribution installed alongside):
   deleted.
 - **SWS and ReaPack extensions** dropped into `UserPlugins` (fetched only
   when missing, like the REAPER install itself).
+- **Natural horizontal scrolling**: two-finger horizontal scroll pans the
+  arrange view and MIDI editor in the touchpad-natural direction (REAPER's
+  stock binding scrolls the other way). Added only when no horizontal-wheel
+  binding exists — a rebinding made in-app wins.
 - **First-run settings** from the Reapertips "Perfect Setup" guide seeded
   into `reaper.ini` — *only when the file doesn't exist yet*; after
   REAPER's first run the file belongs to REAPER. Includes: theme
