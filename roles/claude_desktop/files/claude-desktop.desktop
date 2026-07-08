@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Claude
+Exec=/usr/bin/claude-desktop-unofficial %u
+Icon=claude-desktop-unofficial
+Type=Application
+Terminal=false
+Categories=Office;Utility;
+MimeType=x-scheme-handler/claude;
+StartupWMClass=claude-desktop

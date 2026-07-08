@@ -63,3 +63,38 @@
   when:
     - "'claude-desktop-unofficial' not in ansible_facts.packages"
     - not (ansible_check_mode and claude_desktop_repo is changed)
+
+# GNOME binds a live window back to its .desktop entry by matching the
+# window's WM_CLASS (X11) / app_id (Wayland) against StartupWMClass (then a
+# basename fallback). The official Electron build advertises "claude-desktop":
+# Chromium's GetXdgAppId() derives it from the app's internal desktopName
+# ("claude-desktop.desktop", in the asar), IGNORING the launcher's --class=Claude
+# (verified: aaddrick/claude-desktop-debian #588). The vendor rpm's entry ships
+# StartupWMClass=Claude AND basename claude-desktop-unofficial, so NEITHER the
+# StartupWMClass table nor the basename fallback matches the running window —
+# GNOME then shows the raw app_id "claude-desktop" with a blank/generic icon.
+# (App-search still works: it reads Name=/Icon= straight off the .desktop, no
+# live window involved — which is why the entry looks right until you launch it.)
+#
+# Fix: shadow the /usr/share entry with a SAME-BASENAME copy in the user data
+# dir. ~/.local/share/applications is the highest-precedence XDG dir, so a file
+# with the same desktop-file ID fully REPLACES the system one (desktop entries
+# don't merge across dirs, unlike GSettings), and dnf upgrades only ever rewrite
+# the /usr/share copy — the override survives. The only delta from the vendor
+# file is StartupWMClass=claude-desktop, the real advertised app_id. $HOME file,
+# user session — NEVER become (root's copy would land in /root and bind nothing).
+- name: Shadow the Claude Desktop launcher so GNOME can bind its window+icon
+  ansible.builtin.copy:
+    src: claude-desktop.desktop
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/applications/claude-desktop-unofficial.desktop"
+    mode: "0644"
+  register: claude_desktop_override
+
+# Rebuild the user mimeinfo cache so the claude:// handler + the shell's
+# StartupWMClass map pick up the shadowed entry. Only on change — the copy
+# above is the idempotency gate; running it every converged pass would churn.
+- name: Refresh the desktop database for the shadowed launcher
+  ansible.builtin.command: >-
+    update-desktop-database {{ lookup('env', 'HOME') }}/.local/share/applications
+  when: claude_desktop_override is changed
+  changed_when: claude_desktop_override is changed

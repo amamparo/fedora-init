@@ -232,6 +232,13 @@ it rewrites that file on exit). Note this is an *unofficial* repackaging
 signed with the maintainer's key, not Anthropic's; switch to an official
 Fedora rpm if one ships.
 
+The role also drops a per-user copy of the launcher entry in
+`~/.local/share/applications/` so the **running** window shows the Claude name
+and icon (the app reports its window as `claude-desktop`, which the vendor's
+`/usr/share` entry doesn't match — the app-grid entry looks right but the
+running window would otherwise be nameless and icon-less). Quit and relaunch
+Claude once after install for it to take effect.
+
 ### podman
 
 Podman over Docker, deliberately: Fedora-native, daemonless, rootless by
