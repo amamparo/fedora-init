@@ -116,6 +116,21 @@ key + [github.com/settings/keys](https://github.com/settings/keys) when it
 makes one), a `~/git` checkout dir, and a Files sidebar bookmark for it
 (label yours however you like — the role won't rename it back).
 
+It also sets your global git identity and turns on **SSH commit signing** —
+commits and tags are signed with that same ed25519 key (git's SSH backend, no
+separate GPG key). For GitHub to show commits as *Verified*, add the key a
+second time at [github.com/settings/keys](https://github.com/settings/keys) as
+a **Signing** key (a separate slot from the Authentication key, same key). A
+`~/.config/git/allowed_signers` file is written so `git log --show-signature`
+verifies locally.
+
+### github-cli
+
+The [GitHub CLI](https://cli.github.com) (`gh`) from Fedora's own repos —
+`gh` for PRs, issues, `gh repo clone`, `gh api`, gists. Run `gh auth login`
+once to authenticate (browser/device flow). `./install.sh github` targets just
+this role; `./install.sh gh` also sweeps ghostty (harmless).
+
 ### multimedia
 
 RPM Fusion (free + nonfree), then swaps stock Fedora's codec-stripped
@@ -168,6 +183,14 @@ the overview the moment session startup completes, so logins land on the
 desktop. On GNOME 50 the overview still *flashes* briefly — the shell
 starts its login animation before extensions load, so hiding it is the
 best any extension can do.
+
+### appindicator
+
+GNOME dropped legacy tray icons years ago, so apps that still use them —
+Claude Desktop and the Tailscale applet, both installed here — show nothing in
+the top bar. Fedora already ships the AppIndicator extension (usually as a
+dependency) but leaves it off; this role installs it if missing and enables
+it, so those tray icons appear. Takes effect at your next login.
 
 ### login-keyring
 

@@ -46,6 +46,8 @@
       tags: zsh
     - role: git_workspace
       tags: git-workspace
+    - role: github_cli
+      tags: github-cli
     - role: multimedia
       tags: multimedia
     - role: steam
@@ -58,6 +60,8 @@
       tags: ghostty
     - role: no_overview
       tags: no-overview
+    - role: appindicator
+      tags: appindicator
     - role: login_keyring
       tags: login-keyring
     - role: vscode

@@ -41,6 +41,63 @@
       - "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/id_ed25519.pub') }}"
   when: git_workspace_keygen is changed and not ansible_check_mode
 
+# --- Git identity + SSH commit signing -------------------------------------
+# Sign commits and tags with the SAME ed25519 key generated above — git's SSH
+# signing backend, so no separate GPG key and no extra secret. Signing needs an
+# author identity, which a fresh global ~/.gitconfig lacks, so set that here
+# too. NOTE: the key must ALSO be added at https://github.com/settings/keys as
+# a *Signing* key (a separate slot from the Authentication key, even though
+# it's the same key) before commits show "Verified" on GitHub. All writes land
+# in ~/.gitconfig / $HOME — no become anywhere (root's gitconfig would be
+# configured instead, the dconf-as-root failure class).
+- name: Set the global git identity
+  community.general.git_config:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    scope: global
+  loop:
+    - { name: user.name, value: Aaron Mamparo }
+    - { name: user.email, value: aaronmamparo@gmail.com }
+
+- name: Configure SSH-backed commit and tag signing
+  community.general.git_config:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    scope: global
+  loop:
+    - { name: gpg.format, value: ssh }
+    - { name: user.signingkey, value: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub" }
+    - { name: commit.gpgsign, value: "true" }
+    - { name: tag.gpgsign, value: "true" }
+    - { name: gpg.ssh.allowedSignersFile, value: "{{ lookup('env', 'HOME') }}/.config/git/allowed_signers" }
+
+# The allowed_signers file lets `git log --show-signature` / `git verify-commit`
+# validate signatures LOCALLY — without it git can sign but not verify its own
+# output. One line: "<principal> namespaces=\"git\" <pubkey>". Guarded on the
+# key EXISTING (stat with check_mode:false so it stays truthful under --check):
+# on a fresh --check the keygen above was only simulated, so the pubkey isn't
+# on disk to read yet — the same fresh-check trap the pubkey debug avoids.
+- name: Ensure ~/.config/git exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/git"
+    state: directory
+    mode: "0755"
+
+- name: Probe for the SSH public key
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.ssh/id_ed25519.pub"
+  register: git_workspace_pubkey
+  check_mode: false
+
+- name: Write the allowed_signers file for local signature verification
+  ansible.builtin.copy:
+    dest: "{{ lookup('env', 'HOME') }}/.config/git/allowed_signers"
+    content: >-
+      aaronmamparo@gmail.com namespaces="git"
+      {{ lookup('file', lookup('env', 'HOME') + '/.ssh/id_ed25519.pub') }}
+    mode: "0644"
+  when: git_workspace_pubkey.stat.exists
+
 - name: Ensure ~/git exists
   ansible.builtin.file:
     path: "{{ lookup('env', 'HOME') }}/git"

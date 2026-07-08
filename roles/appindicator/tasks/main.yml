@@ -1,0 +1,44 @@
+---
+# AppIndicator / KStatusNotifierItem tray support for GNOME Shell. GNOME
+# dropped legacy status-tray icons in 3.26 and never restored them, so apps
+# that still publish a tray icon — Claude Desktop (its resources/TrayIconLinux
+# .png) and the Tailscale applet, both installed by this repo — show NOTHING
+# in the top bar without this extension. Fedora already ships it as a package
+# (present as a Workstation dep), UUID appindicatorsupport@rgcjonas.gmail.com
+# under /usr/share/gnome-shell/extensions — but ships it DISABLED. So the work
+# is: ensure the package (guarded), then enable the UUID additively.
+#
+# Deliberately does NOT use the shared roles/common/gnome_extension.yml: that
+# include rsyncs a bundled source tree from a role's files/ and compiles its
+# schemas — nothing to mirror for a system-installed extension. Only the
+# enablement half applies, reproduced below for the single system UUID.
+#
+# Wayland can't hot-reload GNOME Shell — the enable takes effect at next login.
+
+- name: Install the AppIndicator GNOME Shell extension
+  become: true
+  ansible.builtin.dnf5:
+    name: gnome-shell-extension-appindicator
+    state: present
+  when: "'gnome-shell-extension-appindicator' not in ansible_facts.packages"
+
+# Enablement is ADDITIVE (same rule as gnome_extension.yml): read the EFFECTIVE
+# enabled list via gsettings — NOT `dconf read`; vendor defaults like
+# background-logo live in gschema overrides, invisible in the user db until
+# first written — union the AppIndicator UUID in, write back. A bare set would
+# drop Fedora's defaults and the repo's own rectangle/no-overview. User dconf,
+# session bus — NEVER become.
+- name: Read the effective enabled-extensions list
+  ansible.builtin.command:
+    cmd: gsettings get org.gnome.shell enabled-extensions
+  register: appindicator_enabled_probe
+  changed_when: false
+  check_mode: false
+
+- name: Enable the AppIndicator extension
+  community.general.dconf:
+    key: /org/gnome/shell/enabled-extensions
+    value: >-
+      {{ (appindicator_enabled_probe.stdout | regex_findall("'([^']+)'")
+          + ['appindicatorsupport@rgcjonas.gmail.com']) | unique | list | string }}
+    state: present

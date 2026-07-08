@@ -1,0 +1,30 @@
+---
+# GitHub CLI (gh). Complements git_workspace — that role enrolls the SSH key
+# WITH GitHub; gh is the terminal-side GitHub client (auth, PRs, issues,
+# `gh repo clone`, gists, `gh api`). Kept a SEPARATE role, not folded into
+# git_workspace: gh is meaningful on its own (it authenticates over its own
+# token/HTTPS flow, independent of the ssh key), so the add-on merge test
+# fails — same call as keeping window_snapping and no_overview apart.
+#
+# In stock Fedora repos (the `updates` repo), so a plain dnf install +
+# package_facts guard — no vendor .repo file, unlike vscode/tailscale, hence
+# no fresh-`--check` repo gate to carry.
+#
+# Substring-matcher note: `./install.sh gh` also sweeps ghostty (its tag
+# "ghostty" contains "gh") — harmless, both idempotent; use `./install.sh
+# github` to hit only this role.
+- name: Install the GitHub CLI
+  become: true
+  ansible.builtin.dnf5:
+    name: gh
+    state: present
+  when: "'gh' not in ansible_facts.packages"
+  register: github_cli_install
+
+# Login is a browser/device flow (`gh auth login`), not automatable — same
+# class as `tailscale up`. Surface the one manual step, only when just
+# installed and never under --check (matches git_workspace's key-enroll nudge).
+- name: Note the one manual GitHub CLI step
+  ansible.builtin.debug:
+    msg: "Run `gh auth login` once to authenticate (browser/device flow — not automatable)."
+  when: github_cli_install is changed and not ansible_check_mode
