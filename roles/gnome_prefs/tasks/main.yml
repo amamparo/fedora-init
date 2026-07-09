@@ -23,6 +23,41 @@
   loop_control:
     label: "{{ item.key }}"
 
+# Wallpaper: the repo's amber-d.jxl, staged into the user backgrounds dir
+# (~/.local/share/backgrounds is where Settings itself drops user-picked
+# wallpapers) and pointed at by the background dconf keys. The picture-uri
+# value is a GVariant string wrapping a file:// URI; HOME is absolute so the
+# leading "/" makes the canonical three-slash file:/// form. Both the light
+# and dark keys are set — color-scheme is prefer-dark, but setting both means
+# a mode flip never falls back to Fedora's stock background. picture-options
+# 'zoom' scales-to-fill, matching GNOME's default framing. User session, no
+# become. (JPEG XL renders as a wallpaper only if the gdk-pixbuf JXL loader is
+# present — Workstation ships it; a minimal install would need libjxl's
+# pixbuf module.)
+- name: Ensure the user backgrounds dir exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/backgrounds"
+    state: directory
+    mode: "0755"
+
+- name: Stage the wallpaper into the user backgrounds dir
+  ansible.builtin.copy:
+    src: amber-d.jxl
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/backgrounds/amber-d.jxl"
+    mode: "0644"
+
+- name: Set the desktop wallpaper
+  community.general.dconf:
+    key: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+  loop:
+    - { key: /org/gnome/desktop/background/picture-uri, value: "'file://{{ lookup('env', 'HOME') }}/.local/share/backgrounds/amber-d.jxl'" }
+    - { key: /org/gnome/desktop/background/picture-uri-dark, value: "'file://{{ lookup('env', 'HOME') }}/.local/share/backgrounds/amber-d.jxl'" }
+    - { key: /org/gnome/desktop/background/picture-options, value: "'zoom'" }
+  loop_control:
+    label: "{{ item.key }}"
+
 # Displays > Scale: 100% (Fedora defaults this panel to 125%). Monitor scale
 # is not a gsettings key — it lives in monitors.xml, owned by mutter's
 # DisplayConfig D-Bus API; ApplyMonitorsConfig method 2 persists there AND

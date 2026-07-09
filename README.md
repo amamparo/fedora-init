@@ -160,10 +160,12 @@ uninstalled from Brave's UI, only by removing it there.
 
 The handful of desktop settings that differ from stock: dark mode, battery
 percentage, minimize/maximize window buttons, empty dock, touchpad speed,
-and 100% display scale (Fedora defaults to 125%; applied via mutter's D-Bus
-API since Displays ▸ Scale isn't a gsettings key — laptop panel only, so
-run it undocked or set docked layouts in Settings). Runs as the desktop
-user — no privilege escalation.
+the wallpaper (`roles/gnome_prefs/files/amber-d.jxl`, staged into
+`~/.local/share/backgrounds` and set for both light and dark), and 100%
+display scale (Fedora defaults to 125%; applied via mutter's D-Bus API since
+Displays ▸ Scale isn't a gsettings key — laptop panel only, so run it
+undocked or set docked layouts in Settings). Runs as the desktop user — no
+privilege escalation.
 
 ### ghostty
 
