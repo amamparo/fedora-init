@@ -48,6 +48,8 @@
       tags: git-workspace
     - role: github_cli
       tags: github-cli
+    - role: aws
+      tags: aws
     - role: multimedia
       tags: multimedia
     - role: steam

@@ -27,6 +27,14 @@ sudo tickets, delete the drop-in.
 Run a subset of roles by substring: `./install.sh battery zsh` — or without
 a checkout, append `-s battery` after `bash` in the one-liner.
 
+If a role needs secrets (today just **aws**), the script also installs the
+Bitwarden CLI and signs into your vault right on the terminal — master
+password + TOTP, no browser — before the play starts. That only happens
+while the secret's target file is missing; a converged machine never
+prompts. And it's never a roadblock: no vault yet, or a failed sign-in,
+just means everything else still configures and the aws role prints a
+reminder — re-run `./install.sh aws` whenever you're ready.
+
 Prove idempotency instead of trusting it:
 
 ```sh
@@ -130,6 +138,23 @@ The [GitHub CLI](https://cli.github.com) (`gh`) from Fedora's own repos —
 `gh` for PRs, issues, `gh repo clone`, `gh api`, gists. Run `gh auth login`
 once to authenticate (browser/device flow). `./install.sh github` targets just
 this role; `./install.sh gh` also sweeps ghostty (harmless).
+
+### aws
+
+The AWS CLI v2 from Fedora's own repos, with `~/.aws` set up the way
+`aws configure` would: region/output defaults in `~/.aws/config` (edit them
+in `roles/aws/tasks/main.yml` — the role puts them back if changed
+elsewhere), and the access keys seeded into `~/.aws/credentials` (0600)
+from your **Bitwarden** vault. install.sh signs in on the terminal (master
+password + TOTP; the Bitwarden cloud sometimes also asks for your personal
+API-key `client_secret` as a bot check) and the role reads the login item
+named `aws` — username = Access Key ID, password = Secret Access Key.
+
+One-time prep in Bitwarden: a free account works; enable **TOTP two-step
+login** (the CLI can't do passkeys/FIDO2 or Duo — keep an authenticator
+app enrolled) and create the `aws` item. The seed runs only while
+`~/.aws/credentials` is missing — after that the file is yours: rotate keys
+with plain `aws configure`, or delete the file and re-run.
 
 ### multimedia
 

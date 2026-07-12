@@ -1,0 +1,98 @@
+---
+# AWS CLI v2 (stock Fedora rpm — the `updates` repo, the github_cli pattern)
+# plus a one-time ~/.aws seed doing what `aws configure` would, with the
+# access keys fetched from Bitwarden.
+#
+# The keys never touch this repo. install.sh installs the bw CLI and signs
+# into the vault (master password + TOTP, all on the terminal) ONLY when
+# ~/.aws/credentials is absent, exporting BW_SESSION; the bitwarden lookup
+# below shells out to bw on the CONTROLLER, which is why the login can't be
+# a task (no tty there) and rides install.sh instead — the chezmoi
+# "install and auth the password manager before anything reads secrets"
+# bootstrap order.
+#
+# Everything under $HOME runs as the user — NO become (root's ~/.aws
+# otherwise, the dconf-as-root failure class).
+
+- name: Install the AWS CLI
+  become: true
+  ansible.builtin.dnf5:
+    name: awscli2
+    state: present
+  when: "'awscli2' not in ansible_facts.packages"
+
+- name: Ensure ~/.aws exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.aws"
+    state: directory
+    mode: "0700"
+
+# Region/output are repo-declared preferences (the dconf class), managed
+# converged — edit them here, not with `aws configure`, which a later run
+# would revert. Only the credentials below are user-owned after seeding.
+- name: Set the AWS CLI defaults
+  community.general.ini_file:
+    path: "{{ lookup('env', 'HOME') }}/.aws/config"
+    section: default
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    mode: "0600"
+  loop:
+    - { option: region, value: us-east-1 }
+    - { option: output, value: json }
+
+# The convergence probe: its absence gate below is what keeps converged
+# re-runs offline AND free of the Bitwarden prompt (install.sh probes the
+# same path before deciding to sign in at all).
+- name: Probe for existing AWS credentials
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.aws/credentials"
+  register: aws_credentials_probe
+  check_mode: false
+
+# Exact-name lookup: the plugin equality-filters bw's fuzzy --search, and
+# result_count=1 fails loudly when the item is missing or ambiguous — never
+# seed from an arbitrary match. no_log here and on the copy: install.sh
+# always passes --diff, and the fetched item / rendered file IS the secret.
+# no_log censors RESULTS and diffs, not lookup-failure banners — ansible
+# prints a raised lookup's exception chain uncensored (verified on core
+# 2.20) — so keep secrets out of lookup terms/options and out of anything
+# whose failure text could quote a value; the failures reachable here carry
+# only bw's stderr ("Not found.", the result_count mismatch), never item
+# payloads. Never under --check — there's no session to read (install.sh
+# skips the login there) and no honest way to simulate a secret fetch.
+- name: Fetch the aws item from the Bitwarden vault
+  ansible.builtin.set_fact:
+    aws_bw_item: "{{ lookup('community.general.bitwarden', 'aws', search='name', result_count=1) | first }}"
+  no_log: true
+  when:
+    - not aws_credentials_probe.stat.exists
+    - lookup('env', 'BW_SESSION') | length > 0
+    - not ansible_check_mode
+
+# SEEDED ONLY WHEN ABSENT: after this the file belongs to the user — rotate
+# keys with plain `aws configure` (which must win, the bookmark rule), or
+# delete the file and re-run to fetch from the vault again.
+- name: Seed ~/.aws/credentials from the vault item
+  ansible.builtin.copy:
+    dest: "{{ lookup('env', 'HOME') }}/.aws/credentials"
+    content: |
+      [default]
+      aws_access_key_id = {{ aws_bw_item.login.username }}
+      aws_secret_access_key = {{ aws_bw_item.login.password }}
+    mode: "0600"
+  no_log: true
+  when: aws_bw_item is defined
+
+# A run that reaches here without a session (a failed sign-in — install.sh
+# deliberately continues, direct ansible-playbook, or a tag selection that
+# dodged install.sh's login) must not skip the seed silently. Not under
+# --check: the seed is check-gated above, so every fresh dry run would
+# print this otherwise.
+- name: Note the pending credentials seed
+  ansible.builtin.debug:
+    msg: "~/.aws/credentials not seeded — run ./install.sh aws (it signs into Bitwarden and fetches the keys)."
+  when:
+    - not aws_credentials_probe.stat.exists
+    - lookup('env', 'BW_SESSION') | length == 0
+    - not ansible_check_mode
