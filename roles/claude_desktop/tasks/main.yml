@@ -64,39 +64,51 @@
     - "'claude-desktop-unofficial' not in ansible_facts.packages"
     - not (ansible_check_mode and claude_desktop_repo is changed)
 
-# GNOME binds a live window back to its .desktop entry by matching the
-# window's WM_CLASS (X11) / app_id (Wayland) against StartupWMClass (then a
-# basename fallback). The official Electron build advertises "claude-desktop":
-# Chromium's GetXdgAppId() derives it from the app's internal desktopName
-# ("claude-desktop.desktop", in the asar), IGNORING the launcher's --class=Claude
-# (verified: aaddrick/claude-desktop-debian #588). The vendor rpm's entry ships
-# StartupWMClass=Claude AND basename claude-desktop-unofficial, so NEITHER the
-# StartupWMClass table nor the basename fallback matches the running window —
-# GNOME then shows the raw app_id "claude-desktop" with a blank/generic icon.
-# (App-search still works: it reads Name=/Icon= straight off the .desktop, no
-# live window involved — which is why the entry looks right until you launch it.)
+# GNOME binds a live window back to its .desktop entry by matching the window's
+# WM_CLASS (X11) / app_id (Wayland) against StartupWMClass, then falling back to
+# the desktop-file basename. An earlier revision of this role shipped a
+# SAME-BASENAME shadow copy of the vendor entry into
+# ~/.local/share/applications with StartupWMClass patched to "claude-desktop",
+# because the vendor entry then declared StartupWMClass=Claude while Electron
+# advertised claude-desktop (aaddrick/claude-desktop-debian #588).
 #
-# Fix: shadow the /usr/share entry with a SAME-BASENAME copy in the user data
-# dir. ~/.local/share/applications is the highest-precedence XDG dir, so a file
-# with the same desktop-file ID fully REPLACES the system one (desktop entries
-# don't merge across dirs, unlike GSettings), and dnf upgrades only ever rewrite
-# the /usr/share copy — the override survives. The only delta from the vendor
-# file is StartupWMClass=claude-desktop, the real advertised app_id. $HOME file,
-# user session — NEVER become (root's copy would land in /root and bind nothing).
-- name: Shadow the Claude Desktop launcher so GNOME can bind its window+icon
-  ansible.builtin.copy:
-    src: claude-desktop.desktop
-    dest: "{{ lookup('env', 'HOME') }}/.local/share/applications/claude-desktop-unofficial.desktop"
-    mode: "0644"
+# That shadow is now REMOVED — and must not come back. Upstream fixed it: the
+# rpm's launcher-common.sh pins `readonly WM_CLASS='com.anthropic.Claude'`
+# (substituted at package time from the staged app.asar's desktopName), passes
+# --class="$WM_CLASS", and the vendor .desktop ships
+# StartupWMClass=com.anthropic.Claude. Verified live on this machine:
+# `xprop -id <win> WM_CLASS` -> "com.anthropic.claude", "com.anthropic.Claude".
+# So the shadow's hardcoded value became the ONLY mismatch left, and since
+# ~/.local/share/applications OUTRANKS /usr/share (entries REPLACE rather than
+# merge across XDG dirs), the stale copy silently beat the upstream fix: the
+# window bound to no app and alt+tab showed it with a blank icon. App search
+# still looked right throughout — it reads Name=/Icon= off disk with no live
+# window involved, which is exactly what makes this fail so quietly.
+#
+# The lesson is structural, not specific: a copied StartupWMClass is a snapshot
+# of a value the VENDOR owns and changes (Claude -> claude-desktop ->
+# com.anthropic.Claude across three releases), parked in the dir that wins.
+# If a window↔launcher binding ever breaks again, diagnose it — compare the
+# live `xprop WM_CLASS` against the entry's StartupWMClass — and fix it
+# upstream. Do not shadow a vendor entry to patch it.
+#
+# Declarative removal, not just deletion of the task: machines that ran the
+# earlier revision still carry the override, and `state: absent` reports ok
+# (not changed) once it's gone, so converged re-runs stay clean and offline.
+# $HOME file, user session — NEVER become.
+- name: Remove the obsolete Claude Desktop launcher override
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/applications/claude-desktop-unofficial.desktop"
+    state: absent
   register: claude_desktop_override
 
-# Rebuild the user mimeinfo cache so the claude:// handler + the shell's
-# StartupWMClass map pick up the shadowed entry. Only on change — the copy
-# above is the idempotency gate; running it every converged pass would churn.
-- name: Refresh the desktop database for the shadowed launcher # noqa: no-handler
+# Rebuild the user mimeinfo cache so the shell drops the removed entry from its
+# StartupWMClass map and the claude:// handler resolves to the vendor entry
+# again. Only on change — the removal above is the idempotency gate.
+- name: Refresh the desktop database after dropping the override # noqa: no-handler
   # Inline, not a handler: the refresh is specific to this one launcher dir and
-  # is meaningful only as the immediate consequence of the copy above — keeping
-  # it adjacent makes that single-consumer dependency explicit, and the
+  # is meaningful only as the immediate consequence of the removal above —
+  # keeping it adjacent makes that single-consumer dependency explicit, and the
   # `is changed` gate already delivers the run-only-on-change a handler would.
   ansible.builtin.command: >-
     update-desktop-database {{ lookup('env', 'HOME') }}/.local/share/applications
