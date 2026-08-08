@@ -67,6 +67,23 @@ firmware via fwupd/LVFS (reboot-staged ones get called out), and flatpak
 updates for anything you've added. Runs first so the rest of the play
 resolves against fresh metadata.
 
+### snapshots
+
+Automatic btrfs snapshots of the system, so a bad update — or a playbook
+change that goes sideways — is an undo, not a reinstall. Every dnf
+transaction (the updates role's upgrades included) gets pre/post
+[snapper](http://snapper.io) snapshots via a dnf5 hook, and a timeline
+timer adds a few hourly/daily ones on top; retention prunes itself
+(20 transaction pairs, 5 hourly / 7 daily / 2 weekly / 1 monthly).
+Inspect and revert with `sudo snapper list` / `sudo snapper undochange`,
+or the bundled **Btrfs Assistant** GUI.
+
+Two honest limits: snapshots live on the same SSD (disk death is the
+backups role's job), and Fedora keeps `/home` on its own subvolume, so
+system snapshots don't cover your files (deliberate — restic does).
+`/var` *is* inside root, so a full rollback also rewinds logs and
+system-side container state (rootless podman under `~` is unaffected).
+
 ### battery
 
 Swaps Fedora's default power stack (`tuned` + `tuned-ppd`) for **TLP**, which

@@ -1,0 +1,97 @@
+---
+# Btrfs snapshots of / with automatic pre/post pairs around every dnf5
+# transaction — the rollback story for a play that swaps drivers, removes
+# power daemons, and masks units. Snapshots are same-disk UNDO, not
+# backups (disk death is the backups role's job). Fedora's default layout
+# keeps /home a separate subvolume, so root snapshots and rollbacks never
+# touch user files — deliberate division of labor: snapper covers /,
+# restic covers home. The flip side: /var lives INSIDE root, so a full
+# rollback also rewinds logs and system-side container state (rootless
+# podman under ~ is unaffected).
+#
+# The dnf hook is libdnf5-plugin-actions + files/snapper.actions (see the
+# header there for the two deliberate deltas from upstream's example).
+# Known post-rollback trap, documented not automated: if dnf fails with
+# "cannot copy: packages.toml" after a rollback to an old snapshot, run
+# `sudo mkdir -p /usr/lib/sysimage/libdnf5 && sudo restorecon
+# /usr/lib/sysimage/libdnf5` (the dir predates dnf5 state in old trees).
+#
+# Substring-matcher note: `./install.sh snap` matches BOTH window-snapping
+# and this role; `snapshots` (or `shots`) hits only this one.
+
+- name: Install snapper, the dnf5 actions plugin, and the GUI
+  become: true
+  vars:
+    snapshots_packages:
+      - snapper
+      - libdnf5-plugin-actions
+      - btrfs-assistant
+  ansible.builtin.dnf5:
+    name: "{{ snapshots_packages }}"
+    state: present
+  when: snapshots_packages | difference(ansible_facts.packages.keys() | list) | length > 0
+
+# create-config writes /etc/snapper/configs/root (and the /.snapshots
+# subvolume), so creates: doubles as the idempotency guard — and stays
+# honest under --check (reports changed without running when absent).
+- name: Create the snapper config for /
+  become: true
+  ansible.builtin.command:
+    cmd: snapper -c root create-config /
+    creates: /etc/snapper/configs/root
+  register: snapshots_config_created
+
+# The fresh /.snapshots subvolume comes up unlabeled — label it once,
+# tied to creation (the SysGuides F44 step).
+- name: Restore SELinux labels on /.snapshots
+  become: true
+  ansible.builtin.command:
+    cmd: restorecon -RF /.snapshots
+  when: snapshots_config_created is changed and not ansible_check_mode
+  changed_when: true
+
+# Limits are SEEDED one-time on creation, then the config belongs to
+# snapper and the user (set-config rewrites the file — converged
+# management would flip-flop against in-app edits, the reaper.ini class).
+# Number-cleanup only prunes snapshots whose cleanup algorithm is
+# "number" — which is why the hook file passes `-c number` to both
+# snapper create calls. NUMBER_LIMIT counts SNAPSHOTS, not pairs: 40
+# keeps ~20 pre/post transaction pairs. Timeline stays light: this
+# machine's rollback points of interest are dnf transactions, not the
+# hourly drift.
+- name: Seed snapshot retention limits
+  become: true
+  ansible.builtin.command:
+    cmd: >-
+      snapper -c root set-config
+      NUMBER_CLEANUP=yes NUMBER_LIMIT=40 NUMBER_LIMIT_IMPORTANT=10
+      TIMELINE_LIMIT_HOURLY=5 TIMELINE_LIMIT_DAILY=7
+      TIMELINE_LIMIT_WEEKLY=2 TIMELINE_LIMIT_MONTHLY=1
+      TIMELINE_LIMIT_YEARLY=0
+  when: snapshots_config_created is changed and not ansible_check_mode
+  changed_when: true
+
+- name: Install the dnf5 snapper hook
+  become: true
+  ansible.builtin.copy:
+    src: snapper.actions
+    dest: /etc/dnf/libdnf5-plugins/actions.d/snapper.actions
+    owner: root
+    group: root
+    mode: "0644"
+
+# Fedora ships these units disabled (packaged, not enabled — the spec's
+# own note). timeline creates the hourly snapshots, cleanup prunes both
+# timeline and number algorithms per the limits above. The check-mode
+# clause is the battery gate: systemd_service fails on units whose
+# package install was only simulated.
+- name: Enable the snapshot timeline and cleanup timers
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - snapper-timeline.timer
+    - snapper-cleanup.timer
+  when: not ansible_check_mode or 'snapper' in ansible_facts.packages
