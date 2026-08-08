@@ -218,6 +218,18 @@ Workstation installs leave it behind and it depends on Firefox, blocking
 the removal. Web apps (PWAs) are deliberately not managed here — install
 them by hand from Brave's ⋮ ▸ Cast, save, and share ▸ Install page as app.
 
+Brave's startup notification is turned off — `StartupNotify=false`, patched
+into the vendor `.desktop` entry in place. Left on, Brave is missing from the
+alt+tab switcher for the first 15 seconds *after* its window is already open:
+GNOME hands the launch an activation token, Brave never activates with it, and
+mutter holds the startup sequence open for its full 15-second timeout, during
+which gnome-shell keeps the app in a "starting" state the switcher doesn't
+list. The cost is losing the busy-cursor launch feedback for the second or two
+before the window appears. Note that `dnf upgrade brave-browser` restores the
+vendor value (rpm owns the file), so the delay comes back until the next
+`./install.sh brave` — a full `./install.sh` run re-applies it automatically,
+since the upgrade happens earlier in the same run.
+
 The app icon is swapped for a Netscape-styled Brave lion
 (`roles/brave/files/icons/`, with the unscaled master kept beside the
 installed sizes). It's installed into `~/.local/share/icons/hicolor`, which

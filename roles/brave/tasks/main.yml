@@ -29,6 +29,71 @@
     - "'brave-browser' not in ansible_facts.packages"
     - not (ansible_check_mode and brave_repo is changed)
 
+# Brave is missing from alt+tab for the first 15 seconds after its window is
+# already on screen. Mechanism, verified end to end against upstream source:
+#
+#   1. The vendor entry sets StartupNotify=true, so gnome-shell opens a startup
+#      sequence and hands the launch DESKTOP_STARTUP_ID + XDG_ACTIVATION_TOKEN
+#      (confirmed on this machine by reading the launched wrapper's environ).
+#   2. Brave never activates with that token, so mutter holds the sequence open
+#      until STARTUP_TIMEOUT_MS force-completes it — 15000 ms exactly,
+#      mutter/src/core/startup-notification.c.
+#   3. For that whole window gnome-shell pins the app in
+#      SHELL_APP_STATE_STARTING: shell_app_sync_running_state() promotes to
+#      RUNNING only `if (app->state != SHELL_APP_STATE_STARTING)`.
+#   4. alt+tab is built from shell_app_system_get_running(), whose running_apps
+#      table only ever receives RUNNING apps — STARTING ones are excluded.
+#
+# So the window is up and usable while the app is not in the switcher, for
+# exactly the 15s timeout.
+#
+# StartupNotify is the only lever XDG offers, and it lives in the desktop entry.
+# Shadowing the entry into ~/.local/share/applications was tried and REJECTED on
+# two counts. A local entry wins wholesale, freezing Exec/StartupWMClass/MimeType
+# as a stale vendor snapshot — the general rule the icon override below obeys.
+# Worse, it hands Brave a file it rewrites at runtime: with a user copy present,
+# Brave's default-browser flow appended a mailto MimeType line to it, and put it
+# at EOF — inside the trailing [Desktop Action] group instead of [Desktop Entry],
+# i.e. a corrupted entry. Managing that converged would fight the app forever
+# (the reaper.ini / claude_desktop_config.json rewrite-at-runtime class), and
+# seeding it once instead would just re-freeze the vendor snapshot.
+#
+# So patch the ONE key in the vendor entry. Surgical and idempotent, nothing
+# frozen, the xdg_mime task below untouched, and root-owned so Brave cannot
+# mangle it. insertafter is load-bearing rather than decorative: with regexp
+# alone, a future vendor entry that drops the key would get StartupNotify
+# appended at EOF, landing it in the last [Desktop Action] group — reproducing
+# the exact corruption described above.
+#
+# rpm owns this file, so `dnf upgrade brave-browser` restores StartupNotify=true
+# and the delay comes back. Inside a normal run that self-heals (updates goes
+# first, this role follows), but a bare `dnf upgrade` leaves it until the next
+# ./install.sh — and `rpm -V brave-browser` will report the file as modified.
+#
+# Trade: Brave loses its launch feedback (busy cursor / dash pulse) for the 1-2s
+# before its window maps. That beats 15s of a missing switcher entry.
+- name: Probe the vendor Brave desktop entry
+  ansible.builtin.stat:
+    path: /usr/share/applications/brave-browser.desktop
+  register: brave_vendor_desktop
+  changed_when: false
+  check_mode: false
+
+# Gated on the stat rather than just attempted: on a fresh --check the install
+# above was only simulated, so the entry does not exist yet and lineinfile would
+# hard-fail the dry run.
+- name: Disable Brave's startup notification
+  become: true
+  ansible.builtin.lineinfile:
+    path: /usr/share/applications/brave-browser.desktop
+    regexp: '^StartupNotify='
+    line: StartupNotify=false
+    insertafter: '^\[Desktop Entry\]$'
+    owner: root
+    group: root
+    mode: "0644"
+  when: brave_vendor_desktop.stat.exists
+
 # Default browser for the desktop user — no become here. The old module's
 # xdg-settings under sudo would have written root's ~/.config/mimeapps.list
 # instead of the user's; xdg_mime is the same trap. This is the declarative
@@ -96,6 +161,8 @@
 # merge across XDG dirs, so the local copy would win wholesale and freeze
 # Exec/StartupWMClass/MimeType as a stale snapshot of something Brave owns and
 # changes — and the xdg_mime task above depends on that entry's MimeType list.
+# (The StartupNotify fix above patches the vendor entry in place for exactly
+# this reason: no local copy, so nothing is frozen and nothing shadows.)
 #
 # Overriding /usr/share/icons/hicolor would be worse than useless: those files
 # are NOT rpm-owned (`rpm -ql brave-browser` doesn't list them). Brave's
