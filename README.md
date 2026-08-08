@@ -218,10 +218,6 @@ Workstation installs leave it behind and it depends on Firefox, blocking
 the removal. Web apps (PWAs) are deliberately not managed here — install
 them by hand from Brave's ⋮ ▸ Cast, save, and share ▸ Install page as app.
 
-Brave used to sit outside the alt+tab switcher for 15 seconds after its window
-was already open; that's fixed for every app by the **startup-complete** role
-below, not here.
-
 The app icon is swapped for a Netscape-styled Brave lion
 (`roles/brave/files/icons/`, with the unscaled master kept beside the
 installed sizes). It's installed into `~/.local/share/icons/hicolor`, which
@@ -261,27 +257,6 @@ the overview the moment session startup completes, so logins land on the
 desktop. On GNOME 50 the overview still *flashes* briefly — the shell
 starts its login animation before extensions load, so hiding it is the
 best any extension can do.
-
-### startup-complete
-
-Makes apps show up in the alt+tab switcher as soon as their window exists.
-
-Stock GNOME can leave an app out of the switcher for **15 seconds after its
-window is already on screen and usable**, with the pointer stuck in the
-launching spinner the whole time. GNOME starts a "startup sequence" for every
-app it launches and expects the app to finish it once it opens its window.
-GTK apps do that automatically; Chromium- and Electron-based ones (Brave, and
-anything built the same way) never do, so the sequence runs until mutter
-times it out — and while it's pending, the shell treats the app as still
-starting and the switcher doesn't list it at all.
-
-There's no setting for this: the timeout is compiled into mutter, and
-switching off `StartupNotify` in the app's `.desktop` entry has no effect
-because GNOME's own launcher ignores that key. So the third bundled
-micro-extension (`roles/startup_complete/files/startup-complete@amamparo/`)
-finishes the sequence itself the moment the app has a window — the same thing
-a well-behaved app would do, just done for it. Takes effect at next login,
-like any shell extension.
 
 ### appindicator
 

@@ -29,44 +29,6 @@
     - "'brave-browser' not in ansible_facts.packages"
     - not (ansible_check_mode and brave_repo is changed)
 
-# Brave's 15-second absence from the window switcher is NOT fixed here — see
-# roles/startup_complete, which fixes it for every app at the shell.
-#
-# `StartupNotify=false` was tried in this role and REVERTED. It does nothing for
-# a launch from the GNOME UI: mutter's MetaLaunchContext opens the startup
-# sequence unconditionally and never reads that key. It only looked like a fix
-# because it was verified with gtk-launch, which goes through
-# GdkAppLaunchContext — the one launch path that DOES honour StartupNotify, and
-# therefore the one path that cannot reproduce the bug. It is also actively
-# harmful: with startup notification off, an app opening a URL through GIO hands
-# Brave no activation token, so focus-stealing prevention refuses to raise the
-# window — the "browser won't come to the front when I click a link" complaint.
-#
-# The task below is a one-time repair for machines that ran that revision. rpm
-# ships the key as true, so `rpm -V brave-browser` should come back clean once
-# this has run; delete both tasks once every machine has converged.
-- name: Probe the vendor Brave desktop entry
-  ansible.builtin.stat:
-    path: /usr/share/applications/brave-browser.desktop
-  register: brave_vendor_desktop
-  changed_when: false
-  check_mode: false
-
-# Gated on the stat rather than just attempted: on a fresh --check the install
-# above was only simulated, so the entry does not exist yet and lineinfile would
-# hard-fail the dry run.
-- name: Restore Brave's vendor startup-notification setting
-  become: true
-  ansible.builtin.lineinfile:
-    path: /usr/share/applications/brave-browser.desktop
-    regexp: '^StartupNotify='
-    line: StartupNotify=true
-    insertafter: '^\[Desktop Entry\]$'
-    owner: root
-    group: root
-    mode: "0644"
-  when: brave_vendor_desktop.stat.exists
-
 # Default browser for the desktop user — no become here. The old module's
 # xdg-settings under sudo would have written root's ~/.config/mimeapps.list
 # instead of the user's; xdg_mime is the same trap. This is the declarative
@@ -134,11 +96,6 @@
 # merge across XDG dirs, so the local copy would win wholesale and freeze
 # Exec/StartupWMClass/MimeType as a stale snapshot of something Brave owns and
 # changes — and the xdg_mime task above depends on that entry's MimeType list.
-# Confirmed the hard way while chasing the switcher delay: with a user copy of
-# the entry present, Brave's own default-browser flow REWRITES it, appending a
-# mailto MimeType line at EOF where it lands inside the trailing
-# [Desktop Action] group. A shadow is not just stale, it is a file the app
-# fights you for.
 #
 # Overriding /usr/share/icons/hicolor would be worse than useless: those files
 # are NOT rpm-owned (`rpm -ql brave-browser` doesn't list them). Brave's
