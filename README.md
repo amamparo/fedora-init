@@ -160,6 +160,14 @@ a **Signing** key (a separate slot from the Authentication key, same key). A
 `~/.config/git/allowed_signers` file is written so `git log --show-signature`
 verifies locally.
 
+Git output also gets [delta](https://github.com/dandavison/delta) as the
+pager: `git diff`/`show`/`blame` render with syntax highlighting,
+within-line change emphasis, and `n`/`N` to jump between files. Terminal
+only — scripts and tools see plain git output. The pager settings are
+repo-declared (same class as the aws region defaults): edit them in
+`roles/git_workspace/tasks/main.yml`, not with `git config`, which a later
+run would revert.
+
 ### github-cli
 
 The [GitHub CLI](https://cli.github.com) (`gh`) from Fedora's own repos —

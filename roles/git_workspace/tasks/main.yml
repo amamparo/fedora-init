@@ -136,3 +136,29 @@
     create: true
     mode: "0644"
   when: git_workspace_bookmark.rc != 0
+
+# --- delta: syntax-highlighting git pager -----------------------------------
+# Renders diff/show/blame with syntax highlighting and within-line change
+# emphasis. Rides this role by the add-on rule — a git pager is meaningless
+# without git. Scripts and tools (Claude Code included) are unaffected: git
+# only engages the pager on a tty.
+- name: Install git-delta
+  become: true
+  ansible.builtin.dnf5:
+    name: git-delta
+    state: present
+  when: "'git-delta' not in ansible_facts.packages"
+
+# navigate: n/N jump between files inside a paged diff. zdiff3 conflict
+# markers add the merged-base section delta then highlights. side-by-side
+# stays off deliberately — too wide for the laptop panel.
+- name: Route git output through delta
+  community.general.git_config:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    scope: global
+  loop:
+    - { name: core.pager, value: delta }
+    - { name: interactive.diffFilter, value: delta --color-only }
+    - { name: delta.navigate, value: "true" }
+    - { name: merge.conflictStyle, value: zdiff3 }
