@@ -209,7 +209,10 @@ by the multimedia role).
 
 Brave browser from its official repo (gpg-verified), set as the default
 browser (declaratively, via mime handlers), and every other browser removed —
-Fedora's stock Firefox, plus chromium/epiphany/chrome if present. Also
+Fedora's stock Firefox, plus chromium/epiphany/chrome if present. The
+leftover Anaconda installer UI (`anaconda-webui`) goes too: fresh
+Workstation installs leave it behind and it depends on Firefox, blocking
+the removal. Also
 force-installs PWAs via browser policy (Tidal, YouTube TV, tastytrade):
 real apps — own windows, manifest icons, app-grid launcher entries, no
 Desktop clutter — installed during the play itself (the role nudges Brave
