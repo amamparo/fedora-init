@@ -1,0 +1,35 @@
+---
+# GIMP — raster image editor. A stock Fedora rpm (3.2.4 on F44), so this is a
+# plain guarded dnf5 install with no vendor .repo file, and therefore no
+# fresh-`--check` repo gate to carry: the github_cli/qpwgraph pattern, not the
+# vscode/tailscale one.
+#
+# Its own role, not an add-on. Nothing else this repo installs implies GIMP
+# and GIMP implies nothing back, so the dependency-direction merge test fails
+# the same way it does for qpwgraph — contrast the caveman plugin, which is
+# meaningless without claude_code and so lives inside it.
+#
+# Deliberately the base package only. Fedora also ships gimp-help-<lang> (the
+# offline manual — without it the help browser uses the online one),
+# gimp-data-extras, and several third-party plugin rpms (gimp-dds-plugin,
+# gimp-fourier-plugin, gimp-elsamuko, gimpfx-foundry). All opt-in, none needed
+# for a working editor, and every one of them is weight on a laptop.
+#
+# Name traps, verified against the F44 package index and the packaged desktop
+# entry: the rpm is plain `gimp`, but the entry launches the *versioned*
+# binary (`Exec=gimp-3.2 %U`) — /usr/bin/gimp is a same-package alias, so both
+# names work from a shell. Don't "correct" the Exec line. The entry also ships
+# `StartupWMClass=gimp`; per the repo-wide rule, never shadow a vendor
+# .desktop to patch that field (the claude_desktop lesson). If a window ever
+# fails to bind to its launcher, compare live `xprop WM_CLASS` against the
+# entry and fix it upstream instead.
+#
+# Substring-matcher note: `./install.sh gimp` reaches only this role, but
+# `./install.sh gi` also sweeps git-workspace, github-cli and login-keyring
+# (lo*gi*n) — verified against the matcher, not guessed.
+- name: Install GIMP
+  become: true
+  ansible.builtin.dnf5:
+    name: gimp
+    state: present
+  when: "'gimp' not in ansible_facts.packages"

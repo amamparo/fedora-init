@@ -400,6 +400,14 @@ folder-collapse mode, MIDI editor prefs, ReaPack synchronize, the Rodilab
 color palette) are printed as a checklist on the run that seeds the
 config.
 
+### gimp
+
+[GIMP](https://www.gimp.org) — the raster image editor, from Fedora's own
+repos. Just the editor: the per-language offline manuals, the extra brush
+and pattern data, and the third-party plugin packages Fedora also carries
+(`gimp-data-extras`, `gimp-dds-plugin`, `gimpfx-foundry`…) are all left to
+`sudo dnf install` if you ever want them.
+
 ## Adding a role
 
 Drop `roles/<name>/` with a `tasks/main.yml` and add it to `site.yml` —

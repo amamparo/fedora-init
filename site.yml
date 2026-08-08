@@ -88,3 +88,5 @@
       tags: qpwgraph
     - role: reaper
       tags: reaper
+    - role: gimp
+      tags: gimp
