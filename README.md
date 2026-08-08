@@ -133,6 +133,17 @@ auto-updated afterwards), drops in `roles/zsh/files/zshrc` (robbyrussell
 theme, `plugins=(git)` only), and makes zsh the login shell. A pre-existing
 `~/.zshrc` that differs is backed up once to `~/.zshrc.pre-fedora-init`.
 
+### cli-tools
+
+The modern-CLI baseline, all from Fedora's own repos: `fzf` (Ctrl+R fuzzy
+history, Ctrl+T file picker, Alt+C fuzzy cd — wired up in the zsh role's
+zshrc), `rg` (ripgrep), `fd`, `bat`, `jq`, `yq` (Fedora ships mikefarah's
+Go yq, the v4 syntax modern docs assume), `btop`, `eza`, `zoxide`
+(`z proj` jumps to a dir you've visited once), and `uv` (with `uvx`,
+which many MCP-server configs expect on PATH — mise still owns runtime
+pins). `./install.sh tools` targets just this role (`cli` also sweeps
+github-cli).
+
 ### git-workspace
 
 GitHub-ready ed25519 SSH key (no passphrase — same LUKS trade-off as

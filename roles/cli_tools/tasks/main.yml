@@ -1,0 +1,51 @@
+---
+# The modern-CLI baseline — the 2025/2026 "modern unix" consensus picks
+# that Fedora ships as stock rpms, one guarded transaction:
+#   fzf      fuzzy finder: Ctrl+R history, Ctrl+T files, Alt+C cd (wired
+#            in the zsh role's zshrc; completion auto-loads from zsh
+#            site-functions)
+#   ripgrep  rg — grep for code
+#   fd-find  fd — the rpm is fd-find but the binary is plain `fd`
+#            (Debian's fdfind rename does not apply to Fedora)
+#   bat      cat with syntax highlighting
+#   jq, yq   JSON/YAML processors. Fedora's `yq` IS mikefarah's Go yq v4
+#            (the one modern docs assume); there is no go-yq rpm — don't
+#            "correct" either name.
+#   btop     interactive resource monitor — fills the gap powertop
+#            deliberately leaves (measurement-only, TLP owns the knobs)
+#   eza      modern ls — its --icons need a Nerd Font ghostty doesn't
+#            ship, so plain output here
+#   zoxide   smarter cd (`z <fuzzy-name>`) — hooked in the zsh role's
+#            zshrc; the rpm has no profile.d hook
+#   uv       Astral's python package runner/manager; its `uvx` is how
+#            many MCP-server configs launch stdio servers. Ownership
+#            split: mise pins runtimes, uv does packaging — don't let
+#            both manage pythons.
+#
+# One role for the set, deliberately: a baseline toolkit is one concern,
+# and eight one-package roles would be noise. Substring note:
+# `./install.sh cli` also sweeps github-cli (its tag contains "cli");
+# `./install.sh tools` is the unique handle for this role.
+#
+# Shell wiring (fzf keybindings, zoxide init) lives in
+# roles/zsh/files/zshrc, NOT here — the mise rule: a lineinfile from this
+# role would diverge ~/.zshrc from the zsh role's asset, and its cmp-copy
+# would clobber the lines on the next run.
+- name: Install the CLI toolkit
+  become: true
+  vars:
+    cli_tools_packages:
+      - fzf
+      - ripgrep
+      - fd-find
+      - bat
+      - jq
+      - yq
+      - btop
+      - eza
+      - zoxide
+      - uv
+  ansible.builtin.dnf5:
+    name: "{{ cli_tools_packages }}"
+    state: present
+  when: cli_tools_packages | difference(ansible_facts.packages.keys() | list) | length > 0

@@ -46,6 +46,8 @@
       tags: window-snapping
     - role: zsh
       tags: zsh
+    - role: cli_tools
+      tags: cli-tools
     - role: git_workspace
       tags: git-workspace
     - role: github_cli

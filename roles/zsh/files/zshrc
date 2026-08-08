@@ -7,6 +7,16 @@ plugins=(git)
 
 source "$ZSH/oh-my-zsh.sh"
 
+# fzf: Ctrl+R fuzzy history, Ctrl+T file picker, Alt+C fuzzy cd. Fedora's
+# rpm installs these bindings but deliberately leaves them off (its
+# README.Fedora); completion already auto-loads from zsh site-functions —
+# never source that half by hand. Guarded like mise below (cli_tools role).
+[[ -r /usr/share/fzf/shell/key-bindings.zsh ]] && source /usr/share/fzf/shell/key-bindings.zsh
+
+# zoxide: `z <fuzzy-name>` jumps to any dir you've visited. The rpm ships
+# no profile.d hook — this eval is the only wiring (cli_tools role).
+command -v zoxide >/dev/null && eval "$(zoxide init zsh)"
+
 # mise: runtime versions (node/python/java) — hooks cd to apply per-project
 # pins. Guarded so the shell works before the mise role has run.
 command -v mise >/dev/null && eval "$(mise activate zsh)"
