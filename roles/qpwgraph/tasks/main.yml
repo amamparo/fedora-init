@@ -1,0 +1,18 @@
+---
+# qpwgraph: a patchbay GUI for PipeWire — route REAPER to specific devices,
+# record Brave/system audio into a track, debug "why is there no sound" by
+# looking at the actual graph. Effectively the PipeWire companion to a DAW,
+# but a SEPARATE role, not a reaper add-on: system-wide audio routing is
+# meaningful without REAPER (the github_cli-vs-git_workspace call, not the
+# caveman one).
+#
+# Chosen over Helvum (the GTK-native alternative) because qpwgraph saves
+# persistent patchbay files that auto-reconnect — the feature that matters
+# when the same REAPER routing gets rebuilt every session. Qt app on a GTK
+# desktop: pulls Qt6 libs, looks non-native — cosmetic only.
+- name: Install qpwgraph
+  become: true
+  ansible.builtin.dnf5:
+    name: qpwgraph
+    state: present
+  when: "'qpwgraph' not in ansible_facts.packages"

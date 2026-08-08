@@ -379,6 +379,15 @@ no shims, none of nvm's startup drag. Get runtimes with
 `mise use -g node@lts python@3.13 java@temurin-21`, or drop the `-g` inside
 a project.
 
+### qpwgraph
+
+[qpwgraph](https://gitlab.freedesktop.org/rncbc/qpwgraph) — a patchbay GUI
+for PipeWire. Route REAPER to specific devices, record Brave/system audio
+into a track, or see the actual audio graph when something is silent.
+Patchbay files persist and auto-reconnect, so a recurring REAPER routing
+survives replugs and reboots. (It's a Qt app, so it looks a little
+non-native on GNOME — cosmetic only.)
+
 ### reaper
 
 [REAPER](https://www.reaper.fm) (DAW) via the official Linux tarball's
