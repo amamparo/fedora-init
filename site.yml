@@ -54,8 +54,6 @@
       tags: github-cli
     - role: aws
       tags: aws
-    - role: backups
-      tags: backups
     - role: multimedia
       tags: multimedia
     - role: steam

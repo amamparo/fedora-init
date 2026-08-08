@@ -2,12 +2,11 @@
 # Btrfs snapshots of / with automatic pre/post pairs around every dnf5
 # transaction — the rollback story for a play that swaps drivers, removes
 # power daemons, and masks units. Snapshots are same-disk UNDO, not
-# backups (disk death is the backups role's job). Fedora's default layout
-# keeps /home a separate subvolume, so root snapshots and rollbacks never
-# touch user files — deliberate division of labor: snapper covers /,
-# restic covers home. The flip side: /var lives INSIDE root, so a full
-# rollback also rewinds logs and system-side container state (rootless
-# podman under ~ is unaffected).
+# backups: they don't survive the SSD. Fedora's default layout keeps
+# /home a separate subvolume, so root snapshots and rollbacks never touch
+# user files. The flip side: /var lives INSIDE root, so a full rollback
+# also rewinds logs and system-side container state (rootless podman
+# under ~ is unaffected).
 #
 # The dnf hook is libdnf5-plugin-actions + files/snapper.actions (see the
 # header there for the two deliberate deltas from upstream's example).
