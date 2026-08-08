@@ -1,7 +1,0 @@
-{
-  "WebAppInstallForceList": [
-    { "url": "https://listen.tidal.com", "default_launch_container": "window" },
-    { "url": "https://tv.youtube.com", "default_launch_container": "window" },
-    { "url": "https://my.tastytrade.com", "default_launch_container": "window" }
-  ]
-}

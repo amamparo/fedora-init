@@ -212,13 +212,8 @@ browser (declaratively, via mime handlers), and every other browser removed —
 Fedora's stock Firefox, plus chromium/epiphany/chrome if present. The
 leftover Anaconda installer UI (`anaconda-webui`) goes too: fresh
 Workstation installs leave it behind and it depends on Firefox, blocking
-the removal. Also
-force-installs PWAs via browser policy (Tidal, YouTube TV, tastytrade):
-real apps — own windows, manifest icons, app-grid launcher entries, no
-Desktop clutter — installed during the play itself (the role nudges Brave
-awake headlessly if it isn't running). Edit the list in
-`roles/brave/files/policies.json`; while an app is listed it can't be
-uninstalled from Brave's UI, only by removing it there.
+the removal. Web apps (PWAs) are deliberately not managed here — install
+them by hand from Brave's ⋮ ▸ Cast, save, and share ▸ Install page as app.
 
 ### gnome-prefs
 
