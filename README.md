@@ -139,10 +139,13 @@ The modern-CLI baseline, all from Fedora's own repos: `fzf` (Ctrl+R fuzzy
 history, Ctrl+T file picker, Alt+C fuzzy cd — wired up in the zsh role's
 zshrc), `rg` (ripgrep), `fd`, `bat`, `jq`, `yq` (Fedora ships mikefarah's
 Go yq, the v4 syntax modern docs assume), `btop`, `eza`, `zoxide`
-(`z proj` jumps to a dir you've visited once), and `uv` (with `uvx`,
+(`z proj` jumps to a dir you've visited once), `uv` (with `uvx`,
 which many MCP-server configs expect on PATH — mise still owns runtime
-pins). `./install.sh tools` targets just this role (`cli` also sweeps
-github-cli).
+pins), and [`just`](https://just.systems) (a command runner: `just
+<recipe>` runs recipes from a project's `justfile`, with tab-completion
+out of the box — it has no build graph, so it complements a Makefile
+rather than replacing one). `./install.sh tools` targets only this role
+(`cli` also sweeps github-cli).
 
 ### git-workspace
 

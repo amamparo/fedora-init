@@ -21,6 +21,13 @@
 #            many MCP-server configs launch stdio servers. Ownership
 #            split: mise pins runtimes, uv does packaging — don't let
 #            both manage pythons.
+#   just     command runner — `just <recipe>` runs recipes out of a
+#            justfile. Deliberately NOT a make replacement: no build
+#            graph, no target/prerequisite staleness checks, so it never
+#            competes with a real Makefile. Needs no zshrc wiring: the
+#            rpm ships /usr/share/zsh/site-functions/_just, so
+#            completions auto-load (the fzf-completion case, not the
+#            zoxide one).
 #
 # One role for the set, deliberately: a baseline toolkit is one concern,
 # and eight one-package roles would be noise. Substring note:
@@ -45,6 +52,7 @@
       - eza
       - zoxide
       - uv
+      - just
   ansible.builtin.dnf5:
     name: "{{ cli_tools_packages }}"
     state: present
