@@ -1,0 +1,11 @@
+# fedora-init (backups role) — repo-owned; edit roles/backups/files/ and
+# re-run, not this copy.
+[Unit]
+Description=restic backup of the home directory to S3
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/restic-backup
+# Yield to interactive work — a backup should never make the desktop lag.
+Nice=10
+IOSchedulingClass=idle

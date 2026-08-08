@@ -1,0 +1,129 @@
+---
+# Offsite backups: restic → S3, driven by a systemd *user* timer. The TIMER
+# is the network actor — the play only installs and wires things up, so the
+# zero-network converged re-run rule holds by construction (the sanctioned
+# exception list does not grow a third member).
+#
+# The repository password comes from Bitwarden at seed time — the aws
+# pattern verbatim: install.sh signs in only while the seed target
+# (~/.config/restic/password) is missing, the fetch and seed are no_log,
+# and the file is SEEDED ONLY WHEN ABSENT. Vault item shape: login item
+# named `restic`, password field = the repository password (the username
+# is unused). Lose that password and every backup is unreadable — the
+# Bitwarden item is load-bearing, never store the password only here.
+#
+# S3 credentials are the aws role's ~/.aws/credentials (this role runs
+# right after aws in site.yml) — nothing is duplicated here. The IAM user
+# behind the `aws` vault item needs s3:* on the bucket; the first timer
+# run creates the bucket via `restic init` if it's missing.
+#
+# Everything under $HOME runs as the user — NO become anywhere.
+
+- name: Install restic
+  become: true
+  ansible.builtin.dnf5:
+    name: restic
+    state: present
+  when: "'restic' not in ansible_facts.packages"
+
+- name: Ensure ~/.config/restic exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/restic"
+    state: directory
+    mode: "0700"
+
+# The convergence probe: its absence gate below keeps converged re-runs
+# free of the Bitwarden prompt (install.sh probes the same path before
+# deciding to sign in at all).
+- name: Probe for the restic repository password
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/restic/password"
+  register: restic_password_probe
+  check_mode: false
+
+# Exact-name lookup, result_count=1 — a missing or ambiguous `restic` item
+# fails loudly, never seeds an arbitrary match. no_log on fetch and seed:
+# install.sh always passes --diff and the password IS the secret (see the
+# aws role for the lookup-failure-banner caveat that shapes this). Never
+# under --check — no session to read, no honest way to simulate.
+- name: Fetch the restic item from the Bitwarden vault
+  ansible.builtin.set_fact:
+    restic_bw_item: "{{ lookup('community.general.bitwarden', 'restic', search='name', result_count=1) | first }}"
+  no_log: true
+  when:
+    - not restic_password_probe.stat.exists
+    - lookup('env', 'BW_SESSION') | length > 0
+    - not ansible_check_mode
+
+# SEEDED ONLY WHEN ABSENT: rotating a restic repository password is a
+# restic operation (`restic key`), not a file edit — delete the file and
+# re-run only if the vault item was updated to match.
+- name: Seed ~/.config/restic/password from the vault item
+  ansible.builtin.copy:
+    dest: "{{ lookup('env', 'HOME') }}/.config/restic/password"
+    content: "{{ restic_bw_item.login.password }}"
+    mode: "0600"
+  no_log: true
+  when: restic_bw_item is defined
+
+# A run that reaches here without a session must not skip the seed
+# silently — the timer would fail every night with nothing saying why.
+- name: Note the pending password seed
+  ansible.builtin.debug:
+    msg: "~/.config/restic/password not seeded — run ./install.sh backups (it signs into Bitwarden and fetches the repository password)."
+  when:
+    - not restic_password_probe.stat.exists
+    - lookup('env', 'BW_SESSION') | length == 0
+    - not ansible_check_mode
+
+- name: Install the backup excludes list
+  ansible.builtin.copy:
+    src: excludes.txt
+    dest: "{{ lookup('env', 'HOME') }}/.config/restic/excludes.txt"
+    mode: "0644"
+
+- name: Ensure ~/.local/bin exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Install the backup script
+  ansible.builtin.copy:
+    src: restic-backup
+    dest: "{{ lookup('env', 'HOME') }}/.local/bin/restic-backup"
+    mode: "0755"
+
+- name: Ensure the systemd user unit dir exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/systemd/user"
+    state: directory
+    mode: "0755"
+
+# Unit edits reach the running user systemd through the daemon-reload
+# handler (fires only on change; force_handlers covers mid-play aborts).
+- name: Install the backup service and timer units
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ lookup('env', 'HOME') }}/.config/systemd/user/{{ item }}"
+    mode: "0644"
+  loop:
+    - restic-backup.service
+    - restic-backup.timer
+  register: restic_units
+  notify: systemd user daemon-reload
+
+# scope: user rides the session bus — NO become, the podman.socket rule.
+# The check-mode clause is the brave/vscode gate: under fresh --check the
+# unit files above were only simulated, and systemd_service fails on units
+# that don't exist even in check mode (the battery-role gotcha). Enabled
+# unconditionally otherwise: an unseeded password makes the nightly run
+# fail loudly in the journal, which beats a timer that silently never
+# existed (and the debug above says how to fix it).
+- name: Enable the daily backup timer
+  ansible.builtin.systemd_service:
+    name: restic-backup.timer
+    scope: user
+    enabled: true
+    state: started
+  when: not (ansible_check_mode and restic_units is changed)

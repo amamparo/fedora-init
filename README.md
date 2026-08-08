@@ -27,13 +27,13 @@ sudo tickets, delete the drop-in.
 Run a subset of roles by substring: `./install.sh battery zsh` — or without
 a checkout, append `-s battery` after `bash` in the one-liner.
 
-If a role needs secrets (today just **aws**), the script also installs the
-Bitwarden CLI and signs into your vault right on the terminal — master
+If a role needs secrets (**aws** and **backups**), the script also installs
+the Bitwarden CLI and signs into your vault right on the terminal — master
 password + TOTP, no browser — before the play starts. That only happens
-while the secret's target file is missing; a converged machine never
+while a secret's target file is missing; a converged machine never
 prompts. And it's never a roadblock: no vault yet, or a failed sign-in,
-just means everything else still configures and the aws role prints a
-reminder — re-run `./install.sh aws` whenever you're ready.
+just means everything else still configures and the role prints a
+reminder — re-run `./install.sh aws` (or `backups`) whenever you're ready.
 
 Prove idempotency instead of trusting it:
 
@@ -191,6 +191,28 @@ login** (the CLI can't do passkeys/FIDO2 or Duo — keep an authenticator
 app enrolled) and create the `aws` item. The seed runs only while
 `~/.aws/credentials` is missing — after that the file is yours: rotate keys
 with plain `aws configure`, or delete the file and re-run.
+
+### backups
+
+The offsite half of the safety story (snapshots are same-disk undo; this
+survives the disk): [restic](https://restic.net) backs up your home
+directory to S3 daily via a systemd user timer, with excludes for what a
+restore shouldn't resurrect — caches, `node_modules`, podman/Steam
+storage, self-updating app bundles (edit
+`roles/backups/files/excludes.txt`). Keeps 7 daily / 4 weekly / 6 monthly
+snapshots, pruned automatically.
+
+It reuses the aws role's credentials, and the repository password comes
+from Bitwarden the same way the aws keys do: create a login item named
+`restic` whose **password field is the repository password** (generate a
+strong one — and never lose that item: without it the backups are
+unreadable), and the role seeds it into `~/.config/restic/password` once.
+The first timer run creates the bucket (`amamparo-restic` in us-east-1 —
+edit `roles/backups/files/restic-backup`) and uploads everything; later
+runs are incremental. The IAM user needs S3 rights on the bucket (plus
+`s3:CreateBucket` for that first run, or create the bucket yourself).
+Run one manually with `systemctl --user start restic-backup.service`;
+restore with `restic restore` / `restic mount`.
 
 ### multimedia
 

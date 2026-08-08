@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# fedora-init (backups role) — restic backup of $HOME to S3, run daily by
+# the restic-backup.timer systemd user unit. Repo-owned: edit
+# roles/backups/files/restic-backup and re-run, not the installed copy.
+#
+# Credentials: restic's S3 backend reads ~/.aws/credentials itself
+# (minio-go's chain, default profile — the file the aws role seeds), so
+# there is deliberately NO AWS_* environment here; setting env keys would
+# silently override the file. The region rides the endpoint host — restic
+# requires path-style URLs (bucket in the path, never the hostname) —
+# matching the aws role's us-east-1 default.
+set -euo pipefail
+
+export RESTIC_REPOSITORY="s3:s3.us-east-1.amazonaws.com/amamparo-restic"
+export RESTIC_PASSWORD_FILE="$HOME/.config/restic/password"
+
+# One-time repository (and bucket) creation. `cat config` is restic's
+# documented repo-exists probe: exit 10 means "no repository" (restic
+# >= 0.17). Anything else nonzero (bad password, no credentials, no
+# network) must NOT fall through to init — a blind init against a
+# transient error could create a second, empty repository history.
+rc=0
+restic cat config >/dev/null 2>&1 || rc=$?
+if ((rc == 10)); then
+    restic init
+elif ((rc != 0)); then
+    echo "restic: repository probe failed (rc=$rc); refusing to init blindly" >&2
+    exit "$rc"
+fi
+
+# --exclude-caches skips CACHEDIR.TAG-marked dirs (cargo, pip, restic's
+# own cache); ~/.cache itself carries no tag, so the excludes file covers
+# it. --one-file-system is deliberately NOT used: rootless podman can
+# create nested btrfs subvolumes under ~/.local/share/containers that it
+# would silently skip — the explicit excludes handle those instead.
+restic backup "$HOME" \
+    --exclude-file "$HOME/.config/restic/excludes.txt" \
+    --exclude-caches
+
+# Retention: 7 daily + 4 weekly + 6 monthly, pruned in the same run.
+restic forget --prune --keep-daily 7 --keep-weekly 4 --keep-monthly 6

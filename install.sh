@@ -9,8 +9,8 @@
 # rpms) and runs site.yml locally. Bare arguments select roles by substring,
 # like the old per-module filenames; dash arguments (--check, --diff, --tags,
 # -v...) pass through to ansible-playbook. When a role needs vault secrets
-# (aws) and its target file is missing, it also signs into Bitwarden first —
-# terminal prompts only, no browser.
+# (aws, backups) and its target file is missing, it also signs into Bitwarden
+# first — terminal prompts only, no browser.
 #
 set -euo pipefail
 
@@ -126,25 +126,30 @@ for arg in "$@"; do
 done
 
 # ---- Bitwarden-backed secrets ----------------------------------------
-# The aws role seeds ~/.aws/credentials through the community.general
-# bitwarden lookup, which shells out to the bw CLI *on the controller* —
-# the vault has to be unlocked before ansible-playbook starts, and the
-# sign-in prompts (email, master password, TOTP) need the terminal, which
-# tasks don't have. So the sign-in lives here, gated against needless
-# prompts: skipped when the seed target already exists (a converged
-# machine), under --check/-C (the role check-gates its seed tasks to
-# match), and when a tag selection excludes the aws role.
+# Two roles seed secrets through the community.general bitwarden lookup
+# (aws → ~/.aws/credentials, backups → ~/.config/restic/password), which
+# shells out to the bw CLI *on the controller* — the vault has to be
+# unlocked before ansible-playbook starts, and the sign-in prompts (email,
+# master password, TOTP) need the terminal, which tasks don't have. So the
+# sign-in lives here, gated against needless prompts: a secret is due only
+# while its seed target is missing (a converged machine never prompts) AND
+# the tag selection reaches its role; --check/-C skips the sign-in
+# entirely (the roles check-gate their seed tasks to match).
 secrets_due=0
-[[ -f "$HOME/.aws/credentials" ]] || secrets_due=1
+for pair in "aws=$HOME/.aws/credentials" "backups=$HOME/.config/restic/password"; do
+    role_tag="${pair%%=*}" seed_target="${pair#*=}"
+    [[ -f $seed_target ]] && continue
+    if ((${#tags[@]})); then
+        [[ " ${tags[*]} " == *" $role_tag "* ]] || continue
+    elif [[ " ${passthru[*]} " == *" -t "* || " ${passthru[*]} " == *-tags* ]]; then
+        # A passthru --tags/--skip-tags selection: approximate by looking
+        # for the tag among the words (--skip-tags aws is the accepted
+        # false positive — a needless prompt, nothing worse).
+        [[ " ${passthru[*]} " == *"$role_tag"* ]] || continue
+    fi
+    secrets_due=1
+done
 [[ " $* " == *" --check "* || " $* " == *" -C "* ]] && secrets_due=0
-if ((${#tags[@]})); then
-    [[ " ${tags[*]} " == *" aws "* ]] || secrets_due=0
-elif [[ " ${passthru[*]} " == *" -t "* || " ${passthru[*]} " == *-tags* ]]; then
-    # A passthru --tags/--skip-tags selection: approximate by looking for
-    # "aws" among the words (--skip-tags aws is the one false positive —
-    # a needless prompt, nothing worse).
-    [[ " ${passthru[*]} " == *aws* ]] || secrets_due=0
-fi
 
 if ((secrets_due)); then
     # bw is a single static binary (~45 MB, no rpm exists); unzipped via
@@ -166,13 +171,13 @@ if ((secrets_due)); then
     # Bitwarden cloud can additionally demand the personal API key
     # client_secret (its bot check — web vault > Settings > Security >
     # Keys). A failed sign-in does NOT abort the run: the play continues
-    # without a session and the aws role notes the pending seed instead —
-    # the gh/tailscale non-blocking pattern.
+    # without a session and the affected roles note the pending seed
+    # instead — the gh/tailscale non-blocking pattern.
     if bw login --check >/dev/null 2>&1; then
-        echo "Bitwarden unlock (the aws role fetches keys from the vault):"
+        echo "Bitwarden unlock (aws/backups secrets come from the vault):"
         BW_SESSION="$(bw unlock --raw)" || BW_SESSION=""
     else
-        echo "Bitwarden sign-in (the aws role fetches keys from the vault):"
+        echo "Bitwarden sign-in (aws/backups secrets come from the vault):"
         BW_SESSION="$(bw login --raw)" || BW_SESSION=""
     fi
     if [[ -n $BW_SESSION ]]; then

@@ -1,0 +1,15 @@
+# fedora-init (backups role) — repo-owned; edit roles/backups/files/ and
+# re-run, not this copy.
+[Unit]
+Description=Daily restic backup
+
+[Timer]
+OnCalendar=daily
+# A laptop is rarely awake at midnight: Persistent fires the missed run at
+# the next login/resume instead of skipping the day.
+Persistent=true
+# Spread load off the exact top of the hour (mirrors the dnf timers).
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
