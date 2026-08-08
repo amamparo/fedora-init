@@ -1,0 +1,41 @@
+# Apps appear in the window switcher as soon as their window exists.
+#
+# Stock behaviour: an app can be absent from alt+tab for up to 15 seconds after
+# its window is already on screen, with the pointer stuck in the launching
+# spinner the whole time. gnome-shell holds an app in SHELL_APP_STATE_STARTING
+# while its startup sequence is live, and the switcher only lists RUNNING apps —
+# so the entry is missing entirely, not merely iconless. The sequence is meant to
+# be finished by the app activating with the XDG_ACTIVATION_TOKEN it was handed;
+# GTK does that for free, Chromium/Electron apps (Brave, and anything else built
+# on them) never do, so mutter has to force-complete at STARTUP_TIMEOUT_MS —
+# 15000 ms, and that is a compile-time constant, not a setting.
+#
+# There is no configuration lever for this. StartupNotify=false in the desktop
+# entry does NOT work: mutter's MetaLaunchContext opens the sequence
+# unconditionally and never reads that key (only GdkAppLaunchContext honours it,
+# which is the trap — launching via gtk-launch looks fixed while clicking the
+# icon is unchanged). Shortening the timeout means patching mutter. So the fix
+# belongs in the shell: the bundled micro-extension completes a sequence as soon
+# as its app has a window, which is the same completion path a well-behaved
+# toolkit takes — mutter would have completed it at the timeout regardless, so
+# this only moves it earlier.
+#
+# Deliberately app-agnostic rather than a Brave-specific workaround: every
+# Chromium/Electron app on the machine has the same gap, and the rule "has a
+# window, so it is running" holds for all of them.
+#
+# Everything here touches the user session ($HOME, the user's dconf), so no task
+# in this role may run under become.
+
+# No schemas/ in this extension, so ext_has_schemas: false — the shared task
+# file then skips glib-compile-schemas and has nothing to exclude from the
+# mirror. Enablement is additive via the play's gnome_extensions_enabled list.
+# Wayland can't hot-reload GNOME Shell, so this takes effect at the next login.
+- name: Install and enable the startup-complete extension
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: gnome_extension
+  vars:
+    ext_uuid: startup-complete@amamparo
+    ext_role: startup_complete
+    ext_has_schemas: false

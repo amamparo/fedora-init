@@ -1,0 +1,6 @@
+{
+  "uuid": "startup-complete@amamparo",
+  "name": "Complete startup sequences early",
+  "description": "Put an app in the window switcher as soon as its window exists, instead of waiting out mutter's 15-second startup-notification timeout.",
+  "shell-version": ["48", "49", "50", "51"]
+}
