@@ -87,3 +87,39 @@
     - epiphany
     - google-chrome-stable
   when: item in ansible_facts.packages
+
+# Custom app icon — a Netscape-styled Brave lion in place of the vendor mark.
+#
+# This overrides the ICON THEME, never the .desktop entry. Shadowing
+# brave-browser.desktop in ~/.local/share/applications just to change `Icon=`
+# is the trap claude_desktop already paid for: entries REPLACE rather than
+# merge across XDG dirs, so the local copy would win wholesale and freeze
+# Exec/StartupWMClass/MimeType as a stale snapshot of something Brave owns and
+# changes — and the xdg_mime task above depends on that entry's MimeType list.
+#
+# Overriding /usr/share/icons/hicolor would be worse than useless: those files
+# are NOT rpm-owned (`rpm -ql brave-browser` doesn't list them). Brave's
+# postinstall scriptlet GENERATES them, running `xdg-icon-resource install`
+# over its bundled /opt/brave.com/brave/product_logo_<size>.png set — so every
+# `dnf upgrade`, i.e. every updates-role run, would silently restore the vendor
+# icon. ~/.local/share/icons is untouched by that scriptlet and outranks
+# /usr/share per the XDG icon spec, so this override survives Brave updates.
+#
+# Seven sizes, exactly the set that scriptlet registers (16 24 32 48 64 128
+# 256). The spec's lookup loops the size subdir OUTSIDE the basedir list, so
+# any size we DON'T ship resolves to the vendor icon at that size — a partial
+# set gives a mixed icon depending on where GNOME draws it. Pre-scaled at
+# authoring time from the 465x465 master kept beside the tree (Lanczos), the
+# reaper pre-merged-icon-pack precedent: no ImageMagick on the target, and
+# better 16px quality than GTK downsampling a 465px image on the fly.
+#
+# src has a trailing slash so the tree's CONTENTS merge into the user's
+# hicolor theme; copy is checksum-idempotent, and the master PNG sits outside
+# hicolor/ so it is never installed. $HOME write, so NO become — root's icon
+# theme otherwise, the dconf-as-root class.
+- name: Install the Netscape-styled Brave app icon
+  ansible.builtin.copy:
+    src: icons/hicolor/
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/icons/hicolor/"
+    mode: "0644"
+  notify: Refresh the user icon cache

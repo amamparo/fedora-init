@@ -1,0 +1,19 @@
+---
+# gtk-update-icon-cache -f always rewrites the cache, so it could never be a
+# converged task — a handler instead, firing only when an icon actually landed
+# (the reaper fc-cache pattern; force_handlers in site.yml keeps the
+# notification from being lost to a later role's failure).
+#
+# -t/--ignore-theme-index because the user's hicolor dir has no index.theme of
+# its own and never should: the theme is DEFINED by
+# /usr/share/icons/hicolor/index.theme and merged across basedirs per the XDG
+# icon spec. Without -t the command errors out on the missing index.
+#
+# Not cosmetic bookkeeping: ~/.local/share/icons/hicolor already carries an
+# icon-theme.cache (the JetBrains Toolbox installer writes one), and a cache
+# that doesn't list the new files can hide them from GTK. The refresh is what
+# makes the icon appear without waiting for a fresh login.
+- name: Refresh the user icon cache
+  ansible.builtin.command:
+    cmd: gtk-update-icon-cache -f -t {{ lookup('env', 'HOME') }}/.local/share/icons/hicolor
+  changed_when: true

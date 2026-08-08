@@ -218,6 +218,16 @@ Workstation installs leave it behind and it depends on Firefox, blocking
 the removal. Web apps (PWAs) are deliberately not managed here — install
 them by hand from Brave's ⋮ ▸ Cast, save, and share ▸ Install page as app.
 
+The app icon is swapped for a Netscape-styled Brave lion
+(`roles/brave/files/icons/`, with the unscaled master kept beside the
+installed sizes). It's installed into `~/.local/share/icons/hicolor`, which
+overrides the icon *theme* rather than shadowing Brave's `.desktop` entry —
+so `Exec`, the MIME handler list and `StartupWMClass` all stay the vendor's,
+and because Brave regenerates its `/usr/share` icons from a postinstall
+scriptlet on every upgrade, keeping the override under `~` is what makes it
+survive `dnf upgrade`. To go back to the stock mark, delete
+`~/.local/share/icons/hicolor/*/apps/brave-browser.png` and drop the task.
+
 ### gnome-prefs
 
 The handful of desktop settings that differ from stock: dark mode, battery
