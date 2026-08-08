@@ -168,14 +168,19 @@
 # error (the solver refuses the rich dep rather than cascading the
 # dependent), so drop the installer UI first — dead weight on an installed
 # system anyway; autoremove sweeps its now-orphaned dep chain. Exact-name
-# guard, same offline-re-run rule as the browser removals.
+# guard, same offline-re-run rule as the browser removals. F44 adds
+# anaconda-live, which hard-requires anaconda-webui — the solver won't
+# cascade that dependent either, so it goes first in the loop.
 - name: Remove the leftover Anaconda installer UI (it pins Firefox)
   become: true
   ansible.builtin.dnf5:
-    name: anaconda-webui
+    name: "{{ item }}"
     state: absent
     autoremove: true
-  when: "'anaconda-webui' in ansible_facts.packages"
+  loop:
+    - anaconda-live
+    - anaconda-webui
+  when: item in ansible_facts.packages
 
 # Remove the other browsers (Fedora ships Firefox), after the default points
 # at Brave. Guard each with package_facts: the dnf5 CLI errors out (rather
