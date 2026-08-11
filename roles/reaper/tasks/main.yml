@@ -23,9 +23,12 @@
 - name: Resolve the theme identifiers used by the template and the fetch
   ansible.builtin.set_fact:
     # Named once so tasks/main.yml and templates/reaper.ini.j2 can never drift.
-    reaper_theme_file: rLive - BETA_3.ReaperThemeZip
-    reaper_theme_url: https://www.dropbox.com/s/y170gcmcatu3hme/rLive%20-%20BETA_3.ReaperThemeZip?dl=1
-    reaper_theme_sha256: 96a22184fc9ad12603c80813b83785e2e515b98ad4842315cc02d7fd5f75c58f
+    # The bundle ships all three brightness variants; this picks which one
+    # reaper.ini selects. part_dimmed and part_light sit beside it unused.
+    reaper_theme_file: part_dark.ReaperThemeZip
+    reaper_theme_version: v1.3.1
+    reaper_theme_url: https://github.com/Fleeesch/paRt/releases/download/v1.3.1/part_manual_install_v1.3.1.zip
+    reaper_theme_sha256: b8a01303b46b8ffe233bdee274045f01227c9473dba4a46d6477c804c2c4e13f
 
 - name: Probe for an installed REAPER (/opt/REAPER/reaper)
   ansible.builtin.stat:
@@ -102,27 +105,26 @@
         state: absent
       when: reaper_tmp.path is defined
 
-# --- rLive theme ------------------------------------------------------------
-# rLive (Odys, forum.cockos.com/showthread.php?t=230905) is the only REAPER
-# theme that genuinely reads as Ableton Live: Live-era greys, clips drawn as
-# full-saturation coloured blocks with a title bar, and colour-headed mixer
-# strips. Verified by loading it here on REAPER 7.78.
+# --- paRt theme + its Theme Adjuster ----------------------------------------
+# paRt (Fleeesch, github.com/Fleeesch/paRt) — a flat, deliberately
+# low-contrast theme whose stated focus is functionality. Chosen after the
+# Ableton-look themes were tested and rejected; see CLAUDE.md for that whole
+# dead end. What matters here: paRt is actively maintained, ships complete
+# artwork (3817 toolbar images), applies its own WALTER layout correctly on
+# REAPER 7.78 (verified by loading it), and — decisively for this repo — is
+# published as GitHub *release assets*, so a plain get_url can fetch it.
+# stash.reaper.fm cannot be automated at all: it gates downloads behind a
+# SHA-1 proof-of-work "verify you are human" page. Gumroad-hosted themes are
+# behind a checkout flow. That ruled out most of the field regardless of looks.
 #
-# It is FETCHED, NEVER VENDORED, and that is deliberate. The theme carries no
-# license statement anywhere — not in the thread, not in the zip — and this
-# repo is public, so committing the file would be an unlicensed
-# redistribution. Downloading is aaron fetching his own copy, which is also
-# how this role already handles the REAPER tarball, SWS and ReaPack. The
-# checksum pins the exact BETA 3 build that was tested (2,709,236 bytes), so a
-# changed file fails loudly rather than silently installing something else.
+# The manual-install zip is a RESOURCE-PATH OVERLAY (verified: ColorThemes/,
+# Data/paRt, Scripts/Fleeesch) — the SWS pattern — so one download delivers all
+# three brightness variants AND the Theme Adjuster, which is the only way to
+# reach paRt's 266 theme parameters. Without the adjuster the theme is
+# take-it-or-leave-it; with it, things like mixer strip width are settable.
 #
-# Caveats worth knowing before touching this: the theme is a BETA 3 from March
-# 2021 whose author has been silent since, its rtconfig declares `version 5`
-# (so WALTER composes in legacy mode on 7.x — verified to render correctly,
-# but it covers only 6 of REAPER 7's 182 newer image slots, which fall back to
-# stock), and the download is one person's Dropbox share link. If that link
-# ever dies, the fallback is REAPER's stock Default_7.0 theme; nothing else in
-# this role depends on rLive being present.
+# Fetched, never vendored: 40 MB, and the repo carries no license statement.
+# Pinned to a version + sha256 so a changed asset fails loudly.
 - name: Ensure the REAPER resource dirs exist
   ansible.builtin.file:
     path: "{{ lookup('env', 'HOME') }}/.config/REAPER/{{ item }}"
@@ -133,29 +135,61 @@
     - UserPlugins
     - Scripts
 
-- name: Probe for the rLive theme
+- name: Probe for the paRt theme
   ansible.builtin.stat:
     path: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ reaper_theme_file }}"
   register: reaper_theme
   check_mode: false
 
-# Presence-guarded so a converged re-run never touches the network. The GUI
-# install ("drag the .ReaperThemeZip into REAPER") decomposes into exactly
-# this: the file landing in ColorThemes/ and reaper.ini's lastthemefn5
-# pointing at it. REAPER loads the theme zipped — never extract it.
-- name: Fetch the rLive theme into ColorThemes
-  ansible.builtin.get_url:
-    url: "{{ reaper_theme_url }}"
-    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ reaper_theme_file }}"
-    checksum: sha256:{{ reaper_theme_sha256 }}
-    mode: "0644"
+- name: Install the paRt theme and Theme Adjuster
   when: not reaper_theme.stat.exists
+  block:
+    - name: Create a temp dir for the paRt bundle
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: part-install.
+      register: part_tmp
+
+    - name: Download the paRt bundle
+      ansible.builtin.get_url:
+        url: "{{ reaper_theme_url }}"
+        dest: "{{ part_tmp.path }}/part.zip"
+        checksum: sha256:{{ reaper_theme_sha256 }}
+        mode: "0644"
+      when: part_tmp.path is defined
+
+    - name: Unpack the paRt bundle
+      ansible.builtin.unarchive:
+        src: "{{ part_tmp.path }}/part.zip"
+        dest: "{{ part_tmp.path }}"
+        remote_src: true
+      when: part_tmp.path is defined
+
+    # Overlay, not mirror — no --delete, for the same reason as SWS: these
+    # dirs are shared with everything else the user installs.
+    - name: Copy the paRt payload into the resource path
+      ansible.posix.synchronize:
+        src: "{{ part_tmp.path }}/"
+        dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/"
+        recursive: true
+        rsync_opts:
+          - "--exclude=part.zip"
+          - "--checksum"
+          - "--omit-dir-times"
+      when: part_tmp.path is defined
+
+  always:
+    - name: Remove the paRt temp dir
+      ansible.builtin.file:
+        path: "{{ part_tmp.path }}"
+        state: absent
+      when: part_tmp.path is defined
 
 # The Linux extra: libSwell-user.colortheme darkens REAPER's GTK-less Swell
 # widgets (dialogs, menus) — the tarball build has no GTK theming, this file
-# IS the Linux dark mode. Goes in the resource path root. rLive ships none
-# (no Ableton-look theme does — they are all Windows-authored), so the repo's
-# copy is hand-authored from rLive's own .ReaperTheme palette.
+# IS the Linux dark mode. Goes in the resource path root. paRt ships none
+# (almost no theme does — Linux is a minority target), so the repo's copy is
+# hand-authored to match paRt's palette.
 - name: Install the Swell color theme (dark dialogs/menus on Linux)
   ansible.builtin.copy:
     src: libSwell-user.colortheme
@@ -246,95 +280,6 @@
     mode: "0644"
   when: not reapack_plugin.stat.exists
 
-# --- LBX Stripper 2 (the Ableton-style device chain) ------------------------
-# The horizontal FX/device rack along the bottom of rLive's forum screenshots
-# is NOT part of the theme — its author says so outright: "Fx controls are
-# completely unrelated project to this or any other theme." It is LBX
-# Stripper, a Lua ReaScript that draws custom channel-strip GUIs over an FX
-# chain, and it is the single biggest visual gap between a bare rLive install
-# and those screenshots.
-#
-# Installing it delivers the TOOL, not the look: strips are still built per FX
-# chain (or imported from a strip pack) from inside REAPER, which is
-# interactive — hence the nudge below rather than more tasks here.
-#
-# Stripper2 rather than the original: the v1 repo carries NO license at all,
-# v2 is GPL-3.0, and v1's own README says it "has been superceded by the
-# Stripper2 script" (their data files are compatible). js_ReaScriptAPI is a
-# hard dependency — the script calls JS_Mouse_GetState and errors without it.
-# Its URL is the one ReaTeam's ReaPack index points at, which is the
-# authoritative pointer to the current Linux build (v1.310, MIT).
-
-- name: Ensure the LBX script dir exists
-  ansible.builtin.file:
-    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/Scripts/LBX"
-    state: directory
-    mode: "0755"
-
-- name: Probe for js_ReaScriptAPI
-  ansible.builtin.stat:
-    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/UserPlugins/reaper_js_ReaScriptAPI64.so"
-  register: js_api
-  check_mode: false
-
-- name: Install js_ReaScriptAPI (LBX Stripper's hard dependency)
-  ansible.builtin.get_url:
-    url: https://github.com/juliansader/ReaExtensions/raw/master/js_ReaScriptAPI/v1.310/reaper_js_ReaScriptAPI64.so
-    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/UserPlugins/reaper_js_ReaScriptAPI64.so"
-    mode: "0644"
-  when: not js_api.stat.exists
-
-- name: Probe for the LBX Stripper 2 script
-  ansible.builtin.stat:
-    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/Scripts/LBX/LBX Stripper 2.lua"
-  register: lbx_script
-  check_mode: false
-
-- name: Install the LBX Stripper 2 script
-  ansible.builtin.get_url:
-    url: https://github.com/L-B-X/LBXStripper2/raw/main/LBX%20Stripper%202.lua
-    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Scripts/LBX/LBX Stripper 2.lua"
-    mode: "0644"
-  when: not lbx_script.stat.exists
-
-- name: Probe for the LBX Stripper resources
-  ansible.builtin.stat:
-    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/Scripts/LBX/LBXCS_resources"
-  register: lbx_resources
-  check_mode: false
-
-# The zip carries its own LBXCS_resources/ top level, so unpacking into
-# Scripts/LBX lands it exactly where the script looks for it.
-- name: Install the LBX Stripper resources
-  when: not lbx_resources.stat.exists
-  block:
-    - name: Create a temp dir for the LBX resources
-      ansible.builtin.tempfile:
-        state: directory
-        prefix: lbx-install.
-      register: lbx_tmp
-
-    - name: Download the LBX resources archive
-      ansible.builtin.get_url:
-        url: https://github.com/L-B-X/LBXStripper2/raw/main/LBXCS_resources.zip
-        dest: "{{ lbx_tmp.path }}/LBXCS_resources.zip"
-        mode: "0644"
-      when: lbx_tmp.path is defined
-
-    - name: Unpack the LBX resources into Scripts/LBX
-      ansible.builtin.unarchive:
-        src: "{{ lbx_tmp.path }}/LBXCS_resources.zip"
-        dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Scripts/LBX"
-        remote_src: true
-      when: lbx_tmp.path is defined
-
-  always:
-    - name: Remove the LBX temp dir
-      ansible.builtin.file:
-        path: "{{ lbx_tmp.path }}"
-        state: absent
-      when: lbx_tmp.path is defined
-
 # --- Reapertips removal -----------------------------------------------------
 # This role used to install the Reapertips theme, its two icon packs, its
 # colour palette, its attribution file and the Fira Sans fonts it called for.
@@ -385,8 +330,7 @@
     - "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt"
     - "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/reapertips-license.txt"
     # Fira Sans was bundled only because the Reapertips guide asked for it;
-    # rLive names Arial (-> Liberation Sans, stock and metric-compatible) and
-    # Source Code Pro, both already present system-wide.
+    # paRt names no font this system lacks, so nothing replaces them.
     - "{{ lookup('env', 'HOME') }}/.local/share/fonts/FiraSans-Regular.ttf"
     - "{{ lookup('env', 'HOME') }}/.local/share/fonts/FiraSans-Bold.ttf"
   loop_control:
@@ -439,12 +383,12 @@
 # not be RUNNING. It dumps its in-memory config at exit and would drop a line
 # added underneath it. That is self-healing — the next run re-adds it.
 
-- name: Probe reaper.ini for the retired Reapertips theme selection
+- name: Probe reaper.ini for a retired theme selection
   ansible.builtin.command:
     argv:
       - grep
-      - -Fq
-      - ColorThemes/Reapertips Theme.ReaperThemeZip
+      - -Eq
+      - ^lastthemefn5=.*ColorThemes/(Reapertips Theme|rLive)
       - "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
   register: reaper_old_theme
   failed_when: false
@@ -456,7 +400,7 @@
 # can never override a theme aaron picks in-app later. Deleting reaper.ini to
 # force a reseed was rejected: it would also destroy REAPER's audio-device
 # config, window positions and MIDI hardware state.
-- name: Repoint the theme selection at rLive (one-time migration)
+- name: Repoint the theme selection at paRt (one-time migration)
   ansible.builtin.lineinfile:
     path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
     regexp: ^lastthemefn5=
@@ -645,13 +589,15 @@
 - name: Remaining manual setup (not automatable)
   ansible.builtin.debug:
     msg:
-      - "REAPER installed with the rLive (Ableton-like) theme preselected. Manual steps remaining:"
+      - "REAPER installed with the paRt theme preselected. Manual steps remaining:"
       - "1. Run `reaper` once — evaluation/license notice, then the theme loads."
       - "2. Extensions > ReaPack > Synchronize packages (installs the default repos)."
-      - "3. The Ableton-style device rack is LBX Stripper 2, installed but NOT yet configured:"
-      - "   Actions > Show action list > ReaScript: Load, pick ~/.config/REAPER/Scripts/LBX/'LBX Stripper 2.lua',"
-      - "   then build a strip over a track's FX chain (or import one of the community strip packs)."
-      - "   Installing it gives the tool; the rack in rLive's screenshots is a strip somebody built."
+      - "3. paRt's look is tunable through its Theme Adjuster (266 parameters), installed at"
+      - "   Scripts/Fleeesch/paRt/'paRt - Theme Adjuster.lua' — run it from Actions > Show action list."
+      - "   Mixer strips feeling narrow? That is 'MCP - Track - Element Width'"
+      - "   (par_mcp_track_element_width, 0-2, ships at 1). Its bank buttons 1-4 in the transport load"
+      - "   saved presets; bank 1 ships as the larger-mixer config. Also worth a look for big, quickly"
+      - "   hittable controls: MCP Track Meter Size, TCP Track Faders Volume Size, and the 100-250% zoom."
       - "4. Ableton's Option+scroll resizes the track UNDER THE POINTER; the bound stock action (972)"
       - "   resizes SELECTED tracks. For true parity install SWS's 'adjust track height under mouse'"
       - "   action and rebind KEY 255 250 in reaper-kb.ini to it."

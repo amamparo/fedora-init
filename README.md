@@ -387,36 +387,30 @@ installer — latest version at install time, into `/opt/REAPER` with a
 desktop entry and a `reaper` symlink on PATH. It's licensed shareware:
 the 60-day evaluation starts on first run; buy a license when it fits.
 
-On top of the bare install the role aims REAPER at **Ableton Live** — both
-how it looks and how it navigates:
-
-- **[rLive](https://forum.cockos.com/showthread.php?t=230905) theme** (by
-  Odys) fetched at install and preselected: Live-era greys, clips drawn as
-  full-saturation coloured blocks, colour-headed mixer strips. It carries no
-  license statement, so it is **downloaded, never committed** — pinned to a
-  sha256 so a changed file fails loudly. Fair warning: it's a 2021 beta in
-  REAPER's older `version 5` theme format. It renders correctly on 7.x, but
-  REAPER-7-only UI slots fall back to stock.
+- **[paRt](https://github.com/Fleeesch/paRt) theme** (dark variant
+  preselected) — flat, low-contrast and built around functionality rather
+  than flash. Fetched at install and version-pinned; all three brightness
+  variants land in `ColorThemes` so you can switch in seconds.
+- **paRt's Theme Adjuster** comes with it, which is what makes the theme
+  worth having: 266 settings, live. Mixer strips too narrow? That's
+  *MCP ▸ Track ▸ Element Width* (ships at 1 of 0–2). The **1–4 buttons in
+  the transport** load saved presets, and bank 1 is the larger-mixer
+  config. Meter sizes, fader sizes and a 100–250% zoom are all in there —
+  worth ten minutes if you're tracking and mixing at the same time.
 - **Ableton-shaped navigation.** Bare two-finger scroll moves vertically,
   Shift scrolls the timeline, **Ctrl zooms** and Alt changes track height —
-  matching Live's scroll/Cmd/Option scheme, with Ctrl standing in for Cmd.
-  Dragging the ruler scrolls and zooms at once (Ctrl still sets loop
-  points); middle-drag hand-scrolls. Horizontal scroll pans
-  touchpad-naturally, correcting a sign bug in REAPER's Linux layer rather
-  than a GNOME setting. Zoom stays anchored on the cursor like Live's, while
-  vertical zoom follows the pointer — also like Live.
-  *Two Live gestures are impossible here:* pinch-to-zoom (REAPER's Linux
-  layer receives the gesture and discards it — Ctrl+scroll is the stand-in)
-  and smooth/inertial panning (scroll is quantised to wheel clicks).
-- **The Ableton-style device rack** is [LBX Stripper
-  2](https://github.com/L-B-X/LBXStripper2) plus its `js_ReaScriptAPI`
-  dependency, installed ready to use. This is the part of rLive's famous
-  screenshots that *isn't* the theme — its author says so — so it's
-  installed here; you still build a strip over an FX chain yourself.
+  Live's scroll/Cmd/Option scheme, with Ctrl standing in for Cmd. Dragging
+  the ruler scrolls and zooms at once (Ctrl still sets loop points);
+  middle-drag hand-scrolls. Horizontal scroll pans touchpad-naturally,
+  correcting a sign bug in REAPER's Linux layer rather than a GNOME setting.
+  Zoom stays cursor-anchored like Live's; vertical zoom follows the pointer,
+  also like Live. *Two Live gestures are impossible here:* pinch-to-zoom
+  (REAPER's Linux layer receives the gesture and discards it — Ctrl+scroll
+  is the stand-in) and smooth/inertial panning.
 - **SWS and ReaPack extensions** dropped into `UserPlugins` (fetched only
   when missing, like the REAPER install itself).
 - **Dark dialogs and menus** via `libSwell-user.colortheme`, hand-authored
-  from rLive's own palette — the tarball build has no GTK theming without it.
+  to match paRt — the tarball build has no GTK theming without it.
 - **First-run settings** seeded into `reaper.ini` — *only when the file
   doesn't exist yet*; after REAPER's first run the file belongs to REAPER.
   On a machine that already has one, only the two zoom-anchor keys are added
@@ -428,6 +422,11 @@ how it looks and how it navigates:
 - **Reapertips is removed.** The role previously installed that theme, its
   ~2,800 icons, its fonts and palette; those are now deleted from the
   machine on every run, permanently, so an older install cleans itself up.
+
+There is no Ableton Live theme here, and that's deliberate: none exists that
+works on REAPER 7. Both serious candidates were tested and fail — one never
+applies its layout, the other ships no toolbar art. The Ableton *feel* is in
+the navigation above, which is what actually survives a theme change.
 
 ### gimp
 
