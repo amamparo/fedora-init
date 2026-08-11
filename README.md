@@ -233,11 +233,12 @@ survive `dnf upgrade`. To go back to the stock mark, delete
 The handful of desktop settings that differ from stock: dark mode, battery
 percentage, minimize/maximize window buttons, empty dock, touchpad speed,
 the wallpaper (`roles/gnome_prefs/files/amber-d.jxl`, staged into
-`~/.local/share/backgrounds` and set for both light and dark), and 100%
-display scale (Fedora defaults to 125%; applied via mutter's D-Bus API since
-Displays ▸ Scale isn't a gsettings key — laptop panel only, so run it
-undocked or set docked layouts in Settings). Runs as the desktop user — no
-privilege escalation.
+`~/.local/share/backgrounds` and set for both light and dark), and the
+display config: 1680×1050 with a variable refresh rate at 100% scale (the
+panel is 1920×1200 and Fedora defaults it to 125%). None of those three is a
+gsettings key — they live in `monitors.xml` and are applied via mutter's
+D-Bus API, laptop panel only, so run it undocked or set docked layouts in
+Settings. Runs as the desktop user — no privilege escalation.
 
 ### ghostty
 

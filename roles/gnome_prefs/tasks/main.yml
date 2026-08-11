@@ -58,27 +58,35 @@
   loop_control:
     label: "{{ item.key }}"
 
-# Displays > Scale: 100% (Fedora defaults this panel to 125%). Monitor scale
-# is not a gsettings key — it lives in monitors.xml, owned by mutter's
+# Displays: 1680x1050 with a variable refresh rate, at 100% scale (Fedora
+# defaults this 1920x1200 panel to its native mode at 125%). None of the three
+# is a gsettings key — they live in monitors.xml, owned by mutter's
 # DisplayConfig D-Bus API; ApplyMonitorsConfig method 2 persists there AND
-# applies live (see library/mutter_display_scale.py). The module applies only
-# when the built-in panel ("is-builtin" in the monitor props — a bare
-# logical-monitor count would misfire docked lid-closed) is the sole active
-# display: positions are in scale-dependent logical pixels, and mutter
-# *rejects* a re-scaled layout whose monitors then overlap ("Logical monitors
-# overlap") rather than repositioning it — a hard failure, not a fixup.
-# monitors.xml keys configs by the set of connected monitors anyway, so the
-# docked layout is a separate config arranged in Settings. Check mode only
+# applies live (see library/mutter_display_config.py). VRR isn't a flag either:
+# mutter lists every mode twice, fixed and variable, so *selecting the mode is*
+# enabling adaptive sync — hence width/height/refresh_rate_mode rather than a
+# mode id, whose embedded "@59.954" is an EDID detail no playbook should pin.
+# The module applies only when the built-in panel ("is-builtin" in the monitor
+# props — a bare logical-monitor count would misfire docked lid-closed) is the
+# sole active display: positions are in scale-dependent logical pixels, and
+# mutter *rejects* a re-scaled layout whose monitors then overlap ("Logical
+# monitors overlap") rather than repositioning it — a hard failure, not a
+# fixup. monitors.xml keys configs by the set of connected monitors anyway, so
+# the docked layout is a separate config arranged in Settings. Check mode only
 # calls the read-only GetCurrentState. Session bus: no become.
-- name: Set the built-in panel to 100% display scale
-  mutter_display_scale:
+- name: Set the built-in panel's resolution, refresh-rate mode and scale
+  mutter_display_config:
+    width: 1680
+    height: 1050
+    refresh_rate_mode: variable
     scale: 1.0
-  register: display_scale
+  register: display_config
 
-# The module reports the docked case as ok-with-message, which ansible never
-# shows at default verbosity — surface it like the bash module's echo did
-# (applied is false only for the not-sole-display skip).
-- name: Report why the display scale was left alone
+# The module reports every hardware-shaped skip as ok-with-message, which
+# ansible never shows at default verbosity — surface it like the bash module's
+# echo did. applied is false for the not-sole-display skip, the panel-offers-no
+# -such-mode skip, and the no-VRR-twin fallback.
+- name: Report why the display config was left alone
   ansible.builtin.debug:
-    msg: "{{ display_scale.msg }}"
-  when: not display_scale.applied
+    msg: "{{ display_config.msg }}"
+  when: not display_config.applied
