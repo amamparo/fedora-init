@@ -51,8 +51,8 @@
 # check-mode branch) — skip the unpreviewable task instead of crashing.
 
 # Codec-capable Intel media driver, replacing libva-intel-media-driver.
-# The driver choice is hardware-specific: this is the Intel Lunar Lake
-# ThinkPad T14s Gen 6, not AMD.
+# The driver choice is hardware-specific: this is the Intel Panther Lake
+# ThinkPad T14 Gen 7 (Core Ultra 7 355, 8086:b090, xe driver), not AMD.
 - name: Install the full Intel media driver
   ansible.builtin.dnf5:
     name: intel-media-driver

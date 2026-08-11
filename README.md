@@ -199,7 +199,7 @@ with plain `aws configure`, or delete the file and re-run.
 
 RPM Fusion (free + nonfree), then swaps stock Fedora's codec-stripped
 packages for full builds: `intel-media-driver` (H.264/HEVC hardware decode
-on this Intel Lunar Lake ThinkPad — stock has none, which drains battery on
+on this Intel Panther Lake ThinkPad — stock has none, which drains battery on
 video) and `ffmpeg`. Verify afterwards with
 `sudo dnf install libva-utils && vainfo | grep -E 'H264|HEVC'`.
 
