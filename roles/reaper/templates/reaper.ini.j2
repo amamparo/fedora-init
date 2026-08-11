@@ -10,8 +10,8 @@
 ; on an existing install; the rest are first-run niceties, deliberately not
 ; forced onto a configured machine (that would fight REAPER's own rewrites).
 [REAPER]
-; Theme: paRt (dark), fetched at install time as part of its bundle (never
-; vendored — see the role for why). Loaded zipped, never extracted.
+; Theme: LCS_Flat-7, vendored in the repo (stash.reaper.fm cannot be fetched
+; by a playbook — see the role). Loaded zipped, never extracted.
 lastthemefn5={{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ reaper_theme_file }}
 
 ; --- Ableton-shaped navigation ---------------------------------------------

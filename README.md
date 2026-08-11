@@ -387,16 +387,15 @@ installer — latest version at install time, into `/opt/REAPER` with a
 desktop entry and a `reaper` symlink on PATH. It's licensed shareware:
 the 60-day evaluation starts on first run; buy a license when it fits.
 
-- **[paRt](https://github.com/Fleeesch/paRt) theme** (dark variant
-  preselected) — flat, low-contrast and built around functionality rather
-  than flash. Fetched at install and version-pinned; all three brightness
-  variants land in `ColorThemes` so you can switch in seconds.
-- **paRt's Theme Adjuster** comes with it, which is what makes the theme
-  worth having: 266 settings, live. Mixer strips too narrow? That's
-  *MCP ▸ Track ▸ Element Width* (ships at 1 of 0–2). The **1–4 buttons in
-  the transport** load saved presets, and bank 1 is the larger-mixer
-  config. Meter sizes, fader sizes and a 100–250% zoom are all in there —
-  worth ten minutes if you're tracking and mixing at the same time.
+- **[LCS Flat 7](https://forum.cockos.com/showthread.php?t=285183) theme** —
+  REAPER's own default theme with every button flattened. Flat, low-noise, and
+  because it descends from the stock theme it keeps stock's big controls and
+  wide mixer strips, so it's easy to hit things quickly while you're playing.
+  It ships in the repo rather than being downloaded (its host requires a
+  browser check), which also means a fresh install needs no network for it.
+  Track colours are pre-muted so they read as tinting rather than shouting —
+  tune that, or anything else, with REAPER's built-in
+  *Default_7.0_theme_adjuster* script.
 - **Ableton-shaped navigation.** Bare two-finger scroll moves vertically,
   Shift scrolls the timeline, **Ctrl zooms** and Alt changes track height —
   Live's scroll/Cmd/Option scheme, with Ctrl standing in for Cmd. Dragging

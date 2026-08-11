@@ -1,0 +1,36 @@
+LCS_Flat-7.ReaperThemeZip
+=========================
+
+Theme:   LCS_Flat-7 — "REAPER 7 default theme, but all buttons are flat"
+Author:  lucas_LCS
+Source:  https://forum.cockos.com/showthread.php?t=285183
+         (download: https://stash.reaper.fm/theme/3022/LCS_Flat-7.ReaperThemeZip)
+Base:    REAPER stock Default v7.07 theme, declared "version 7.0"
+
+LICENSE
+-------
+The theme is a derivative of REAPER's stock Default 7.0 theme, which Cockos
+ships under the LGPL v2 or later. Copyleft propagates, so this derivative is
+LGPL v2+ and redistribution here is permitted. The thread states no license of
+its own; that cannot make an LGPL derivative proprietary.
+
+Vendored rather than downloaded because stash.reaper.fm serves files only after
+a browser-side SHA-1 proof-of-work "verify you are human" challenge, which no
+playbook can (or should) satisfy. The file is therefore committed, exactly as
+the Reapertips theme used to be.
+
+MODIFICATION FROM UPSTREAM
+--------------------------
+One line of <theme>/rtconfig.txt is changed, to mute how strongly a track's
+custom colour floods the track and mixer panels:
+
+    -  define_parameter customColorDepthParam  'Custom Color Strength' 100 0 100
+    +  define_parameter customColorDepthParam  'Custom Color Strength'  45 0 100
+
+Nothing else differs; all 1291 entries are otherwise byte-identical to upstream.
+This changes only the parameter's DEFAULT, so anything set later in the Theme
+Adjuster still wins.
+
+To re-apply after taking a newer upstream build, repeat that single edit and
+repack the zip preserving its internal layout (a top-level
+"<name>_unpacked.ReaperTheme" plus a "<name>_unpacked/" directory).

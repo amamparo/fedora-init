@@ -23,12 +23,7 @@
 - name: Resolve the theme identifiers used by the template and the fetch
   ansible.builtin.set_fact:
     # Named once so tasks/main.yml and templates/reaper.ini.j2 can never drift.
-    # The bundle ships all three brightness variants; this picks which one
-    # reaper.ini selects. part_dimmed and part_light sit beside it unused.
-    reaper_theme_file: part_dark.ReaperThemeZip
-    reaper_theme_version: v1.3.1
-    reaper_theme_url: https://github.com/Fleeesch/paRt/releases/download/v1.3.1/part_manual_install_v1.3.1.zip
-    reaper_theme_sha256: b8a01303b46b8ffe233bdee274045f01227c9473dba4a46d6477c804c2c4e13f
+    reaper_theme_file: LCS_Flat-7.ReaperThemeZip
 
 - name: Probe for an installed REAPER (/opt/REAPER/reaper)
   ansible.builtin.stat:
@@ -105,26 +100,22 @@
         state: absent
       when: reaper_tmp.path is defined
 
-# --- paRt theme + its Theme Adjuster ----------------------------------------
-# paRt (Fleeesch, github.com/Fleeesch/paRt) — a flat, deliberately
-# low-contrast theme whose stated focus is functionality. Chosen after the
-# Ableton-look themes were tested and rejected; see CLAUDE.md for that whole
-# dead end. What matters here: paRt is actively maintained, ships complete
-# artwork (3817 toolbar images), applies its own WALTER layout correctly on
-# REAPER 7.78 (verified by loading it), and — decisively for this repo — is
-# published as GitHub *release assets*, so a plain get_url can fetch it.
-# stash.reaper.fm cannot be automated at all: it gates downloads behind a
-# SHA-1 proof-of-work "verify you are human" page. Gumroad-hosted themes are
-# behind a checkout flow. That ruled out most of the field regardless of looks.
+# --- LCS_Flat-7 theme -------------------------------------------------------
+# LCS_Flat-7 (lucas_LCS) — REAPER's stock Default 7.0 theme with every button
+# flattened. That lineage is the whole point: it declares `version 7.0`, ships
+# the full 129-image toolbar set, and inherits stock's big controls and wide
+# mixer strips, so it is flat AND immediately ergonomic with no adjuster
+# wiring. See files/LCS_Flat-7-NOTICE.txt for licence and the one-line
+# modification (custom colour strength 100 -> 45, muting how hard a track
+# colour floods the panels).
 #
-# The manual-install zip is a RESOURCE-PATH OVERLAY (verified: ColorThemes/,
-# Data/paRt, Scripts/Fleeesch) — the SWS pattern — so one download delivers all
-# three brightness variants AND the Theme Adjuster, which is the only way to
-# reach paRt's 266 theme parameters. Without the adjuster the theme is
-# take-it-or-leave-it; with it, things like mixer strip width are settable.
-#
-# Fetched, never vendored: 40 MB, and the repo carries no license statement.
-# Pinned to a version + sha256 so a changed asset fails loudly.
+# VENDORED, not fetched — the opposite of every other download in this role,
+# and deliberately: stash.reaper.fm serves files only after a browser-side
+# SHA-1 proof-of-work "verify you are human" challenge, so no get_url can
+# reach it. Being a derivative of Cockos' LGPL Default 7.0 theme, it is
+# redistributable, which is what makes committing it legitimate (the same
+# reasoning that let the retired Reapertips theme live in git). Bonus: a
+# vendored theme needs no network at all, so a fresh install works offline.
 - name: Ensure the REAPER resource dirs exist
   ansible.builtin.file:
     path: "{{ lookup('env', 'HOME') }}/.config/REAPER/{{ item }}"
@@ -135,66 +126,27 @@
     - UserPlugins
     - Scripts
 
-- name: Probe for the paRt theme
-  ansible.builtin.stat:
-    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ reaper_theme_file }}"
-  register: reaper_theme
-  check_mode: false
-
-- name: Install the paRt theme and Theme Adjuster
-  when: not reaper_theme.stat.exists
-  block:
-    - name: Create a temp dir for the paRt bundle
-      ansible.builtin.tempfile:
-        state: directory
-        prefix: part-install.
-      register: part_tmp
-
-    - name: Download the paRt bundle
-      ansible.builtin.get_url:
-        url: "{{ reaper_theme_url }}"
-        dest: "{{ part_tmp.path }}/part.zip"
-        checksum: sha256:{{ reaper_theme_sha256 }}
-        mode: "0644"
-      when: part_tmp.path is defined
-
-    - name: Unpack the paRt bundle
-      ansible.builtin.unarchive:
-        src: "{{ part_tmp.path }}/part.zip"
-        dest: "{{ part_tmp.path }}"
-        remote_src: true
-      when: part_tmp.path is defined
-
-    # Overlay, not mirror — no --delete, for the same reason as SWS: these
-    # dirs are shared with everything else the user installs.
-    - name: Copy the paRt payload into the resource path
-      ansible.posix.synchronize:
-        src: "{{ part_tmp.path }}/"
-        dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/"
-        recursive: true
-        rsync_opts:
-          - "--exclude=part.zip"
-          - "--checksum"
-          - "--omit-dir-times"
-      when: part_tmp.path is defined
-
-  always:
-    - name: Remove the paRt temp dir
-      ansible.builtin.file:
-        path: "{{ part_tmp.path }}"
-        state: absent
-      when: part_tmp.path is defined
-
-# The Linux extra: libSwell-user.colortheme darkens REAPER's GTK-less Swell
-# widgets (dialogs, menus) — the tarball build has no GTK theming, this file
-# IS the Linux dark mode. Goes in the resource path root. paRt ships none
-# (almost no theme does — Linux is a minority target), so the repo's copy is
-# hand-authored to match paRt's palette.
-- name: Install the Swell color theme (dark dialogs/menus on Linux)
+# REAPER loads the theme zipped — never extract it.
+- name: Install the LCS_Flat-7 theme
   ansible.builtin.copy:
-    src: libSwell-user.colortheme
-    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/libSwell-user.colortheme"
+    src: "{{ item }}"
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ item }}"
     mode: "0644"
+  loop:
+    - LCS_Flat-7.ReaperThemeZip
+    - LCS_Flat-7-NOTICE.txt
+
+# The dark Swell override this role used to install is GONE, and must stay
+# gone while the theme is Default-7.0-derived. LCS_Flat-7 specifies near-black
+# dialog text (col_main_text #1e2222) on light list/edit backgrounds
+# (genlist_bg #dcdede), because that is what stock REAPER dialogs look like.
+# Forcing Swell's backgrounds dark left black text on a dark ground — button
+# labels rendered effectively invisible. Stock Swell colours match this theme
+# by construction, so the right move is to ship no override at all.
+- name: Remove the retired dark Swell override (breaks dialog contrast here)
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/libSwell-user.colortheme"
+    state: absent
 
 # --- SWS + ReaPack extensions -----------------------------------------------
 # Both are pure file drops into the resource path. Presence of the .so is
@@ -330,7 +282,7 @@
     - "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt"
     - "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/reapertips-license.txt"
     # Fira Sans was bundled only because the Reapertips guide asked for it;
-    # paRt names no font this system lacks, so nothing replaces them.
+    # LCS_Flat-7 names no font this system lacks, so nothing replaces them.
     - "{{ lookup('env', 'HOME') }}/.local/share/fonts/FiraSans-Regular.ttf"
     - "{{ lookup('env', 'HOME') }}/.local/share/fonts/FiraSans-Bold.ttf"
   loop_control:
@@ -388,7 +340,7 @@
     argv:
       - grep
       - -Eq
-      - ^lastthemefn5=.*ColorThemes/(Reapertips Theme|rLive)
+      - ^lastthemefn5=.*ColorThemes/(Reapertips Theme|rLive|part_)
       - "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
   register: reaper_old_theme
   failed_when: false
@@ -400,7 +352,7 @@
 # can never override a theme aaron picks in-app later. Deleting reaper.ini to
 # force a reseed was rejected: it would also destroy REAPER's audio-device
 # config, window positions and MIDI hardware state.
-- name: Repoint the theme selection at paRt (one-time migration)
+- name: Repoint the theme selection at the current theme (one-time migration)
   ansible.builtin.lineinfile:
     path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
     regexp: ^lastthemefn5=
@@ -589,15 +541,16 @@
 - name: Remaining manual setup (not automatable)
   ansible.builtin.debug:
     msg:
-      - "REAPER installed with the paRt theme preselected. Manual steps remaining:"
+      - "REAPER installed with the LCS_Flat-7 theme preselected. Manual steps remaining:"
       - "1. Run `reaper` once — evaluation/license notice, then the theme loads."
       - "2. Extensions > ReaPack > Synchronize packages (installs the default repos)."
-      - "3. paRt's look is tunable through its Theme Adjuster (266 parameters), installed at"
-      - "   Scripts/Fleeesch/paRt/'paRt - Theme Adjuster.lua' — run it from Actions > Show action list."
-      - "   Mixer strips feeling narrow? That is 'MCP - Track - Element Width'"
-      - "   (par_mcp_track_element_width, 0-2, ships at 1). Its bank buttons 1-4 in the transport load"
-      - "   saved presets; bank 1 ships as the larger-mixer config. Also worth a look for big, quickly"
-      - "   hittable controls: MCP Track Meter Size, TCP Track Faders Volume Size, and the 100-250% zoom."
+      - "3. Track colours are muted in the panels already (Custom Color Strength ships at 45 of 100)."
+      - "   To retune it, or anything else in the theme's 295 parameters, run REAPER's own adjuster:"
+      - "   Actions > Show action list > 'Script: Default_7.0_theme_adjuster.lua' (LCS_Flat-7 is"
+      - "   Default-7.0-derived, so the stock adjuster drives it — nothing extra to install)."
+      - "   Arrange ITEMS still take the raw track colour; if those read too bright, turn down"
+      - "   Preferences > Appearance > Media > 'Tint media item peaks/backgrounds' (its ini key is"
+      - "   not documented well enough to seed here, so it stays a manual toggle)."
       - "4. Ableton's Option+scroll resizes the track UNDER THE POINTER; the bound stock action (972)"
       - "   resizes SELECTED tracks. For true parity install SWS's 'adjust track height under mouse'"
       - "   action and rebind KEY 255 250 in reaper-kb.ini to it."
