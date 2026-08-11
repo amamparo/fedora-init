@@ -74,6 +74,11 @@
 # fixup. monitors.xml keys configs by the set of connected monitors anyway, so
 # the docked layout is a separate config arranged in Settings. Check mode only
 # calls the read-only GetCurrentState. Session bus: no become.
+#
+# On the run that changes it, the panel visibly blanks and resizes mid-play —
+# a resolution flip is far more startling than the old scale-only one. Nothing
+# is wrong and no logout is needed (this is compositor-side only, so the
+# login_keyring pause later in the play still reads fine).
 - name: Set the built-in panel's resolution, refresh-rate mode and scale
   mutter_display_config:
     width: 1680

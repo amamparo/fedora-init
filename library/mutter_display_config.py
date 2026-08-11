@@ -69,9 +69,13 @@ options:
 
 from ansible.module_utils.basic import AnsibleModule
 
-# Scales come back as doubles derived from ratios (1.6666666269302368), so
-# every scale comparison snaps to mutter's own value within this tolerance
-# rather than trusting a float written out in YAML.
+# Two different comparisons, two tolerances. Matching a declared scale against
+# supported_scales compares a YAML float to float32-promoted doubles
+# (1.6666666269302368) whose neighbours are ~0.08 apart, so nearest-within-1e-3
+# is unambiguous — at 1e-6 a declared 1.6666666 would fail against a list that
+# plainly contains it. Comparing against mutter's own echoed logical scale, by
+# contrast, should be exact.
+SCALE_MATCH_TOL = 1e-3
 SCALE_EPSILON = 1e-6
 
 
@@ -162,13 +166,13 @@ def main():
     # 1680x1050 offers 1.75 instead), so validate against the modes actually
     # chosen and then apply mutter's own double — never the YAML float.
     for conn, mode in chosen.items():
-        supported = [s for s in mode[5] if abs(s - target_scale) < SCALE_EPSILON]
-        if not supported:
+        nearest = min(mode[5], key=lambda s: abs(s - target_scale), default=None)
+        if nearest is None or abs(nearest - target_scale) > SCALE_MATCH_TOL:
             module.fail_json(
                 msg=f"Scale {target_scale:g} is not supported at {wanted} on"
                     f" {conn}. Supported scales: "
                     + ", ".join(f"{s:g}" for s in mode[5]))
-        target_scale = supported[0]
+        target_scale = nearest
 
     current_mode = {
         info[0]: mode[0]
@@ -195,6 +199,13 @@ def main():
         module.exit_json(changed=True, applied=False,
                          msg=f"Would set the built-in panel to {described}.")
 
+    # Empty per-monitor props. The dict's only implemented keys are
+    # underscanning, color-mode and rgb-range, and monitors.xml currently
+    # records none of them — but if HDR is ever switched on in Settings,
+    # color-mode must be echoed back from the monitor props or this apply may
+    # drop the panel to SDR. Note mutter silently ignores keys it doesn't know
+    # (an "enable_vrr" would return success and do nothing), so a mistake here
+    # is invisible: VRR lives in the mode id, never in this dict.
     try:
         call("ApplyMonitorsConfig", GLib.Variant(
             "(uua(iiduba(ssa{sv}))a{sv})",

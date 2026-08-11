@@ -238,7 +238,10 @@ display config: 1680×1050 with a variable refresh rate at 100% scale (the
 panel is 1920×1200 and Fedora defaults it to 125%). None of those three is a
 gsettings key — they live in `monitors.xml` and are applied via mutter's
 D-Bus API, laptop panel only, so run it undocked or set docked layouts in
-Settings. Runs as the desktop user — no privilege escalation.
+Settings. The playbook owns those three: a resolution, refresh rate or scale
+picked by hand in Settings ▸ Displays is put back on the next run, so change
+them in `roles/gnome_prefs/tasks/main.yml` instead. Runs as the desktop
+user — no privilege escalation.
 
 ### ghostty
 
