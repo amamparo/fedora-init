@@ -386,36 +386,48 @@ non-native on GNOME — cosmetic only.)
 installer — latest version at install time, into `/opt/REAPER` with a
 desktop entry and a `reaper` symlink on PATH. It's licensed shareware:
 the 60-day evaluation starts on first run; buy a license when it fits.
-On top of the bare install the role sets up the full
-[Reapertips](https://reapertips.com) experience (theme and icons by
-Alejandro Hernandez, CC BY-NC-SA 4.0 — attribution installed alongside):
 
-- **Reapertips theme v1.90** installed and preselected, with its Fira
-  Sans/Roboto fonts and the Linux `libSwell-user.colortheme` (dark
-  dialogs/menus — the tarball build has no GTK theming without it).
-- **Toolbar + track icons**: the theme's own pack merged with the
-  Essential Icons pack ("Style Reapertips Theme" variants, 840+ icons,
-  all `RT_`-prefixed). Merged additively — hand-imported icons are never
-  deleted.
+On top of the bare install the role aims REAPER at **Ableton Live** — both
+how it looks and how it navigates:
+
+- **[rLive](https://forum.cockos.com/showthread.php?t=230905) theme** (by
+  Odys) fetched at install and preselected: Live-era greys, clips drawn as
+  full-saturation coloured blocks, colour-headed mixer strips. It carries no
+  license statement, so it is **downloaded, never committed** — pinned to a
+  sha256 so a changed file fails loudly. Fair warning: it's a 2021 beta in
+  REAPER's older `version 5` theme format. It renders correctly on 7.x, but
+  REAPER-7-only UI slots fall back to stock.
+- **Ableton-shaped navigation.** Bare two-finger scroll moves vertically,
+  Shift scrolls the timeline, **Ctrl zooms** and Alt changes track height —
+  matching Live's scroll/Cmd/Option scheme, with Ctrl standing in for Cmd.
+  Dragging the ruler scrolls and zooms at once (Ctrl still sets loop
+  points); middle-drag hand-scrolls. Horizontal scroll pans
+  touchpad-naturally, correcting a sign bug in REAPER's Linux layer rather
+  than a GNOME setting. Zoom stays anchored on the cursor like Live's, while
+  vertical zoom follows the pointer — also like Live.
+  *Two Live gestures are impossible here:* pinch-to-zoom (REAPER's Linux
+  layer receives the gesture and discards it — Ctrl+scroll is the stand-in)
+  and smooth/inertial panning (scroll is quantised to wheel clicks).
+- **The Ableton-style device rack** is [LBX Stripper
+  2](https://github.com/L-B-X/LBXStripper2) plus its `js_ReaScriptAPI`
+  dependency, installed ready to use. This is the part of rLive's famous
+  screenshots that *isn't* the theme — its author says so — so it's
+  installed here; you still build a strip over an FX chain yourself.
 - **SWS and ReaPack extensions** dropped into `UserPlugins` (fetched only
   when missing, like the REAPER install itself).
-- **Natural horizontal scrolling**: two-finger horizontal scroll pans the
-  arrange view and MIDI editor in the touchpad-natural direction (REAPER's
-  stock binding scrolls the other way). Added only when no horizontal-wheel
-  binding exists — a rebinding made in-app wins.
-- **First-run settings** from the Reapertips "Perfect Setup" guide seeded
-  into `reaper.ini` — *only when the file doesn't exist yet*; after
-  REAPER's first run the file belongs to REAPER. Includes: theme
-  selection, new-project startup, auto-save every 3 minutes to
-  `~/Music/REAPER/Backups`, peak caches in `~/Music/REAPER/Peaks`,
-  straight grid lines, no auto-fades or loop-source on new items,
-  Time timebase, clean recording filenames, smoother meters, snappier
-  media buffering.
-
-The guide's suggestions that can't be encoded safely (mouse modifiers,
-folder-collapse mode, MIDI editor prefs, ReaPack synchronize, the Rodilab
-color palette) are printed as a checklist on the run that seeds the
-config.
+- **Dark dialogs and menus** via `libSwell-user.colortheme`, hand-authored
+  from rLive's own palette — the tarball build has no GTK theming without it.
+- **First-run settings** seeded into `reaper.ini` — *only when the file
+  doesn't exist yet*; after REAPER's first run the file belongs to REAPER.
+  On a machine that already has one, only the two zoom-anchor keys are added
+  (and only if you've never set them). Includes: theme selection, Live-style
+  "Follow" scrolling, clip-edge drag repeats the content, new-project
+  startup, auto-save every 3 minutes to `~/Music/REAPER/Backups`, peak
+  caches in `~/Music/REAPER/Peaks`, straight grid lines, Time timebase,
+  clean recording filenames, smoother meters, snappier media buffering.
+- **Reapertips is removed.** The role previously installed that theme, its
+  ~2,800 icons, its fonts and palette; those are now deleted from the
+  machine on every run, permanently, so an older install cleans itself up.
 
 ### gimp
 

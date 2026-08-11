@@ -1,3 +1,23 @@
+; Swell widget colors for REAPER on Linux — the tarball build has no GTK
+; theming, so this file IS the dark mode for every dialog, menu, menubar,
+; listview, combobox and the whole Preferences window. Without it they render
+; in libSwell's stock light grey (#B3B3B3) next to a dark arrange view.
+;
+; Values are sampled from the rLive theme's own .ReaperTheme so the chrome
+; matches the arrange view rather than approximating it:
+;   col_main_bg      #333333   chassis
+;   genlist_bg       #2d2d2d   list/menu bodies
+;   col_main_editbk  #1b1b1b   edit fields, 3d edges (the theme flattens all
+;                              three 3d roles onto one near-black)
+;   col_main_text2   #d5d5d5   body text
+;   genlist_selbg    #8ac5ff   selection  (genlist_selfg #000000 on top)
+;   col_cursor       #72d7ff   edit cursor
+; rLive ships no libSwell theme of its own — none of the Ableton-look themes
+; do, they are all Windows-authored — so this is hand-authored to match.
+;
+; default_font_face must name a font that actually exists on Fedora:
+; Liberation Sans is stock and metric-compatible with Arial, which is what
+; rLive asks for.
 default_font_face Liberation Sans
 default_font_size 13
 menubar_height 17
@@ -8,86 +28,86 @@ scrollbar_width 14
 scrollbar_min_thumb_height 4
 combo_height 20
 _3dface #333333
-_3dshadow #2e2e2e
-_3dhilight #2e2e2e
-_3ddkshadow #2e2e2e
-button_bg #282828 ; defaults to _3dface
-button_text #d1d1d1
-button_text_disabled #676767
-button_shadow #202020
-button_hilight #202020
-checkbox_text #d1d1d1
+_3dshadow #1b1b1b
+_3dhilight #1b1b1b
+_3ddkshadow #1b1b1b
+button_bg #2d2d2d ; defaults to _3dface
+button_text #d5d5d5
+button_text_disabled #6b6b6b
+button_shadow #1b1b1b
+button_hilight #1b1b1b
+checkbox_text #d5d5d5
 checkbox_text_disabled #7a7a7a
-checkbox_fg #c3c3c3
-checkbox_inter #d1a660
-checkbox_bg #2a2a2a
+checkbox_fg #c8c8c8
+checkbox_inter #8ac5ff
+checkbox_bg #262626
 scrollbar #333333
-scrollbar_fg #585858
-scrollbar_bg #2e2e2e
-edit_cursor #d1d1d1
-edit_bg #303030
-edit_bg_disabled #333333
-edit_text #d1d1d1
+scrollbar_fg #5c5c5c
+scrollbar_bg #2d2d2d
+edit_cursor #72d7ff
+edit_bg #1b1b1b
+edit_bg_disabled #2d2d2d
+edit_text #d5d5d5
 edit_text_disabled #7a7a7a
-edit_bg_sel #d1a660
-edit_text_sel #050505
-edit_hilight #202020 ; defaults to _3dhilight
-edit_shadow #202020 ; defaults to _3dshadow
-info_bk #2e2e2e
-info_text #d1d1d1
-menu_bg #2e2e2e ; defaults to _3dface
-menu_shadow #282828 ; defaults to _3dshadow
-menu_hilight #2f2f2f ; defaults to _3dhilight
-menu_text #d1d1d1 ; defaults to button_text
+edit_bg_sel #8ac5ff
+edit_text_sel #000000
+edit_hilight #1b1b1b ; defaults to _3dhilight
+edit_shadow #1b1b1b ; defaults to _3dshadow
+info_bk #2d2d2d
+info_text #d5d5d5
+menu_bg #2d2d2d ; defaults to _3dface
+menu_shadow #232323 ; defaults to _3dshadow
+menu_hilight #383838 ; defaults to _3dhilight
+menu_text #d5d5d5 ; defaults to button_text
 menu_text_disabled #777777
-menu_bg_sel #d1a660 ; defaults to menu_text
-menu_text_sel #050505 ; defaults to menu_bg
+menu_bg_sel #8ac5ff ; defaults to menu_text
+menu_text_sel #000000 ; defaults to menu_bg
 menu_scroll #333333
-menu_scroll_arrow #c3c3c3 ; defaults to _3dshadow
-menu_submenu_arrow #c3c3c3
+menu_scroll_arrow #c8c8c8 ; defaults to _3dshadow
+menu_submenu_arrow #c8c8c8
 menubar_bg #333333 ; defaults to menu_bg
-menubar_text #9a9a9a ; defaults to menu_text
+menubar_text #d5d5d5 ; defaults to menu_text
 menubar_text_disabled #777777
-menubar_bg_sel #d1a660 ; defaults to menu_bg_sel
-menubar_text_sel #050505 ; defaults to menu_text_sel
-trackbar_track #2e2e2e
-trackbar_mark #2e2e2e
-trackbar_knob #d1a660
-progress #d1a660
-label_text #d1d1d1 ; defaults to button_text
+menubar_bg_sel #8ac5ff ; defaults to menu_bg_sel
+menubar_text_sel #000000 ; defaults to menu_text_sel
+trackbar_track #1b1b1b
+trackbar_mark #1b1b1b
+trackbar_knob #8ac5ff
+progress #8ac5ff
+label_text #d5d5d5 ; defaults to button_text
 label_text_disabled #7a7a7a ; defaults to button_text_disabled
-combo_text #d1d1d1 ; defaults to button_text
+combo_text #d5d5d5 ; defaults to button_text
 combo_text_disabled #777777 ; defaults to button_text_disabled
-combo_bg #292929
-combo_bg2 #292929
-combo_shadow #292929
-combo_hilight #292929 ; defaults to _3dhilight
-combo_arrow #c3c3c3
-combo_arrow_press #d1a660 ; defaults to _3dhilight
-listview_bg #2e2e2e
-listview_bg_sel #d1a660
-listview_text #d1d1d1
-listview_text_sel #050505
-listview_bg_sel_inactive #E6E6E6
-listview_text_sel_inactive #1A1A1A
+combo_bg #262626
+combo_bg2 #262626
+combo_shadow #262626
+combo_hilight #262626 ; defaults to _3dhilight
+combo_arrow #c8c8c8
+combo_arrow_press #8ac5ff ; defaults to _3dhilight
+listview_bg #2d2d2d
+listview_bg_sel #8ac5ff
+listview_text #d5d5d5
+listview_text_sel #000000
+listview_bg_sel_inactive #4a4a4a
+listview_text_sel_inactive #d5d5d5
 listview_grid #242424 ; defaults to _3dhilight
-listview_hdr_arrow #c3c3c3
+listview_hdr_arrow #c8c8c8
 listview_hdr_shadow #242424 ; defaults to _3dshadow
 listview_hdr_hilight #242424 ; defaults to _3dhilight
 listview_hdr_bg #333333 ; defaults to _3dface
-listview_hdr_text #d1d1d1 ; defaults to button_text
-treeview_text #d1d1d1
-treeview_bg #2e2e2e
-treeview_bg_sel #d1a660
-treeview_text_sel #050505
-treeview_bg_sel_inactive #E6E6E6
-treeview_text_sel_inactive #1A1A1A
-treeview_arrow #c3c3c3
-tab_shadow #2e2e2e
-tab_hilight #2e2e2e
-tab_text #d1d1d1
-focusrect #d1d1d1
-group_text #d1d1d1
-group_shadow #353535 ; defaults to _3dshadow
+listview_hdr_text #d5d5d5 ; defaults to button_text
+treeview_text #d5d5d5
+treeview_bg #2d2d2d
+treeview_bg_sel #8ac5ff
+treeview_text_sel #000000
+treeview_bg_sel_inactive #4a4a4a
+treeview_text_sel_inactive #d5d5d5
+treeview_arrow #c8c8c8
+tab_shadow #2d2d2d
+tab_hilight #2d2d2d
+tab_text #d5d5d5
+focusrect #d5d5d5
+group_text #d5d5d5
+group_shadow #3a3a3a ; defaults to _3dshadow
 group_hilight #2c2c2c ; defaults to _3dhilight
-focus_hilight #d1a660
+focus_hilight #8ac5ff

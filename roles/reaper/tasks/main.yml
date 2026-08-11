@@ -1,6 +1,5 @@
 ---
-# REAPER DAW + the Reapertips theme, essential icons, fonts, extensions, and
-# first-run settings.
+# REAPER DAW, themed and configured to look and feel like Ableton Live.
 #
 # REAPER ships no rpm and no dnf repo: the documented Linux install is the
 # official tarball's install-reaper.sh (verified: --install /opt,
@@ -20,6 +19,13 @@
 #
 # REAPER is licensed shareware (60-day evaluation, then buy a license): the
 # role installs and configures it, the nag screen is between aaron and Cockos.
+
+- name: Resolve the theme identifiers used by the template and the fetch
+  ansible.builtin.set_fact:
+    # Named once so tasks/main.yml and templates/reaper.ini.j2 can never drift.
+    reaper_theme_file: rLive - BETA_3.ReaperThemeZip
+    reaper_theme_url: https://www.dropbox.com/s/y170gcmcatu3hme/rLive%20-%20BETA_3.ReaperThemeZip?dl=1
+    reaper_theme_sha256: 96a22184fc9ad12603c80813b83785e2e515b98ad4842315cc02d7fd5f75c58f
 
 - name: Probe for an installed REAPER (/opt/REAPER/reaper)
   ansible.builtin.stat:
@@ -96,42 +102,27 @@
         state: absent
       when: reaper_tmp.path is defined
 
-# --- fonts the theme calls for ---------------------------------------------
-# The Quick Start Guide's step 1: Roboto Bold + Fira Sans (Regular/Bold).
-# Roboto is stock Fedora (google-roboto-fonts) — dnf, package-facts guarded.
-# Fira Sans has no Fedora package (checked: `dnf5 search fira` is empty), so
-# the theme's own ttfs are bundled and installed per-user; fontconfig picks
-# up ~/.local/share/fonts automatically, fc-cache just makes it immediate.
-
-- name: Install Roboto (theme font, stock Fedora package)
-  ansible.builtin.dnf5:
-    name: google-roboto-fonts
-    state: present
-  become: true
-  when: "'google-roboto-fonts' not in ansible_facts.packages"
-
-- name: Ensure the user font dir exists
-  ansible.builtin.file:
-    path: "{{ lookup('env', 'HOME') }}/.local/share/fonts"
-    state: directory
-    mode: "0755"
-
-- name: Install the Fira Sans fonts (bundled with the theme)
-  ansible.builtin.copy:
-    src: "fonts/{{ item }}"
-    dest: "{{ lookup('env', 'HOME') }}/.local/share/fonts/{{ item }}"
-    mode: "0644"
-  loop:
-    - FiraSans-Regular.ttf
-    - FiraSans-Bold.ttf
-  notify: Refresh the font cache
-
-# --- Reapertips theme + icons ----------------------------------------------
-# The GUI install ("drag the .ReaperThemeZip into REAPER") decomposes into:
-# the file landing in <resource>/ColorThemes/ and reaper.ini's lastthemefn5
-# pointing at it (selection is part of the settings seed below). REAPER loads
-# the theme zipped — never extract it.
-
+# --- rLive theme ------------------------------------------------------------
+# rLive (Odys, forum.cockos.com/showthread.php?t=230905) is the only REAPER
+# theme that genuinely reads as Ableton Live: Live-era greys, clips drawn as
+# full-saturation coloured blocks with a title bar, and colour-headed mixer
+# strips. Verified by loading it here on REAPER 7.78.
+#
+# It is FETCHED, NEVER VENDORED, and that is deliberate. The theme carries no
+# license statement anywhere — not in the thread, not in the zip — and this
+# repo is public, so committing the file would be an unlicensed
+# redistribution. Downloading is aaron fetching his own copy, which is also
+# how this role already handles the REAPER tarball, SWS and ReaPack. The
+# checksum pins the exact BETA 3 build that was tested (2,709,236 bytes), so a
+# changed file fails loudly rather than silently installing something else.
+#
+# Caveats worth knowing before touching this: the theme is a BETA 3 from March
+# 2021 whose author has been silent since, its rtconfig declares `version 5`
+# (so WALTER composes in legacy mode on 7.x — verified to render correctly,
+# but it covers only 6 of REAPER 7's 182 newer image slots, which fall back to
+# stock), and the download is one person's Dropbox share link. If that link
+# ever dies, the fallback is REAPER's stock Default_7.0 theme; nothing else in
+# this role depends on rLive being present.
 - name: Ensure the REAPER resource dirs exist
   ansible.builtin.file:
     path: "{{ lookup('env', 'HOME') }}/.config/REAPER/{{ item }}"
@@ -139,74 +130,42 @@
     mode: "0755"
   loop:
     - ColorThemes
-    - Data/toolbar_icons
-    - Data/track_icons
     - UserPlugins
     - Scripts
 
-- name: Install the Reapertips theme (CC BY-NC-SA 4.0, by Alejandro Hernandez)
-  ansible.builtin.copy:
-    src: Reapertips Theme.ReaperThemeZip
-    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/Reapertips Theme.ReaperThemeZip"
-    mode: "0644"
+- name: Probe for the rLive theme
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ reaper_theme_file }}"
+  register: reaper_theme
+  check_mode: false
 
-# The theme's Linux extra: libSwell-user.colortheme darkens REAPER's
-# GTK-less Swell widgets (dialogs, menus) to match the theme — the tarball
-# build has no GTK theming, this file IS the Linux dark mode. Goes in the
-# resource path root per the bundled !howtouse.txt.
+# Presence-guarded so a converged re-run never touches the network. The GUI
+# install ("drag the .ReaperThemeZip into REAPER") decomposes into exactly
+# this: the file landing in ColorThemes/ and reaper.ini's lastthemefn5
+# pointing at it. REAPER loads the theme zipped — never extract it.
+- name: Fetch the rLive theme into ColorThemes
+  ansible.builtin.get_url:
+    url: "{{ reaper_theme_url }}"
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ reaper_theme_file }}"
+    checksum: sha256:{{ reaper_theme_sha256 }}
+    mode: "0644"
+  when: not reaper_theme.stat.exists
+
+# The Linux extra: libSwell-user.colortheme darkens REAPER's GTK-less Swell
+# widgets (dialogs, menus) — the tarball build has no GTK theming, this file
+# IS the Linux dark mode. Goes in the resource path root. rLive ships none
+# (no Ableton-look theme does — they are all Windows-authored), so the repo's
+# copy is hand-authored from rLive's own .ReaperTheme palette.
 - name: Install the Swell color theme (dark dialogs/menus on Linux)
   ansible.builtin.copy:
     src: libSwell-user.colortheme
     dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/libSwell-user.colortheme"
     mode: "0644"
 
-# Icon packs merge ADDITIVELY into Data/ — deliberately not the
-# gnome_extension mirror: --delete would remove icons aaron imports by hand,
-# and REAPER treats these dirs as a user-extended pool, not a repo-owned
-# tree. --checksum/--omit-dir-times are the same convergence guards as
-# gnome_extension (git-checkout vs tarball mtimes differ for identical
-# content). files/toolbar_icons is the pre-merged union of the theme pack
-# (86/scale), the Essential Icons pack's "Style Reapertips Theme" (matches
-# the theme; verified zero filename overlap), and the 3 icons unique to that
-# pack's Update/ dir (its other 123 files are byte-identical to the main
-# pack). All Reapertips icons are RT_-prefixed for easy filtering/removal.
-- name: Merge the toolbar icons into the resource path
-  ansible.posix.synchronize:
-    src: "{{ role_path }}/files/toolbar_icons/"
-    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/toolbar_icons/"
-    recursive: true
-    rsync_opts:
-      - "--checksum"
-      - "--omit-dir-times"
-
-- name: Merge the track icons into the resource path
-  ansible.posix.synchronize:
-    src: "{{ role_path }}/files/track_icons/"
-    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/track_icons/"
-    recursive: true
-    rsync_opts:
-      - "--checksum"
-      - "--omit-dir-times"
-
-# The theme's color palette for the Rodilab Color Palette script (a ReaPack
-# package — installing scripts through ReaPack isn't automatable offline, so
-# loading this stays a manual step surfaced in the nudge below).
-- name: Stage the Reapertips color palette (for the Rodilab script)
-  ansible.builtin.copy:
-    src: ReapertipsTheme_ColorPalette.txt
-    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt"
-    mode: "0644"
-
-- name: Install the Reapertips license/attribution alongside the assets
-  ansible.builtin.copy:
-    src: reapertips-license.txt
-    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/reapertips-license.txt"
-    mode: "0644"
-
 # --- SWS + ReaPack extensions -----------------------------------------------
-# Both are Perfect Setup recommendations and pure file drops into the
-# resource path. Presence of the .so is terminal (same network discipline as
-# the REAPER install: fetch only when missing, offline re-run untouched).
+# Both are pure file drops into the resource path. Presence of the .so is
+# terminal (same network discipline as the REAPER install: fetch only when
+# missing, offline re-run untouched).
 
 - name: Probe for the SWS extension
   ansible.builtin.stat:
@@ -251,8 +210,8 @@
 
     # The tarball is a resource-path overlay (verified layout: UserPlugins/
     # with the .so, Scripts/ with the python bridge, Data/ with grooves) —
-    # copy the whole tree over ~/.config/REAPER. rsync without --delete for
-    # the same merge-not-mirror reason as the icons.
+    # copy the whole tree over ~/.config/REAPER. rsync without --delete
+    # because Data/ is a user-extended pool, not a repo-owned tree.
     - name: Copy the SWS payload into the resource path
       ansible.posix.synchronize:
         src: "{{ sws_tmp.path }}/"
@@ -287,16 +246,162 @@
     mode: "0644"
   when: not reapack_plugin.stat.exists
 
-# --- first-run settings (Reapertips "Perfect Setup") ------------------------
+# --- LBX Stripper 2 (the Ableton-style device chain) ------------------------
+# The horizontal FX/device rack along the bottom of rLive's forum screenshots
+# is NOT part of the theme — its author says so outright: "Fx controls are
+# completely unrelated project to this or any other theme." It is LBX
+# Stripper, a Lua ReaScript that draws custom channel-strip GUIs over an FX
+# chain, and it is the single biggest visual gap between a bare rLive install
+# and those screenshots.
+#
+# Installing it delivers the TOOL, not the look: strips are still built per FX
+# chain (or imported from a strip pack) from inside REAPER, which is
+# interactive — hence the nudge below rather than more tasks here.
+#
+# Stripper2 rather than the original: the v1 repo carries NO license at all,
+# v2 is GPL-3.0, and v1's own README says it "has been superceded by the
+# Stripper2 script" (their data files are compatible). js_ReaScriptAPI is a
+# hard dependency — the script calls JS_Mouse_GetState and errors without it.
+# Its URL is the one ReaTeam's ReaPack index points at, which is the
+# authoritative pointer to the current Linux build (v1.310, MIT).
+
+- name: Ensure the LBX script dir exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/Scripts/LBX"
+    state: directory
+    mode: "0755"
+
+- name: Probe for js_ReaScriptAPI
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/UserPlugins/reaper_js_ReaScriptAPI64.so"
+  register: js_api
+  check_mode: false
+
+- name: Install js_ReaScriptAPI (LBX Stripper's hard dependency)
+  ansible.builtin.get_url:
+    url: https://github.com/juliansader/ReaExtensions/raw/master/js_ReaScriptAPI/v1.310/reaper_js_ReaScriptAPI64.so
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/UserPlugins/reaper_js_ReaScriptAPI64.so"
+    mode: "0644"
+  when: not js_api.stat.exists
+
+- name: Probe for the LBX Stripper 2 script
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/Scripts/LBX/LBX Stripper 2.lua"
+  register: lbx_script
+  check_mode: false
+
+- name: Install the LBX Stripper 2 script
+  ansible.builtin.get_url:
+    url: https://github.com/L-B-X/LBXStripper2/raw/main/LBX%20Stripper%202.lua
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Scripts/LBX/LBX Stripper 2.lua"
+    mode: "0644"
+  when: not lbx_script.stat.exists
+
+- name: Probe for the LBX Stripper resources
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/Scripts/LBX/LBXCS_resources"
+  register: lbx_resources
+  check_mode: false
+
+# The zip carries its own LBXCS_resources/ top level, so unpacking into
+# Scripts/LBX lands it exactly where the script looks for it.
+- name: Install the LBX Stripper resources
+  when: not lbx_resources.stat.exists
+  block:
+    - name: Create a temp dir for the LBX resources
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: lbx-install.
+      register: lbx_tmp
+
+    - name: Download the LBX resources archive
+      ansible.builtin.get_url:
+        url: https://github.com/L-B-X/LBXStripper2/raw/main/LBXCS_resources.zip
+        dest: "{{ lbx_tmp.path }}/LBXCS_resources.zip"
+        mode: "0644"
+      when: lbx_tmp.path is defined
+
+    - name: Unpack the LBX resources into Scripts/LBX
+      ansible.builtin.unarchive:
+        src: "{{ lbx_tmp.path }}/LBXCS_resources.zip"
+        dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Scripts/LBX"
+        remote_src: true
+      when: lbx_tmp.path is defined
+
+  always:
+    - name: Remove the LBX temp dir
+      ansible.builtin.file:
+        path: "{{ lbx_tmp.path }}"
+        state: absent
+      when: lbx_tmp.path is defined
+
+# --- Reapertips removal -----------------------------------------------------
+# This role used to install the Reapertips theme, its two icon packs, its
+# colour palette, its attribution file and the Fira Sans fonts it called for.
+# These tasks stay PERMANENTLY (the claude_desktop state: absent precedent):
+# a machine that ran the old revision still has all of it on disk, and nothing
+# else would ever clean it up. On a machine that never did, every task here is
+# a no-op — the loops are empty and print nothing.
+#
+# Both icon prefixes matter: RT_ (2265 files) AND RTH_ (257 files). The old
+# CLAUDE.md only ever mentioned RT_, which would have stranded the HiDPI half.
+# The find is scoped to those prefixes precisely so REAPER's own 1529
+# toolbar_*.png files are never touched.
+
+- name: Find the Reapertips toolbar icons left on disk
+  ansible.builtin.find:
+    paths: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/toolbar_icons"
+    patterns:
+      - RT_*
+      - RTH_*
+    recurse: true
+    file_type: file
+  register: reapertips_icons
+  check_mode: false
+
+- name: Remove the Reapertips toolbar icons
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ reapertips_icons.files | map(attribute='path') | list }}"
+  loop_control:
+    label: "{{ item | basename }}"
+
+# The track icons came as 12 whole category dirs, all RT_-prefixed inside.
+# Listed explicitly rather than swept: a file-only sweep would leave 12 empty
+# directories behind, and an unscoped directory sweep could over-reach.
+- name: Remove the Reapertips track-icon categories
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/track_icons/{{ item }}"
+    state: absent
+  loop: [Bass, Brass, Drums, FX, Guitar, Keys, Misc, Perc, Strings, Utility, Wind, Woodwind]
+
+- name: Remove the remaining Reapertips and font assets
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/Reapertips Theme.ReaperThemeZip"
+    - "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt"
+    - "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/reapertips-license.txt"
+    # Fira Sans was bundled only because the Reapertips guide asked for it;
+    # rLive names Arial (-> Liberation Sans, stock and metric-compatible) and
+    # Source Code Pro, both already present system-wide.
+    - "{{ lookup('env', 'HOME') }}/.local/share/fonts/FiraSans-Regular.ttf"
+    - "{{ lookup('env', 'HOME') }}/.local/share/fonts/FiraSans-Bold.ttf"
+  loop_control:
+    label: "{{ item | basename }}"
+
+# --- first-run settings -----------------------------------------------------
 # reaper.ini is rewritten by REAPER on every exit — managing it converged
 # would fight the app the same way claude_desktop_config.json would (the
 # rewrite-at-runtime trap), so the role SEEDS it only when absent: on a
 # fresh machine REAPER's first run adopts these values and fills in its own
 # defaults for everything else; after that the file belongs to REAPER.
 # Every key in the template was verified against mespotine's config-var
-# documentation (github.com/mespotine/ultraschall-and-reaper-docs) — the
-# guide's suggestions whose keys could NOT be verified are deliberately left
-# to the manual nudge below rather than guessed.
+# documentation (github.com/mespotine/ultraschall-and-reaper-docs) — settings
+# whose keys could NOT be verified are deliberately left to the manual nudge
+# below rather than guessed.
 
 - name: Probe for an existing reaper.ini
   ansible.builtin.stat:
@@ -304,9 +409,8 @@
   register: reaper_ini
   check_mode: false
 
-# The seed points auto-save backups and the peak cache at dedicated dirs
-# (the guide's "all backups/peaks in one folder" advice) — they must exist
-# before REAPER first tries to write into them.
+# The seed points auto-save backups and the peak cache at dedicated dirs —
+# they must exist before REAPER first tries to write into them.
 - name: Ensure the backup and peak-cache dirs exist
   ansible.builtin.file:
     path: "{{ lookup('env', 'HOME') }}/Music/REAPER/{{ item }}"
@@ -316,7 +420,7 @@
     - Backups
     - Peaks
 
-- name: Seed reaper.ini with the Perfect Setup preferences (first run only)
+- name: Seed reaper.ini with the Ableton-shaped defaults (first run only)
   ansible.builtin.template:
     src: reaper.ini.j2
     dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
@@ -324,75 +428,240 @@
   when: not reaper_ini.stat.exists
   register: reaper_seeded
 
-# --- reversed horizontal scroll (touchpad-natural panning) ------------------
-# Two-finger horizontal scroll arrives as REAPER's "HorizWheel" input, which
-# is NOT a mouse-modifier context (the binary has TCP/MCP wheel contexts
-# only) but a keyboard-section binding: reaper-kb.ini `KEY <mod> <key> <cmd>
-# <section>`, where modifier 255 + key 216 is the bare horizontal wheel
-# (encoding per mespotine's filetype docs, cross-checked against real-world
-# keymaps). The stock default scrolls opposite to touchpad-natural panning;
-# REAPER ships reversed twins of the scroll actions — Main 977 and MIDI
-# Editor (section 32060) 40660 — so the fix is one binding per section.
+# --- migrating an already-configured machine --------------------------------
+# The seed above fires only when reaper.ini is ABSENT, so on a machine that
+# has already run REAPER a new template changes nothing. The two things worth
+# carrying across anyway get additive-probe treatment (the Nautilus bookmark
+# rule): applied only when REAPER has no opinion of its own, so a later
+# in-app change always wins and this can never flip-flop.
+#
+# Caveat shared by every reaper.ini and reaper-kb.ini task below: REAPER must
+# not be RUNNING. It dumps its in-memory config at exit and would drop a line
+# added underneath it. That is self-healing — the next run re-adds it.
+
+- name: Probe reaper.ini for the retired Reapertips theme selection
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -Fq
+      - ColorThemes/Reapertips Theme.ReaperThemeZip
+      - "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
+  register: reaper_old_theme
+  failed_when: false
+  changed_when: false
+  check_mode: false
+  when: reaper_ini.stat.exists
+
+# Gated on finding the OLD value, so it fires exactly once per machine and
+# can never override a theme aaron picks in-app later. Deleting reaper.ini to
+# force a reseed was rejected: it would also destroy REAPER's audio-device
+# config, window positions and MIDI hardware state.
+- name: Repoint the theme selection at rLive (one-time migration)
+  ansible.builtin.lineinfile:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
+    regexp: ^lastthemefn5=
+    line: lastthemefn5={{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ reaper_theme_file }}
+    mode: "0644"
+  when:
+    - reaper_ini.stat.exists
+    - reaper_old_theme.rc is defined
+    - reaper_old_theme.rc == 0
+
+# zoommode/vzoommode are the two keys that actually deliver Ableton's zoom
+# feel, and REAPER only writes them once they are changed from default — so
+# "absent" reliably means "aaron has never expressed an opinion", and adding
+# them then is safe. Once present (by us or by his own Preferences change) the
+# probe skips forever.
+- name: Probe reaper.ini for an existing zoom-center preference
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -Eq
+      - ^(v)?zoommode=
+      - "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
+  register: reaper_zoommode
+  failed_when: false
+  changed_when: false
+  check_mode: false
+  when: reaper_ini.stat.exists
+
+- name: Add the Ableton zoom-center preferences to an existing reaper.ini
+  ansible.builtin.lineinfile:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
+    line: "{{ item }}"
+    insertafter: ^\[REAPER\]
+    mode: "0644"
+  # 0 = zoom around the edit/play cursor, matching Live's selection-anchored
+  # horizontal zoom; 3 = vertical zoom on the track under the mouse, which is
+  # what Live's Option+scroll does. See the template for the full reasoning.
+  loop:
+    - zoommode=0
+    - vzoommode=3
+  when:
+    - reaper_ini.stat.exists
+    - reaper_zoommode.rc is defined
+    - reaper_zoommode.rc != 0
+
+# --- Ableton-shaped wheel navigation ----------------------------------------
+# Two-finger scroll arrives as REAPER's wheel input, which is NOT a
+# mouse-modifier context — verified against the 7.78 binary, whose only wheel
+# contexts are MM_CTX_{TCP,MCP}_MOUSE{,H}WHEEL and the fader ones. Arrange
+# wheel behaviour can therefore ONLY be expressed as reaper-kb.ini keyboard
+# bindings: `KEY <mod> <key> <cmd> <section>`, where mod is always 255 for
+# wheel input and the KEY field encodes both axis and modifier —
+# vertical 248 bare / 249 Ctrl / 250 Alt / 252 Shift, horizontal 216 bare.
+# (88 is a legacy alias for the horizontal wheel — don't use it.)
+#
+# Direction: SWELL sends +120 for both GDK_SCROLL_UP and GDK_SCROLL_LEFT.
+# +120 for UP matches the Windows convention REAPER expects, so vertical
+# actions need no reversal; +120 for LEFT is inverted (Windows sends positive
+# for RIGHT), which is why the horizontal binding uses the *reversed* action
+# 977 rather than 988. That is a SWELL bug being compensated, not a GNOME
+# natural-scroll setting — changing GNOME's scroll direction will not undo it.
+#
+# Ableton parity, with Cmd -> Ctrl (macOS bit 2 is Command; on Linux it's
+# Ctrl — never Super, which mutter owns):
+#   bare scroll        -> scroll tracks vertically      (Live: same)
+#   Shift + scroll     -> scroll the timeline           (Live: same)
+#   Ctrl  + scroll     -> zoom time                     (Live: Cmd+scroll)
+#   Alt   + scroll     -> track height                  (Live: Option+scroll)
+# Live's pinch-to-zoom has no substitute: SWELL's SWELL_GetGestureInfo() is an
+# unconditional `return FALSE` and it never posts WM_GESTURE, so the gesture
+# reaches the process and is discarded. Ctrl+scroll IS the pinch replacement.
 #
 # reaper-kb.ini is rewritten by REAPER whenever shortcuts change in-app, but
-# unlike reaper.ini the written state PRESERVES these lines once adopted —
-# so this is the additive-probe class, not the seed-if-absent class: add the
-# binding only when NO HorizWheel binding exists in that section (any
-# command id counts — a later in-app rebinding must win, the Nautilus
-# bookmark rule). rc!=0 covers both a missing line and a missing file.
-# Caveat: edits made while REAPER is running are lost on its exit (it dumps
-# the in-memory keymap); the probe just re-adds on the next run.
+# unlike reaper.ini the written state PRESERVES these lines once adopted — so
+# this is the additive-probe class: add a binding only when NO binding exists
+# for that (modifier, key, section) triple. Any command id counts, so an
+# in-app rebinding always wins.
+#
+# The probe is awk, not grep, because REAPER writes key values >=256 that are
+# congruent mod 256 (a real `KEY 255 6396 989 0` has been seen in the wild;
+# 6396 % 256 == 252). A literal grep would miss those and re-add a duplicate.
 
-- name: Probe for an arrange-view horizontal-wheel binding
+- name: Probe for existing wheel bindings
   ansible.builtin.command:
-    cmd: grep -E '^KEY 255 216 [0-9]+ 0\s*$' {{ lookup('env', 'HOME') }}/.config/REAPER/reaper-kb.ini
-  register: reaper_hwheel_main
+    argv:
+      - awk
+      - -v
+      - key={{ item.key }}
+      - -v
+      - sect={{ item.section }}
+      - $1=="KEY" && $2==255 && ($3%256)==key && $NF==sect {found=1} END{exit !found}
+      - "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper-kb.ini"
+  register: reaper_wheel
   failed_when: false
   changed_when: false
   check_mode: false
+  loop:
+    - {key: 248, section: 0, cmd: 989, what: "scroll vertically"}
+    - {key: 252, section: 0, cmd: 988, what: "Shift: scroll horizontally"}
+    - {key: 249, section: 0, cmd: 990, what: "Ctrl: zoom horizontally"}
+    - {key: 250, section: 0, cmd: 972, what: "Alt: adjust track heights"}
+    - {key: 216, section: 0, cmd: 977, what: "horizontal wheel, reversed"}
+    - {key: 248, section: 32060, cmd: 40432, what: "MIDI: scroll vertically"}
+    - {key: 249, section: 32060, cmd: 40431, what: "MIDI: zoom horizontally"}
+    - {key: 216, section: 32060, cmd: 40660, what: "MIDI: horizontal wheel, reversed"}
+  loop_control:
+    label: "{{ item.what }}"
 
-- name: Probe for a MIDI-editor horizontal-wheel binding
+- name: Bind the wheel to Ableton-shaped navigation
+  ansible.builtin.lineinfile:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper-kb.ini"
+    line: KEY 255 {{ item.item.key }} {{ item.item.cmd }} {{ item.item.section }}
+    create: true
+    mode: "0644"
+  loop: "{{ reaper_wheel.results }}"
+  loop_control:
+    label: "{{ item.item.what }}"
+  when: item.rc is defined and item.rc != 0
+
+# --- Ableton-shaped drag navigation -----------------------------------------
+# Mouse modifiers DO live in a seedable file: ~/.config/REAPER/reaper-mouse.ini,
+# as [MM_CTX_*] sections of `mm_<bitmask>=<behaviourID> m` (bitmask +1 shift,
+# +2 ctrl, +4 alt, +8 win; mm_8 never exists). Behaviour IDs are per-context
+# indices, not a global enum — Preferences > Mouse Modifiers has an "Export
+# ReaScript to set these modifiers for this context" button, which is the
+# honest way to discover an id rather than guessing one.
+#
+# Unlike reaper.ini, this file is NOT rewritten when REAPER exits (proven by
+# mtime: it predates several REAPER sessions) — only when Mouse Modifiers is
+# changed in Preferences. But a seed-if-absent guard would be useless here
+# because the file already exists on any machine that has run REAPER, so the
+# treatment is additive PER SECTION: a section is written only when it is
+# absent entirely, which leaves any in-app customisation untouched.
+#
+# Ruler drag is Live's headline navigation gesture — horizontal drag scrolls,
+# vertical drag zooms, both from one grab on the timeline. That is behaviour
+# 10, "Hand scroll and horizontal zoom". It costs the factory "Edit loop
+# point", which is moved onto Ctrl+drag (mm_2=1) rather than lost.
+
+- name: Probe reaper-mouse.ini for the drag contexts
   ansible.builtin.command:
-    cmd: grep -E '^KEY 255 216 [0-9]+ 32060\s*$' {{ lookup('env', 'HOME') }}/.config/REAPER/reaper-kb.ini
-  register: reaper_hwheel_midi
+    argv:
+      - grep
+      - -Fq
+      - "[{{ item.context }}]"
+      - "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper-mouse.ini"
+  register: reaper_mouse
   failed_when: false
   changed_when: false
   check_mode: false
+  # The section body is carried as a literal block, NOT assembled with a Jinja
+  # join: inside a YAML block scalar an escape like '\n' reaches Jinja as two
+  # characters and lands in the file verbatim, silently collapsing a section
+  # into one broken line (caught by running this from a clean resource path).
+  loop:
+    - context: MM_CTX_RULER
+      what: ruler drag = scroll + zoom (Ctrl keeps loop points)
+      body: |-
+        [MM_CTX_RULER]
+        mm_0=10 m
+        mm_2=1 m
+    - context: MM_CTX_ARRANGE_MMOUSE
+      what: middle-drag = hand scroll
+      body: |-
+        [MM_CTX_ARRANGE_MMOUSE]
+        mm_0=2 m
+  loop_control:
+    label: "{{ item.context }}"
 
-- name: Bind HorizWheel to reversed scroll in the arrange view
-  ansible.builtin.lineinfile:
-    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper-kb.ini"
-    line: KEY 255 216 977 0
+- name: Add the Ableton-shaped drag contexts
+  ansible.builtin.blockinfile:
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper-mouse.ini"
+    marker: "; {mark} {{ item.item.context }} (fedora-init)"
+    block: "{{ item.item.body }}"
     create: true
     mode: "0644"
-  when: reaper_hwheel_main.rc != 0
+  loop: "{{ reaper_mouse.results }}"
+  loop_control:
+    label: "{{ item.item.what }}"
+  when: item.rc is defined and item.rc != 0
 
-- name: Bind HorizWheel to reversed scroll in the MIDI editor
-  ansible.builtin.lineinfile:
-    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper-kb.ini"
-    line: KEY 255 216 40660 32060
-    create: true
-    mode: "0644"
-  when: reaper_hwheel_midi.rc != 0
-
-# What the guide suggests but can't be encoded honestly: settings whose ini
-# keys aren't verifiable (7.0+ features postdating the config-var docs),
-# live in per-context mouse-modifier maps, or need interactive flows.
-# Printed once, on the run that seeded the config — the tailscale-up
-# pattern.
+# What Ableton does that this role deliberately does NOT try to encode:
+# settings whose ini keys aren't verifiable, behaviours with no REAPER
+# equivalent, and anything needing an interactive flow. Printed once, on the
+# run that seeded the config — the tailscale-up pattern.
 - name: Remaining manual setup (not automatable)
   ansible.builtin.debug:
     msg:
-      - "REAPER installed with the Reapertips theme preselected. Manual steps remaining:"
+      - "REAPER installed with the rLive (Ableton-like) theme preselected. Manual steps remaining:"
       - "1. Run `reaper` once — evaluation/license notice, then the theme loads."
       - "2. Extensions > ReaPack > Synchronize packages (installs the default repos)."
-      - "   The Rodilab Color Palette script lives there — load ~/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt into it."
-      - "3. Preferences > Appearance > Track Control Panels: 'Folder collapse button cycles track heights' -> Normal, hidden."
-      - "4. Preferences > Appearance: 'Visual track spacer size' -> 24; Preferences > Appearance > Media: untick 'Draw selection indicator on items'."
-      - "5. Preferences > Audio > Playback: untick 'Tiny fade in on playback start'; Audio > Loop/Lane Recording: 'discard incomplete first/last takes' at 90%."
-      - "6. Preferences > Editing Behavior > MIDI Editor: 'One MIDI editor per: project' + 'Open all selected MIDI items'."
-      - "7. Preferences > Mouse Modifiers: Arrange view/middle drag -> Hand scroll; Media item fade/left drag -> Relative edge edit."
-      - "   Also: MIDI piano roll/left click -> Insert note; Media item edge/left drag -> 'Limit edits to source media content'."
-      - "8. Options: untick 'Show all takes (when room)'; File > Project Settings > 'Save as default project settings'."
-      - "9. Theme adjuster tweaks (Actions > 'Script: Default_7.0_theme_adjuster.lua'): TCP Dim track panel, Show folder indicator, etc."
+      - "3. The Ableton-style device rack is LBX Stripper 2, installed but NOT yet configured:"
+      - "   Actions > Show action list > ReaScript: Load, pick ~/.config/REAPER/Scripts/LBX/'LBX Stripper 2.lua',"
+      - "   then build a strip over a track's FX chain (or import one of the community strip packs)."
+      - "   Installing it gives the tool; the rack in rLive's screenshots is a strip somebody built."
+      - "4. Ableton's Option+scroll resizes the track UNDER THE POINTER; the bound stock action (972)"
+      - "   resizes SELECTED tracks. For true parity install SWS's 'adjust track height under mouse'"
+      - "   action and rebind KEY 255 250 in reaper-kb.ini to it."
+      - "5. Live's 'Z' zoom-to-selection and 'X' zoom-back-stack: bind 40031 (zoom to time selection)"
+      - "   and SWS's undo-zoom action — the keyboard KEY-line encoding is not documented well enough"
+      - "   to seed blind, so set them in Actions > Show action list."
+      - "6. Ableton's left-drag on empty arrangement makes a TIME selection, never an object marquee."
+      - "   REAPER's equivalent lives in Preferences > Mouse Modifiers > Arrange view/left drag —"
+      - "   set it to 'Marquee select time' if you want the Live behaviour."
+      - "7. Two things Live does that Linux cannot: pinch-to-zoom (SWELL discards the gesture — use"
+      - "   Ctrl+scroll) and smooth/inertial panning (SWELL quantises to 120-unit clicks)."
+      - "8. Preferences > Editing Behavior > Mouse: consider 'Ignore mousewheel on all faders'."
   when: reaper_seeded is changed and not ansible_check_mode
