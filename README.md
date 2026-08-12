@@ -431,6 +431,14 @@ the 60-day evaluation starts on first run; buy a license when it fits.
   "dark mode" means on Linux (REAPER only offers it as a setting on Windows).
   It belongs to *this* theme: under a light-dialog theme the same file makes
   button labels invisible.
+- **Bigger, easier-to-hit dialogs.** That same file is the only place REAPER
+  exposes the *size* of its Linux dialogs, and the stock values are cramped:
+  the Media Explorer, action list, FX browser and Preferences get a 15px font
+  (from 13), a 17px scrollbar with a 20px minimum thumb (from 14 and a
+  near-unhittable 4), a 24px combo box and a taller menu bar. Tune them in
+  `reaper_swell_metrics` in the role — if a dense dialog ever clips its
+  labels, the font is the value to walk back. Changes appear when REAPER
+  next starts.
 - **First-run settings** seeded into `reaper.ini` — *only when the file
   doesn't exist yet*; after REAPER's first run the file belongs to REAPER.
   On a machine that already has one, only the two zoom-anchor keys are added

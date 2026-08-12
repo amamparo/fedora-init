@@ -191,11 +191,44 @@
 # DESIGN (near-black text on #dcdede) — forcing Swell dark there put black text
 # on a dark ground and made button labels invisible. The override travels with
 # the theme: if the theme ever changes again, re-check this task with it.
-- name: Install the Swell color theme (dark dialogs/menus on Linux)
-  ansible.builtin.copy:
-    src: libSwell-user.colortheme
+#
+# It also carries the only lever REAPER has for the SIZE of those dialogs on
+# Linux. The file is not colours-only: its first nine lines are METRICS, and
+# they are first-class documented keys — REAPER ships the same nine at the top
+# of its own reference template, /opt/REAPER/libSwell.colortheme, which is the
+# place to check what else is settable. Reapertips leaves all nine at REAPER's
+# defaults and changes only colours below them.
+#
+# Those defaults are cramped on a 1680x1050 logical panel, which is what makes
+# the Media Explorer, the action list, the FX browser and Preferences fiddly to
+# hit: a 13px control font, 14px scrollbars with a 4px minimum thumb (a
+# genuinely hard target), and 20px combo boxes. reaper_swell_metrics below
+# bumps them; everything else in the file passes through verbatim.
+#
+# TO RETUNE, edit the numbers below — they are the whole interface. Values are
+# raw pixels, and default_font_size is the one with a trade-off: SWELL dialogs
+# are laid out in fixed pixel geometry, so a large jump can CLIP labels in
+# dense dialogs (Preferences is the one to check). 15 is deliberately modest;
+# if anything looks truncated, walk it back to 14 or REAPER's stock 13. The
+# scrollbar/combo values carry no such risk — they are pure hit-target size.
+#
+# Takes effect when REAPER STARTS: SWELL reads this file once at startup, so a
+# running REAPER shows nothing until it is quit and relaunched.
+- name: Install the Swell color theme (dark dialogs/menus, readable metrics)
+  ansible.builtin.template:
+    src: libSwell-user.colortheme.j2
     dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/libSwell-user.colortheme"
     mode: "0644"
+  vars:
+    # The vendored file, verbatim, as the base the template rewrites.
+    reaper_swell_vendor_lines: "{{ lookup('file', role_path ~ '/files/libSwell-user.colortheme').splitlines() }}"
+    reaper_swell_metrics:
+      default_font_size: 15 # stock 13 — every dialog/list control font
+      menubar_height: 20 # stock 17
+      menubar_font_size: 14 # stock 12
+      scrollbar_width: 17 # stock 14
+      scrollbar_min_thumb_height: 20 # stock 4 — the worst offender
+      combo_height: 24 # stock 20 — dropdown hit target
 
 # Icon packs merge ADDITIVELY into Data/ — deliberately not the
 # gnome_extension mirror: --delete would remove icons aaron imports by hand,

@@ -1,0 +1,27 @@
+{#
+  REAPER's Linux dialog theming: the theme's own libSwell-user.colortheme,
+  rendered line-for-line with this repo's metric overrides substituted in.
+
+  Why a template instead of a plain copy of the file: the vendored asset stays
+  BYTE-IDENTICAL to what the Reapertips package ships, so the next theme update
+  can still be diffed against it (that diff is how the v1.93b update was shown
+  to touch only two files). The size overrides live in the task's vars, where
+  they are visible and tunable, instead of being edited into a vendored blob
+  where the next update would silently revert them.
+
+  Only keys listed in reaper_swell_metrics are rewritten; every other line —
+  colours, comments, blanks — passes through untouched. A key we override that
+  upstream later renames would silently stop applying, so if a dialog ever
+  reverts to looking cramped after a theme update, diff the vendored file's
+  first lines against these keys.
+
+  LAYOUT IS LOAD-BEARING: each emitted line's newline must follow an
+  EXPRESSION tag (}}), never a block tag. Ansible templates run with
+  trim_blocks=True, which eats the newline immediately after {% endif %} /
+  {% endfor %} — writing this loop the obvious way collapses all 93 lines into
+  one, and SWELL then parses only the first key (caught by rendering it). Same
+  family as the reaper-mouse.ini escape trap: whitespace here is data.
+-#}
+{% for line in reaper_swell_vendor_lines %}{% set key = line.split(' ') | first %}{% if key in reaper_swell_metrics %}{{ key }} {{ reaper_swell_metrics[key] }}
+{% else %}{{ line }}
+{% endif %}{% endfor %}
