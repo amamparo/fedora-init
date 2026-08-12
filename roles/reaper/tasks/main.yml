@@ -1,5 +1,6 @@
 ---
-# REAPER DAW, themed and configured to look and feel like Ableton Live.
+# REAPER DAW with the Reapertips theme, its icons and fonts, the extensions,
+# and navigation reshaped toward Ableton Live's.
 #
 # REAPER ships no rpm and no dnf repo: the documented Linux install is the
 # official tarball's install-reaper.sh (verified: --install /opt,
@@ -20,10 +21,10 @@
 # REAPER is licensed shareware (60-day evaluation, then buy a license): the
 # role installs and configures it, the nag screen is between aaron and Cockos.
 
-- name: Resolve the theme identifiers used by the template and the fetch
+- name: Resolve the theme identifiers used by the template and the tasks
   ansible.builtin.set_fact:
     # Named once so tasks/main.yml and templates/reaper.ini.j2 can never drift.
-    reaper_theme_file: LCS_Flat-7.ReaperThemeZip
+    reaper_theme_file: Reapertips Theme.ReaperThemeZip
 
 - name: Probe for an installed REAPER (/opt/REAPER/reaper)
   ansible.builtin.stat:
@@ -100,22 +101,63 @@
         state: absent
       when: reaper_tmp.path is defined
 
-# --- LCS_Flat-7 theme -------------------------------------------------------
-# LCS_Flat-7 (lucas_LCS) — REAPER's stock Default 7.0 theme with every button
-# flattened. That lineage is the whole point: it declares `version 7.0`, ships
-# the full 129-image toolbar set, and inherits stock's big controls and wide
-# mixer strips, so it is flat AND immediately ergonomic with no adjuster
-# wiring. See files/LCS_Flat-7-NOTICE.txt for licence and the one-line
-# modification (custom colour strength 100 -> 45, muting how hard a track
-# colour floods the panels).
+# --- fonts the theme calls for ---------------------------------------------
+# The Quick Start Guide's step 1: Roboto Bold + Fira Sans (Regular/Bold).
+# Roboto is stock Fedora (google-roboto-fonts) — dnf, package-facts guarded.
+# Fira Sans has no Fedora package (checked: `dnf5 search fira` is empty), so
+# the theme's own ttfs are bundled and installed per-user; fontconfig picks
+# up ~/.local/share/fonts automatically, fc-cache just makes it immediate.
+
+- name: Install Roboto (theme font, stock Fedora package)
+  ansible.builtin.dnf5:
+    name: google-roboto-fonts
+    state: present
+  become: true
+  when: "'google-roboto-fonts' not in ansible_facts.packages"
+
+- name: Ensure the user font dir exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/fonts"
+    state: directory
+    mode: "0755"
+
+- name: Install the Fira Sans fonts (bundled with the theme)
+  ansible.builtin.copy:
+    src: "fonts/{{ item }}"
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/fonts/{{ item }}"
+    mode: "0644"
+  loop:
+    - FiraSans-Regular.ttf
+    - FiraSans-Bold.ttf
+  notify: Refresh the font cache
+
+# --- Reapertips theme + icons ----------------------------------------------
+# The GUI install ("drag the .ReaperThemeZip into REAPER") decomposes into:
+# the file landing in <resource>/ColorThemes/ and reaper.ini's lastthemefn5
+# pointing at it (selection is part of the settings seed below). REAPER loads
+# the theme zipped — never extract it.
 #
-# VENDORED, not fetched — the opposite of every other download in this role,
-# and deliberately: stash.reaper.fm serves files only after a browser-side
-# SHA-1 proof-of-work "verify you are human" challenge, so no get_url can
-# reach it. Being a derivative of Cockos' LGPL Default 7.0 theme, it is
-# redistributable, which is what makes committing it legitimate (the same
-# reasoning that let the retired Reapertips theme live in git). Bonus: a
-# vendored theme needs no network at all, so a fresh install works offline.
+# VENDORED, not fetched, like every asset in this section: the theme is a
+# CC BY-NC-SA 4.0 work (attribution in files/reapertips-license.txt, installed
+# alongside it), which makes committing it legitimate, and a vendored theme
+# needs no network at all — so a fresh install works offline. It is a paid
+# download (Payhip, pay-what-you-want) with no stable URL to fetch anyway.
+#
+# Vendored from the "Reapertips Theme v1.93b" package. The outer filename is
+# deliberately unversioned so lastthemefn5 survives updates, but the VERSION IS
+# STILL DISCOVERABLE — it's the folder inside the zip:
+#   python3 -m zipfile -l 'roles/reaper/files/Reapertips Theme.ReaperThemeZip'
+#   -> ReaperTips_v1.93/   (the previous vendored copy was Reapertips_v1.90_Dark)
+#
+# THE DARK VARIANT is this file: the package ships the main theme plus five
+# variations (Dark with Light Menus, Light, Hybrid, Green, Purple) and the main
+# one IS the dark build — verified by colour rather than by the guide's word:
+# col_arrangebg #424242, genlist_bg #323232, col_main_text #a0a0a0, where Light
+# is #bdbdbd/#d1d1d1/#242424, Hybrid lightens the arrange to #a3a3a3 and the
+# "Dark with Light Menus" (_LM) build keeps #424242 but flips lists to #d2d2d2.
+# The five variations are deliberately NOT vendored — dead weight at ~3.5 MB
+# each for a single-machine repo; re-download the package to try one.
+
 - name: Ensure the REAPER resource dirs exist
   ansible.builtin.file:
     path: "{{ lookup('env', 'HOME') }}/.config/REAPER/{{ item }}"
@@ -123,30 +165,93 @@
     mode: "0755"
   loop:
     - ColorThemes
+    - Data/toolbar_icons
+    - Data/track_icons
     - UserPlugins
     - Scripts
 
-# REAPER loads the theme zipped — never extract it.
-- name: Install the LCS_Flat-7 theme
+- name: Install the Reapertips theme, dark variant (CC BY-NC-SA 4.0, by Alejandro Hernandez)
   ansible.builtin.copy:
-    src: "{{ item }}"
-    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ item }}"
+    src: "{{ reaper_theme_file }}"
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ reaper_theme_file }}"
     mode: "0644"
-  loop:
-    - LCS_Flat-7.ReaperThemeZip
-    - LCS_Flat-7-NOTICE.txt
 
-# The dark Swell override this role used to install is GONE, and must stay
-# gone while the theme is Default-7.0-derived. LCS_Flat-7 specifies near-black
-# dialog text (col_main_text #1e2222) on light list/edit backgrounds
-# (genlist_bg #dcdede), because that is what stock REAPER dialogs look like.
-# Forcing Swell's backgrounds dark left black text on a dark ground — button
-# labels rendered effectively invisible. Stock Swell colours match this theme
-# by construction, so the right move is to ship no override at all.
-- name: Remove the retired dark Swell override (breaks dialog contrast here)
-  ansible.builtin.file:
-    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/libSwell-user.colortheme"
-    state: absent
+# The theme's Linux extra, shipped in the package's 03_Extras/Linux Colortheme
+# and installed verbatim: libSwell-user.colortheme darkens REAPER's GTK-less
+# Swell widgets (dialogs, menus) — the tarball build has no GTK theming, so
+# this file IS "dark mode" on Linux, the thing REAPER exposes as a setting only
+# on Windows. Goes in the resource path root per the bundled !howtouse.txt.
+#
+# It is what completes the dark variant: the theme paints its own lists at
+# #323232 with #a0a0a0 text, and Swell dialogs left stock would be the only
+# light surfaces left in the app.
+#
+# Theme-specific, NOT universally safe. It was deleted for one revision, while
+# this role shipped a Default-7.0-derived theme whose dialogs are light BY
+# DESIGN (near-black text on #dcdede) — forcing Swell dark there put black text
+# on a dark ground and made button labels invisible. The override travels with
+# the theme: if the theme ever changes again, re-check this task with it.
+- name: Install the Swell color theme (dark dialogs/menus on Linux)
+  ansible.builtin.copy:
+    src: libSwell-user.colortheme
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/libSwell-user.colortheme"
+    mode: "0644"
+
+# Icon packs merge ADDITIVELY into Data/ — deliberately not the
+# gnome_extension mirror: --delete would remove icons aaron imports by hand,
+# and REAPER treats these dirs as a user-extended pool, not a repo-owned
+# tree. --checksum/--omit-dir-times are the same convergence guards as
+# gnome_extension (git-checkout vs tarball mtimes differ for identical
+# content).
+#
+# files/toolbar_icons is a pre-merged union of TWO Reapertips products, and
+# the prefixes are what tell them apart — get this wrong and a theme update
+# deletes the expensive half:
+#   RTH_  257 files — the THEME package's own icons (86 at 1x, 86 at 150,
+#         85 at 200). These ship inside the theme zip's 04_Toolbar Icons and
+#         are the ones a theme update refreshes.
+#   RT_  2265 files — the separate "Essential Icons for REAPER" pack (755
+#         icons x 3 scales), a different paid download that is NOT part of the
+#         theme package. A theme update must leave these alone.
+# Verified zero filename overlap between the two; the 3 icons unique to the
+# Essential pack's Update/ dir are included (its other 123 are byte-identical
+# to the main pack). files/track_icons (303 files in 12 category dirs) is
+# likewise Essential Icons, not theme-package, content.
+#
+# Both trees are flat 1x/150/200 layouts, so "150" is a SCALE dir, not a
+# prefix distinction — RT_ and RTH_ each appear at all three scales.
+- name: Merge the toolbar icons into the resource path
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/toolbar_icons/"
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/toolbar_icons/"
+    recursive: true
+    rsync_opts:
+      - "--checksum"
+      - "--omit-dir-times"
+
+- name: Merge the track icons into the resource path
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/track_icons/"
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/track_icons/"
+    recursive: true
+    rsync_opts:
+      - "--checksum"
+      - "--omit-dir-times"
+
+# The theme's color palette for the Rodilab Color Palette script (a ReaPack
+# package — installing scripts through ReaPack isn't automatable offline, so
+# loading this stays a manual step surfaced in the nudge below).
+- name: Stage the Reapertips color palette (for the Rodilab script)
+  ansible.builtin.copy:
+    src: ReapertipsTheme_ColorPalette.txt
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt"
+    mode: "0644"
+
+- name: Install the Reapertips license/attribution alongside the assets
+  ansible.builtin.copy:
+    src: reapertips-license.txt
+    dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/reapertips-license.txt"
+    mode: "0644"
 
 # --- SWS + ReaPack extensions -----------------------------------------------
 # Both are pure file drops into the resource path. Presence of the .so is
@@ -196,8 +301,8 @@
 
     # The tarball is a resource-path overlay (verified layout: UserPlugins/
     # with the .so, Scripts/ with the python bridge, Data/ with grooves) —
-    # copy the whole tree over ~/.config/REAPER. rsync without --delete
-    # because Data/ is a user-extended pool, not a repo-owned tree.
+    # copy the whole tree over ~/.config/REAPER. rsync without --delete for
+    # the same merge-not-mirror reason as the icons.
     - name: Copy the SWS payload into the resource path
       ansible.posix.synchronize:
         src: "{{ sws_tmp.path }}/"
@@ -232,61 +337,21 @@
     mode: "0644"
   when: not reapack_plugin.stat.exists
 
-# --- Reapertips removal -----------------------------------------------------
-# This role used to install the Reapertips theme, its two icon packs, its
-# colour palette, its attribution file and the Fira Sans fonts it called for.
-# These tasks stay PERMANENTLY (the claude_desktop state: absent precedent):
-# a machine that ran the old revision still has all of it on disk, and nothing
-# else would ever clean it up. On a machine that never did, every task here is
-# a no-op — the loops are empty and print nothing.
-#
-# Both icon prefixes matter: RT_ (2265 files) AND RTH_ (257 files). The old
-# CLAUDE.md only ever mentioned RT_, which would have stranded the HiDPI half.
-# The find is scoped to those prefixes precisely so REAPER's own 1529
-# toolbar_*.png files are never touched.
-
-- name: Find the Reapertips toolbar icons left on disk
-  ansible.builtin.find:
-    paths: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/toolbar_icons"
-    patterns:
-      - RT_*
-      - RTH_*
-    recurse: true
-    file_type: file
-  register: reapertips_icons
-  check_mode: false
-
-- name: Remove the Reapertips toolbar icons
+# --- retired theme removal --------------------------------------------------
+# Between Reapertips revisions this role shipped rLive, then paRt, then
+# LCS_Flat-7. Only LCS_Flat-7 was ever vendored into the resource path (the
+# other two were fetched and are already gone), so it is the only one with
+# files to sweep. These tasks stay PERMANENTLY, the claude_desktop state:
+# absent precedent: a machine that ran that revision still has both files on
+# disk and nothing else would ever clean them up. On a machine that never did,
+# both are no-ops.
+- name: Remove the retired LCS_Flat-7 theme and its notice
   ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop: "{{ reapertips_icons.files | map(attribute='path') | list }}"
-  loop_control:
-    label: "{{ item | basename }}"
-
-# The track icons came as 12 whole category dirs, all RT_-prefixed inside.
-# Listed explicitly rather than swept: a file-only sweep would leave 12 empty
-# directories behind, and an unscoped directory sweep could over-reach.
-- name: Remove the Reapertips track-icon categories
-  ansible.builtin.file:
-    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/track_icons/{{ item }}"
-    state: absent
-  loop: [Bass, Brass, Drums, FX, Guitar, Keys, Misc, Perc, Strings, Utility, Wind, Woodwind]
-
-- name: Remove the remaining Reapertips and font assets
-  ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/{{ item }}"
     state: absent
   loop:
-    - "{{ lookup('env', 'HOME') }}/.config/REAPER/ColorThemes/Reapertips Theme.ReaperThemeZip"
-    - "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt"
-    - "{{ lookup('env', 'HOME') }}/.config/REAPER/Data/reapertips-license.txt"
-    # Fira Sans was bundled only because the Reapertips guide asked for it;
-    # LCS_Flat-7 names no font this system lacks, so nothing replaces them.
-    - "{{ lookup('env', 'HOME') }}/.local/share/fonts/FiraSans-Regular.ttf"
-    - "{{ lookup('env', 'HOME') }}/.local/share/fonts/FiraSans-Bold.ttf"
-  loop_control:
-    label: "{{ item | basename }}"
+    - LCS_Flat-7.ReaperThemeZip
+    - LCS_Flat-7-NOTICE.txt
 
 # --- first-run settings -----------------------------------------------------
 # reaper.ini is rewritten by REAPER on every exit — managing it converged
@@ -316,7 +381,7 @@
     - Backups
     - Peaks
 
-- name: Seed reaper.ini with the Ableton-shaped defaults (first run only)
+- name: Seed reaper.ini with the first-run defaults (first run only)
   ansible.builtin.template:
     src: reaper.ini.j2
     dest: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
@@ -340,7 +405,7 @@
     argv:
       - grep
       - -Eq
-      - ^lastthemefn5=.*ColorThemes/(Reapertips Theme|rLive|part_)
+      - ^lastthemefn5=.*ColorThemes/(LCS_Flat-7|rLive|part_)
       - "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
   register: reaper_old_theme
   failed_when: false
@@ -348,8 +413,8 @@
   check_mode: false
   when: reaper_ini.stat.exists
 
-# Gated on finding the OLD value, so it fires exactly once per machine and
-# can never override a theme aaron picks in-app later. Deleting reaper.ini to
+# Gated on finding an OLD value, so it fires exactly once per machine and can
+# never override a theme aaron picks in-app later. Deleting reaper.ini to
 # force a reseed was rejected: it would also destroy REAPER's audio-device
 # config, window positions and MIDI hardware state.
 - name: Repoint the theme selection at the current theme (one-time migration)
@@ -399,6 +464,9 @@
     - reaper_zoommode.rc != 0
 
 # --- Ableton-shaped wheel navigation ----------------------------------------
+# Theme-independent, and the half of the Ableton experiment worth keeping:
+# the look went back to Reapertips, the navigation stayed.
+#
 # Two-finger scroll arrives as REAPER's wheel input, which is NOT a
 # mouse-modifier context — verified against the 7.78 binary, whose only wheel
 # contexts are MM_CTX_{TCP,MCP}_MOUSE{,H}WHEEL and the fader ones. Arrange
@@ -534,23 +602,21 @@
     label: "{{ item.item.what }}"
   when: item.rc is defined and item.rc != 0
 
-# What Ableton does that this role deliberately does NOT try to encode:
-# settings whose ini keys aren't verifiable, behaviours with no REAPER
-# equivalent, and anything needing an interactive flow. Printed once, on the
-# run that seeded the config — the tailscale-up pattern.
+# What the theme guide and Ableton parity ask for but this role deliberately
+# does NOT encode: settings whose ini keys aren't verifiable, behaviours with
+# no REAPER equivalent, and anything needing an interactive flow. Printed once,
+# on the run that seeded the config — the tailscale-up pattern.
 - name: Remaining manual setup (not automatable)
   ansible.builtin.debug:
     msg:
-      - "REAPER installed with the LCS_Flat-7 theme preselected. Manual steps remaining:"
+      - "REAPER installed with the Reapertips theme preselected. Manual steps remaining:"
       - "1. Run `reaper` once — evaluation/license notice, then the theme loads."
       - "2. Extensions > ReaPack > Synchronize packages (installs the default repos)."
-      - "3. Track colours are muted in the panels already (Custom Color Strength ships at 45 of 100)."
-      - "   To retune it, or anything else in the theme's 295 parameters, run REAPER's own adjuster:"
-      - "   Actions > Show action list > 'Script: Default_7.0_theme_adjuster.lua' (LCS_Flat-7 is"
-      - "   Default-7.0-derived, so the stock adjuster drives it — nothing extra to install)."
-      - "   Arrange ITEMS still take the raw track colour; if those read too bright, turn down"
-      - "   Preferences > Appearance > Media > 'Tint media item peaks/backgrounds' (its ini key is"
-      - "   not documented well enough to seed here, so it stays a manual toggle)."
+      - "   The Rodilab Color Palette script lives there — load"
+      - "   ~/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt into it."
+      - "3. Theme tweaks live in REAPER's own adjuster (Reapertips is Default-7.0-derived, so"
+      - "   the stock script drives it — nothing extra to install): Actions > Show action list >"
+      - "   'Script: Default_7.0_theme_adjuster.lua' — TCP Dim track panel, Show folder indicator."
       - "4. Ableton's Option+scroll resizes the track UNDER THE POINTER; the bound stock action (972)"
       - "   resizes SELECTED tracks. For true parity install SWS's 'adjust track height under mouse'"
       - "   action and rebind KEY 255 250 in reaper-kb.ini to it."

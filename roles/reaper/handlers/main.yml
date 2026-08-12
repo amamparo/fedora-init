@@ -1,0 +1,10 @@
+---
+# Fontconfig scans ~/.local/share/fonts on its own eventually; the explicit
+# rebuild just makes the theme fonts available to a REAPER started in the
+# same session. Handler (not inline) so it fires only when a font actually
+# landed — force_handlers in site.yml keeps the notification from being lost
+# to a later role's failure.
+- name: Refresh the font cache
+  ansible.builtin.command:
+    cmd: fc-cache -f {{ lookup('env', 'HOME') }}/.local/share/fonts
+  changed_when: true

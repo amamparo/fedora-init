@@ -387,15 +387,23 @@ installer — latest version at install time, into `/opt/REAPER` with a
 desktop entry and a `reaper` symlink on PATH. It's licensed shareware:
 the 60-day evaluation starts on first run; buy a license when it fits.
 
-- **[LCS Flat 7](https://forum.cockos.com/showthread.php?t=285183) theme** —
-  REAPER's own default theme with every button flattened. Flat, low-noise, and
-  because it descends from the stock theme it keeps stock's big controls and
-  wide mixer strips, so it's easy to hit things quickly while you're playing.
-  It ships in the repo rather than being downloaded (its host requires a
-  browser check), which also means a fresh install needs no network for it.
-  Track colours are pre-muted so they read as tinting rather than shouting —
-  tune that, or anything else, with REAPER's built-in
-  *Default_7.0_theme_adjuster* script.
+- **[Reapertips](https://www.reapertips.com) theme, dark variant** — plus its
+  toolbar and track icons, its colour palette and the Fira Sans fonts it asks
+  for (Roboto comes from Fedora's own package). The theme ships in the repo
+  rather than being downloaded, so a fresh install needs no network for it,
+  and the dark dialogs and menus come with it (see below). Tune it with
+  REAPER's built-in *Default_7.0_theme_adjuster* script.
+
+  To update it: download the current package from Reapertips, then replace
+  `roles/reaper/files/Reapertips Theme.ReaperThemeZip` and
+  `reapertips-license.txt` from it. Diff the rest before touching it — on the
+  v1.9 → v1.93b update every other asset was byte-identical. Two traps: the
+  `RT_`-prefixed icons and *all* the track icons come from the separate
+  *Essential Icons for REAPER* pack, not the theme package, so a theme update
+  must not sweep them (only the 257 `RTH_` files belong to the theme); and the
+  vendored file is deliberately unversioned, so to see which version is on
+  disk, look at the folder inside the zip
+  (`python3 -m zipfile -l '…/Reapertips Theme.ReaperThemeZip'`).
 - **Ableton-shaped navigation.** Bare two-finger scroll moves vertically,
   Shift scrolls the timeline, **Ctrl zooms** and Alt changes track height —
   Live's scroll/Cmd/Option scheme, with Ctrl standing in for Cmd. Dragging
@@ -408,8 +416,11 @@ the 60-day evaluation starts on first run; buy a license when it fits.
   is the stand-in) and smooth/inertial panning.
 - **SWS and ReaPack extensions** dropped into `UserPlugins` (fetched only
   when missing, like the REAPER install itself).
-- **Dark dialogs and menus** via `libSwell-user.colortheme`, hand-authored
-  to match paRt — the tarball build has no GTK theming without it.
+- **Dark dialogs and menus** via `libSwell-user.colortheme`, the theme's own
+  Linux extra — the tarball build has no GTK theming, so this file is what
+  "dark mode" means on Linux (REAPER only offers it as a setting on Windows).
+  It belongs to *this* theme: under a light-dialog theme the same file makes
+  button labels invisible.
 - **First-run settings** seeded into `reaper.ini` — *only when the file
   doesn't exist yet*; after REAPER's first run the file belongs to REAPER.
   On a machine that already has one, only the two zoom-anchor keys are added
@@ -418,14 +429,15 @@ the 60-day evaluation starts on first run; buy a license when it fits.
   startup, auto-save every 3 minutes to `~/Music/REAPER/Backups`, peak
   caches in `~/Music/REAPER/Peaks`, straight grid lines, Time timebase,
   clean recording filenames, smoother meters, snappier media buffering.
-- **Reapertips is removed.** The role previously installed that theme, its
-  ~2,800 icons, its fonts and palette; those are now deleted from the
-  machine on every run, permanently, so an older install cleans itself up.
+- **Retired themes clean themselves up.** The role briefly shipped LCS Flat 7;
+  its files are now deleted from the machine on every run, permanently, so a
+  machine that ran that revision tidies itself.
 
 There is no Ableton Live theme here, and that's deliberate: none exists that
 works on REAPER 7. Both serious candidates were tested and fail — one never
 applies its layout, the other ships no toolbar art. The Ableton *feel* is in
-the navigation above, which is what actually survives a theme change.
+the navigation above, which is what actually survives a theme change — and it
+did: the look went back to Reapertips, the navigation stayed.
 
 ### gimp
 
