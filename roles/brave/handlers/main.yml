@@ -17,3 +17,16 @@
   ansible.builtin.command:
     cmd: gtk-update-icon-cache -f -t {{ lookup('env', 'HOME') }}/.local/share/icons/hicolor
   changed_when: true
+
+# The renamed launcher lands in ~/.local/share/applications, whose
+# mimeinfo.cache the shell reads for MIME handlers and app lookups. Rebuilding
+# it is what makes the new name (and the entry's MimeType claims, copied
+# forward from the vendor file) visible without waiting for a fresh login.
+# A handler like the cache refresh above: it can never be converged (the
+# command always rewrites), so it must fire only when an entry actually
+# changed — force_handlers in site.yml keeps the notification from being lost
+# to a later role's failure.
+- name: Refresh the desktop database
+  ansible.builtin.command:
+    cmd: update-desktop-database {{ lookup('env', 'HOME') }}/.local/share/applications
+  changed_when: true

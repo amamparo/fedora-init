@@ -88,6 +88,69 @@
     - google-chrome-stable
   when: item in ansible_facts.packages
 
+# Presented as "Web Browser" in the shell, still findable by typing "Brave".
+#
+# This DOES shadow the vendor .desktop in ~/.local/share/applications, which
+# the claude_desktop rule forbids — read that rule precisely: never park a
+# COPIED SNAPSHOT of vendor-owned values in the dir that always wins. There is
+# no per-key override mechanism for desktop entries (entries replace rather
+# than merge across XDG dirs), so renaming an app is only possible with a
+# shadow; what makes this one safe is that it is GENERATED from the vendor
+# file on every run rather than vendored in files/. Exec, MimeType,
+# StartupWMClass, Icon and both Desktop Actions come out byte-identical to
+# whatever Brave currently ships — verified with diff — so nothing is frozen.
+#
+# Staleness is bounded to zero runs by role order: the updates role's
+# `dnf upgrade` runs FIRST in this same play, so a Brave upgrade is always
+# followed by this regeneration before the play ends. (Upgrading Brave with
+# dnf by hand, outside the playbook, is the one window where the shadow can
+# lag the vendor — the next ./install.sh closes it.)
+#
+# The transform itself is two regex passes over the slurped file:
+#   1. drop any Keywords the vendor may add later, so ours can't duplicate the
+#      key (GKeyFile would take the last one and the validator would warn);
+#   2. replace the FIRST Name= line only — count=1 — with the new name plus
+#      Keywords. First is right by construction: [Desktop Entry] must be the
+#      first group per the spec, and the later Name= lines belong to the
+#      new-window/new-private-window actions, which must keep their labels.
+# The replacement carries a real newline via the block scalar below rather
+# than a "\n" escape inside the Jinja literal — the reaper reaper-mouse.ini
+# lesson, where an escape reached the file verbatim.
+#
+# Keywords is what keeps "brave" finding it: gnome-shell matches search terms
+# against name, generic name, keywords, comment and the executable. Icon= is
+# untouched, so the app keeps the custom lion installed below.
+#
+# $HOME write, so NO become — root's launcher dir otherwise, the dconf class.
+# The stat guard keeps a FRESH --check clean: the install above was only
+# simulated there, so the vendor entry does not exist yet to slurp.
+- name: Probe for the vendor Brave desktop entry
+  ansible.builtin.stat:
+    path: /usr/share/applications/brave-browser.desktop
+  register: brave_vendor_entry
+  check_mode: false
+
+- name: Read the vendor Brave desktop entry
+  ansible.builtin.slurp:
+    src: /usr/share/applications/brave-browser.desktop
+  register: brave_vendor_desktop
+  when: brave_vendor_entry.stat.exists
+
+- name: Present Brave as "Web Browser" (searchable as "Brave")
+  ansible.builtin.copy:
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/applications/brave-browser.desktop"
+    content: |
+      {{ (brave_vendor_desktop.content | b64decode)
+         | regex_replace('(?m)^Keywords=.*\n', '')
+         | regex_replace('(?m)^Name=.*$', brave_desktop_name_block, count=1) }}
+    mode: "0644"
+  vars:
+    brave_desktop_name_block: |-
+      Name=Web Browser
+      Keywords=Brave;Browser;Internet;WWW;
+  when: brave_vendor_entry.stat.exists
+  notify: Refresh the desktop database
+
 # Custom app icon — a Netscape-styled Brave lion in place of the vendor mark.
 #
 # This overrides the ICON THEME, never the .desktop entry. Shadowing

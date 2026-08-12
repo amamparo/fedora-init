@@ -218,14 +218,24 @@ Workstation installs leave it behind and it depends on Firefox, blocking
 the removal. Web apps (PWAs) are deliberately not managed here — install
 them by hand from Brave's ⋮ ▸ Cast, save, and share ▸ Install page as app.
 
+In the app grid it's called **Web Browser** — typing "brave" still finds it.
+That's done by generating a copy of Brave's launcher entry into
+`~/.local/share/applications` with a new `Name=` and a `Keywords=` line, and
+regenerating it from the vendor's own file on every run, so `Exec`, the MIME
+handler list and `StartupWMClass` are never a frozen snapshot of Brave's.
+Since system updates run first in the same playbook, an upgrade to Brave is
+always followed by a fresh copy before the run ends. To go back to the vendor
+name, delete `~/.local/share/applications/brave-browser.desktop` and drop the
+task.
+
 The app icon is swapped for a Netscape-styled Brave lion
 (`roles/brave/files/icons/`, with the unscaled master kept beside the
 installed sizes). It's installed into `~/.local/share/icons/hicolor`, which
-overrides the icon *theme* rather than shadowing Brave's `.desktop` entry —
-so `Exec`, the MIME handler list and `StartupWMClass` all stay the vendor's,
-and because Brave regenerates its `/usr/share` icons from a postinstall
-scriptlet on every upgrade, keeping the override under `~` is what makes it
-survive `dnf upgrade`. To go back to the stock mark, delete
+overrides the icon *theme* rather than naming a file in the launcher entry —
+so the new mark is used everywhere the icon appears, windows and
+notifications included, and because Brave regenerates its `/usr/share` icons
+from a postinstall scriptlet on every upgrade, keeping the override under `~`
+is what makes it survive `dnf upgrade`. To go back to the stock mark, delete
 `~/.local/share/icons/hicolor/*/apps/brave-browser.png` and drop the task.
 
 ### gnome-prefs
