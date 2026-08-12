@@ -208,12 +208,24 @@
 # TO RETUNE, edit the numbers below — they are the whole interface. Values are
 # raw pixels, and default_font_size is the one with a trade-off: SWELL dialogs
 # are laid out in fixed pixel geometry, so a large jump can CLIP labels in
-# dense dialogs (Preferences is the one to check). 15 is deliberately modest;
-# if anything looks truncated, walk it back to 14 or REAPER's stock 13. The
-# scrollbar/combo values carry no such risk — they are pure hit-target size.
+# dense dialogs (Preferences is the one to check). The scrollbar/combo values
+# carry no such risk — they are pure hit-target size, independent of the font,
+# so text size and click-target size can be tuned against each other.
 #
-# Takes effect when REAPER STARTS: SWELL reads this file once at startup, so a
-# running REAPER shows nothing until it is quit and relaunched.
+# GRANULARITY, since 13 -> 15 overshot and 14 is where this landed: the size is
+# INTEGER PIXELS, so 14 is the only step between stock and 15 — there is no
+# fractional size here. The only sub-step lever is default_font_face, and it
+# barely moves: measured x-height/em is 0.5283 for Liberation Sans (the
+# vendor's choice), 0.5283 Roboto, 0.5270 Fira Sans, 0.5360 Noto Sans (~14.2px
+# apparent at 14) and 0.4820 Cantarell (much smaller — a real step DOWN if 14
+# ever reads too big). DejaVu Sans is the one face with a meaningfully larger
+# x-height and it is not installed; adding a font package for ~3% is not worth
+# it. For proportionally bigger EVERYTHING (arrange, TCP, MCP, transport, not
+# just dialogs) the knob is REAPER's own global UI scale, not this file.
+#
+# Applied on theme (re)load, not only at startup — verified live: a REAPER that
+# had been running for two hours picked these up when the theme was reloaded.
+# A restart obviously works too.
 - name: Install the Swell color theme (dark dialogs/menus, readable metrics)
   ansible.builtin.template:
     src: libSwell-user.colortheme.j2
@@ -223,7 +235,7 @@
     # The vendored file, verbatim, as the base the template rewrites.
     reaper_swell_vendor_lines: "{{ lookup('file', role_path ~ '/files/libSwell-user.colortheme').splitlines() }}"
     reaper_swell_metrics:
-      default_font_size: 15 # stock 13 — every dialog/list control font
+      default_font_size: 14 # stock 13 — every dialog/list control font
       menubar_height: 20 # stock 17
       menubar_font_size: 14 # stock 12
       scrollbar_width: 17 # stock 14
