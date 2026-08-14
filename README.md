@@ -442,12 +442,24 @@ the 60-day evaluation starts on first run; buy a license when it fits.
   when the theme is reloaded or REAPER restarts.
 - **First-run settings** seeded into `reaper.ini` — *only when the file
   doesn't exist yet*; after REAPER's first run the file belongs to REAPER.
-  On a machine that already has one, only the two zoom-anchor keys are added
-  (and only if you've never set them). Includes: theme selection, Live-style
-  "Follow" scrolling, clip-edge drag repeats the content, new-project
+  Includes: theme selection, Live-style "Follow" scrolling, new-project
   startup, auto-save every 3 minutes to `~/Music/REAPER/Backups`, peak
   caches in `~/Music/REAPER/Peaks`, straight grid lines, Time timebase,
   clean recording filenames, smoother meters, snappier media buffering.
+- **Reapertips' own [*Perfect Setup*](docs/reapertips-perfect-setup.pdf)
+  guide**, by the same author as the theme — vendored in `docs/`, and the
+  tips that map to a documented config variable are applied for you: no
+  automatic item fades, no tiny fade-in on playback start, the full set of
+  media-item buttons, incomplete loop takes discarded at a 90% threshold,
+  one MIDI editor per project, item edges that extend instead of looping,
+  and an uncluttered 18px grid. Everything else the guide suggests —
+  toolbars, screensets, mouse modifiers, the REAPER 7 settings with no
+  documented key — is printed as a numbered checklist with page numbers the
+  first time the role touches your `reaper.ini`.
+- **Already-configured machines get the settings too.** A machine that has
+  run REAPER before doesn't get the seed, so the keys worth having are
+  back-filled individually instead — each one added *only if absent*, so
+  anything you've set yourself, in Preferences or by hand, always wins.
 - **Retired themes clean themselves up.** The role briefly shipped LCS Flat 7;
   its files are now deleted from the machine on every run, permanently, so a
   machine that ran that revision tidies itself.
@@ -457,6 +469,12 @@ works on REAPER 7. Both serious candidates were tested and fail — one never
 applies its layout, the other ships no toolbar art. The Ableton *feel* is in
 the navigation above, which is what actually survives a theme change — and it
 did: the look went back to Reapertips, the navigation stayed.
+
+The *Perfect Setup* guide and the Ableton goal disagree in exactly two places,
+and they're resolved on purpose. Dragging an item's right edge now **extends**
+it rather than repeating the content, which is the guide's call and not Live's.
+Horizontal zoom stays **cursor-anchored** rather than following the mouse,
+which is Live's call and not the guide's.
 
 ### gimp
 

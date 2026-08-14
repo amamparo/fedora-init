@@ -5,10 +5,16 @@
 ; theme-agnostic quality-of-life settings (backups, peak cache, buffering).
 ;
 ; NOTE: because this only seeds when the file is ABSENT, a machine that has
-; already run REAPER never gets these. The feel-critical keys below that the
-; role also adds additively — zoommode, vzoommode — are the ones worth having
-; on an existing install; the rest are first-run niceties, deliberately not
-; forced onto a configured machine (that would fight REAPER's own rewrites).
+; already run REAPER never gets these from here. The keys worth having on an
+; already-configured machine are re-listed in tasks/main.yml (reaper_ini_keys)
+; and added there ONLY WHERE ABSENT, so REAPER's own writes and any in-app
+; change always win and the role can never flip-flop against them. Keys not on
+; that list are first-run niceties, deliberately not forced onto a configured
+; machine (that would fight REAPER's rewrite-at-exit).
+;
+; KEEP THE TWO IN SYNC: a key added here that belongs on an existing install
+; has to be added to reaper_ini_keys as well, or it silently only ever reaches
+; fresh machines.
 [REAPER]
 ; Theme: Reapertips, vendored in the repo (its assets are licensed
 ; CC BY-NC-SA 4.0 — see the role). Loaded zipped, never extracted.
@@ -34,16 +40,62 @@ viewadvance=25
 ; --- Editing defaults -------------------------------------------------------
 ; Startup: open a new project (19), not the last session — faster startup
 loadlastproj=19
-; Media item defaults: loop source ON, so dragging a clip's right edge repeats
-; the content the way a Live clip does (the old value here was 0 = extend)
-loopnewitems=1
+; Media item defaults: loop source OFF for every item class, so dragging an
+; item's right edge EXTENDS it instead of repeating the content.
+; This REVERSES an earlier Ableton-parity choice (loopnewitems=1, "a Live clip
+; loops when you drag its edge"). Perfect Setup p42 argues the other way and
+; aaron's own machine had already landed on 0, so the guide wins here — it is
+; the one place the guide and the Live-parity goal actually disagree.
+; Bits (mespotine): &2 MIDI, &4 imported, &8 recorded, &32 glued (&8/&32 are
+; INVERTED — 0 means checked), so a flat 0 is "no looping, no inversion games".
+loopnewitems=0
 ; Project default (the "Save as default project settings" slot):
 ; timebase for items/envelopes/markers = Time — no stretch/pitch on BPM change
 itemtimelock=0
 ; Appearance: straight grid lines instead of dotted — Live draws solid ones
 griddot=0
-; Grid: bigger minimum line spacing (px); Live's adaptive grid is sparser
-projgridmin=24
+; Grid: bigger minimum line spacing (px); Live's adaptive grid is sparser, and
+; Perfect Setup p26 ("Uncluttered grid lines") names 18 specifically — adopted
+; over the 24 this used to carry, since both aim at the same thing and 18 is
+; the value the guide's before/after screenshots are taken at.
+projgridmin=18
+
+; --- Reapertips "Perfect Setup" (docs/reapertips-perfect-setup.pdf) ---------
+; Alejandro Hernandez's own REAPER 7 setup guide, by the author of the theme
+; this role installs. Only the tips whose config variable is documented as
+; "Stored in reaper.ini ... in the section REAPER" are encoded here; the rest
+; are in the role's manual-steps debug, which cites the page numbers. Every
+; bitfield below is spelled out bit by bit because writing one sets ALL of its
+; bits — a value copied without the arithmetic is unmaintainable.
+;
+; p39, Disable automatic fade in / fade out. &8 is INVERTED: 1 = the "create
+; automatic fade-in/fade-out for new items" checkbox OFF. &32 is REAPER-7-era
+; and absent from the 5.95 reference; 40 (= 8 + 32) is what a live REAPER 7.78
+; writes with the guide's Media Item Defaults applied, so it is taken whole
+; rather than reconstructed from bits that aren't documented.
+splitautoxfade=40
+; p40, Disable tiny fade-in on playback start. &1 = tiny fade OUT on stop
+; (kept — the guide only unchecks the other one), &2 = tiny fade IN on start.
+hwfadex=1
+; p41, Additional item buttons. Everything on except the two Item Properties
+; boxes: &1 locked +&2 not locked +&4 per-take FX +&8 no FX +&16 muted
+; +&32 not muted +&64 notes +&128 no notes +&256 grouped = 511;
+; +&4096 (the "0 1" pair = both Item Properties boxes OFF);
+; +&32768 (fade handle "when fade is less than" — REAPER's own default, not a
+; guide setting, declared here only because writing the key owns every bit);
+; +&262144 automation envelopes +&524288 no active envelopes.
+; &512/&1024 = 0 keeps take rate/pitch on "Normal labels"; &8192 = 0 and
+; &16384 = 0 are INVERTED and keep pooled MIDI and the volume knob shown.
+itemicons=823807
+; p50, Discard incomplete takes in loop recording, threshold 90%. &4 = discard
+; incomplete first/last takes; the percentage lives in &256..&16384 as a plain
+; 7-bit number one byte up, so 90 * 256 = 23040, and 23040 + 4 = 23044.
+; &1 = 0 keeps "add recorded media on stop", REAPER's recommended default.
+recaddatloop=23044
+; p65 + p68, One MIDI editor per project (&1 set, &2 clear), and &32 = 1 leaves
+; "close editor when the active item is deleted" unchecked, matching the guide's
+; multi-MIDI screenshot. &128 = 0 keeps "active MIDI item follows selection".
+midieditor=33
 
 ; --- Quality of life (theme-agnostic) ---------------------------------------
 ; Auto-save: to timestamped files in one dedicated dir (saveopts &8),

@@ -1,6 +1,7 @@
 ---
 # REAPER DAW with the Reapertips theme, its icons and fonts, the extensions,
-# and navigation reshaped toward Ableton Live's.
+# the settings from Reapertips' own "Perfect Setup" guide, and navigation
+# reshaped toward Ableton Live's.
 #
 # REAPER ships no rpm and no dnf repo: the documented Linux install is the
 # official tarball's install-reaper.sh (verified: --install /opt,
@@ -408,6 +409,13 @@
 # documentation (github.com/mespotine/ultraschall-and-reaper-docs) — settings
 # whose keys could NOT be verified are deliberately left to the manual nudge
 # below rather than guessed.
+#
+# A large share of the values come from Alejandro Hernandez's "Perfect Setup"
+# guide, vendored at docs/reapertips-perfect-setup.pdf — same author as the
+# theme this role installs. That reference is REAPER 5.95-era, so the guide's
+# REAPER-7-only tips (track spacers, folder-collapse modes, the item selection
+# indicator, render block size) have NO documented variable and are in the
+# manual nudge with their page numbers rather than reverse-engineered.
 
 - name: Probe for an existing reaper.ini
   ansible.builtin.stat:
@@ -473,40 +481,63 @@
     - reaper_old_theme.rc is defined
     - reaper_old_theme.rc == 0
 
-# zoommode/vzoommode are the two keys that actually deliver Ableton's zoom
-# feel, and REAPER only writes them once they are changed from default — so
-# "absent" reliably means "aaron has never expressed an opinion", and adding
-# them then is safe. Once present (by us or by his own Preferences change) the
-# probe skips forever.
-- name: Probe reaper.ini for an existing zoom-center preference
+# REAPER only writes a key once it differs from the built-in default, so
+# "absent" reliably means aaron has never expressed an opinion and adding the
+# key then is safe. Once present — written by us, by REAPER, or by his own
+# Preferences change — the probe skips it forever, which is what stops this
+# from flip-flopping against the app's rewrite-at-exit.
+#
+# One entry per key, probed individually: a joint probe would skip the whole
+# set as soon as any one member existed. Values and the reasoning behind them
+# live in templates/reaper.ini.j2 — this list only decides which of them are
+# worth back-filling onto an ALREADY-CONFIGURED machine, and must be kept in
+# sync with the template (see its header).
+- name: Probe reaper.ini for the keys worth back-filling
   ansible.builtin.command:
     argv:
       - grep
       - -Eq
-      - ^(v)?zoommode=
+      - ^{{ item.key }}=
       - "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
-  register: reaper_zoommode
+  register: reaper_ini_probe
   failed_when: false
   changed_when: false
   check_mode: false
+  vars:
+    reaper_ini_keys:
+      # Ableton-shaped zoom — the feel-critical pair, here since the theme
+      # detour: 0 = zoom around the edit/play cursor (Live anchors zoom on the
+      # selection), 3 = vertical zoom on the track under the mouse (Live's
+      # Option+scroll). Deliberately NOT the guide's p25 "mouse cursor" for the
+      # horizontal one — that is the one navigation fork taken away from it.
+      - {key: zoommode, value: 0, why: "zoom around the cursor (Live)"}
+      - {key: vzoommode, value: 3, why: "vertical zoom under the mouse"}
+      # Reapertips "Perfect Setup" — the tips with a documented ini key.
+      - {key: splitautoxfade, value: 40, why: "p39 no automatic item fades"}
+      - {key: hwfadex, value: 1, why: "p40 no tiny fade-in on play"}
+      - {key: itemicons, value: 823807, why: "p41 additional item buttons"}
+      - {key: recaddatloop, value: 23044, why: "p50 discard incomplete takes"}
+      - {key: midieditor, value: 33, why: "p65 one MIDI editor per project"}
+      - {key: loopnewitems, value: 0, why: "p42 drag extends, never loops"}
+      - {key: projgridmin, value: 18, why: "p26 uncluttered grid lines"}
+  loop: "{{ reaper_ini_keys }}"
+  loop_control:
+    label: "{{ item.key }} ({{ item.why }})"
   when: reaper_ini.stat.exists
 
-- name: Add the Ableton zoom-center preferences to an existing reaper.ini
+# insertafter the [REAPER] header, because a bare append would land the key
+# in whichever section happens to be last (the file has 21 of them).
+- name: Back-fill the missing keys into an existing reaper.ini
   ansible.builtin.lineinfile:
     path: "{{ lookup('env', 'HOME') }}/.config/REAPER/reaper.ini"
-    line: "{{ item }}"
+    line: "{{ item.item.key }}={{ item.item.value }}"
     insertafter: ^\[REAPER\]
     mode: "0644"
-  # 0 = zoom around the edit/play cursor, matching Live's selection-anchored
-  # horizontal zoom; 3 = vertical zoom on the track under the mouse, which is
-  # what Live's Option+scroll does. See the template for the full reasoning.
-  loop:
-    - zoommode=0
-    - vzoommode=3
-  when:
-    - reaper_ini.stat.exists
-    - reaper_zoommode.rc is defined
-    - reaper_zoommode.rc != 0
+  loop: "{{ reaper_ini_probe.results }}"
+  loop_control:
+    label: "{{ item.item.key }} ({{ item.item.why }})"
+  when: item.rc is defined and item.rc != 0
+  register: reaper_ini_backfill
 
 # --- Ableton-shaped wheel navigation ----------------------------------------
 # Theme-independent, and the half of the Ableton experiment worth keeping:
@@ -647,31 +678,69 @@
     label: "{{ item.item.what }}"
   when: item.rc is defined and item.rc != 0
 
-# What the theme guide and Ableton parity ask for but this role deliberately
-# does NOT encode: settings whose ini keys aren't verifiable, behaviours with
-# no REAPER equivalent, and anything needing an interactive flow. Printed once,
-# on the run that seeded the config — the tailscale-up pattern.
+# What the Perfect Setup guide and Ableton parity ask for but this role
+# deliberately does NOT encode: settings whose ini keys aren't verifiable
+# (REAPER-7-era ones are absent from the 5.95 config-var reference), mouse
+# modifiers whose behaviour IDs are per-context indices that REAPER only
+# reveals through its own "Export ReaScript" button, keyboard bindings for
+# plain letters (the KEY-line encoding for those is self-contradictory in the
+# reference — 0_101 for E but 0_81 for Q — so seeding them blind is exactly
+# the guess this role refuses to make), and anything interactive.
+#
+# Page numbers are docs/reapertips-perfect-setup.pdf. Printed on any run that
+# actually changed reaper.ini — seed OR back-fill — then quiet: the tailscale-up
+# pattern, widened because a machine that already had a reaper.ini would
+# otherwise never see the list at all.
 - name: Remaining manual setup (not automatable)
   ansible.builtin.debug:
     msg:
-      - "REAPER installed with the Reapertips theme preselected. Manual steps remaining:"
+      - "REAPER configured with the Reapertips theme and the Perfect Setup ini keys. Remaining:"
+      - "-- first run --"
       - "1. Run `reaper` once — evaluation/license notice, then the theme loads."
-      - "2. Extensions > ReaPack > Synchronize packages (installs the default repos)."
+      - "2. Extensions > ReaPack > Synchronize packages (installs the default repos). p77"
       - "   The Rodilab Color Palette script lives there — load"
       - "   ~/.config/REAPER/Data/ReapertipsTheme_ColorPalette.txt into it."
-      - "3. Theme tweaks live in REAPER's own adjuster (Reapertips is Default-7.0-derived, so"
-      - "   the stock script drives it — nothing extra to install): Actions > Show action list >"
-      - "   'Script: Default_7.0_theme_adjuster.lua' — TCP Dim track panel, Show folder indicator."
-      - "4. Ableton's Option+scroll resizes the track UNDER THE POINTER; the bound stock action (972)"
-      - "   resizes SELECTED tracks. For true parity install SWS's 'adjust track height under mouse'"
-      - "   action and rebind KEY 255 250 in reaper-kb.ini to it."
-      - "5. Live's 'Z' zoom-to-selection and 'X' zoom-back-stack: bind 40031 (zoom to time selection)"
-      - "   and SWS's undo-zoom action — the keyboard KEY-line encoding is not documented well enough"
-      - "   to seed blind, so set them in Actions > Show action list."
-      - "6. Ableton's left-drag on empty arrangement makes a TIME selection, never an object marquee."
-      - "   REAPER's equivalent lives in Preferences > Mouse Modifiers > Arrange view/left drag —"
-      - "   set it to 'Marquee select time' if you want the Live behaviour."
-      - "7. Two things Live does that Linux cannot: pinch-to-zoom (SWELL discards the gesture — use"
-      - "   Ctrl+scroll) and smooth/inertial panning (SWELL quantises to 120-unit clicks)."
-      - "8. Preferences > Editing Behavior > Mouse: consider 'Ignore mousewheel on all faders'."
-  when: reaper_seeded is changed and not ansible_check_mode
+      - "3. Preferences > General > Export configuration, all boxes ticked, keep the"
+      - "   .ReaperConfigZip somewhere safe. Do this BEFORE tweaking further. p8"
+      - "-- REAPER 7 settings with no documented ini key (set these in Preferences) --"
+      - "4. Appearance > Media: uncheck 'Draw selection indicator on items'. p21"
+      - "5. Appearance > Track Control Panel: 'Folder collapse button cycles track"
+      - "   heights' = Normal, hidden. p32"
+      - "6. Appearance: 'Visual track spacer size' = 24. p35"
+      - "7. Audio > Rendering: 'Block size to use when rendering' = 1024. p60"
+      - "8. Track/Sends Defaults > Record config: 'Automatic record-arm when track"
+      - "   is selected'. p51"
+      - "9. Options > uncheck 'Show all takes (when room)', then File > Project"
+      - "   Settings > Save as default project settings. p49"
+      - "-- mouse modifiers (Preferences > Mouse Modifiers; IDs are per-context) --"
+      - "10. Media item fade/autocrossfade | left drag > default > Move fade >"
+      - "    'Relative edge edit' — lets you drag several fades at once. p37"
+      - "11. Media item edge | left drag > tick 'Limit edits to source media content"
+      - "    for unlooped media items' — pairs with loopnewitems=0 above. p43"
+      - "12. MIDI piano roll | left click > default > Insert note > 'Just insert'. p62"
+      - "-- keyboard / toolbars / layouts (all interactive) --"
+      - "13. Record shortcuts: bind 1013 (Transport: Record) to E and 40668"
+      - "    (Transport: Stop, DELETE all recorded media) to Q. p47"
+      - "14. Build a toolbar from the 4051 icons already in Data/toolbar_icons, and"
+      - "    save layouts as screensets (View > Screensets). p27, p28"
+      - "15. FX browser > right click a plugin > 'Create shortcut...' for the ones you"
+      - "    reach for most. p34"
+      - "16. Theme tweaks live in REAPER's own adjuster (Reapertips is Default-7.0-derived,"
+      - "    so the stock script drives it): Actions > Show action list >"
+      - "    'Script: Default_7.0_theme_adjuster.lua' — TCP Dim track panel, folder indicator."
+      - "-- Ableton parity, unfinished --"
+      - "17. Option+scroll in Live resizes the track UNDER THE POINTER; the bound stock action"
+      - "    (972) resizes SELECTED tracks. For true parity install SWS's 'adjust track height"
+      - "    under mouse' action and rebind KEY 255 250 in reaper-kb.ini to it."
+      - "18. Live's 'Z' zoom-to-selection and 'X' zoom-back-stack: bind 40031 (zoom to time"
+      - "    selection) and SWS's undo-zoom action in Actions > Show action list."
+      - "19. Live's left-drag on empty arrangement makes a TIME selection, never an object"
+      - "    marquee: Preferences > Mouse Modifiers > Arrange view/left drag >"
+      - "    'Marquee select time' if you want that."
+      - "20. Two things Live does that Linux cannot: pinch-to-zoom (SWELL discards the gesture"
+      - "    — use Ctrl+scroll) and smooth/inertial panning (SWELL quantises to 120-unit clicks)."
+      - "NOTE: the guide's p25 'zoom towards your mouse' is deliberately NOT taken for the"
+      - "HORIZONTAL axis (zoommode stays 0, cursor-anchored, which is what Live does)."
+  when:
+    - not ansible_check_mode
+    - reaper_seeded is changed or reaper_ini_backfill is changed
