@@ -1,0 +1,38 @@
+---
+# avahi captures the host name ONCE, in avahi_server_new() — the only place in
+# the daemon that ever consults gethostname() — and has no way to notice a
+# later change: its inotify watches cover /etc/avahi and /etc/avahi/services
+# only, it holds no org.freedesktop.hostname1 subscription (`strings
+# /usr/bin/avahi-daemon | grep hostname1` comes back empty), and its netlink
+# subscription is RTMGRP_LINK/IFADDR — interfaces, not names.
+#
+# So this MUST be `state: restarted`. reload_config() — which is what SIGHUP,
+# `avahi-daemon -r` and therefore the unit's own ExecReload= all end up
+# running — reloads static services, static hosts, resolv.conf and browse
+# domains, and avahi-daemon(8) says exactly that. The host name is absent from
+# the list, so `state: reloaded` would be a silent no-op and the machine would
+# keep answering under the OLD name until the next reboot.
+#
+# (The daemon's own "-2" conflict rename is not a counterexample: it derives
+# the alternative from its in-memory name in response to a packet arriving on
+# the wire, which is the whole reason avahi_server_set_host_name() exists.)
+#
+# A handler, not an unconditional task: a restart drops and re-registers every
+# published record (passim's _cache._tcp today, GNOME Sharing if it's ever
+# enabled — all avahi D-Bus clients, which re-register on
+# AVAHI_CLIENT_S_RUNNING), so it must fire only on an actual rename.
+# force_handlers in site.yml matters more here than usual: hostnamectl already
+# agrees the moment the rename lands, so the notifying task reports ok forever
+# after — a notification lost to a later role's failure would strand the
+# machine published under the old name, with nothing on disk for a converged
+# re-run to notice.
+#
+# Same plain package guard as the task that notifies it, for the same reason:
+# this role installs nothing, so an absent avahi is real and systemd_service
+# would hard-fail on the missing unit.
+- name: Restart avahi-daemon
+  become: true
+  ansible.builtin.systemd_service:
+    name: avahi-daemon.service
+    state: restarted
+  when: "'avahi' in ansible_facts.packages"

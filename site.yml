@@ -40,6 +40,8 @@
       tags: updates
     - role: snapshots
       tags: snapshots
+    - role: hostname
+      tags: hostname
     - role: battery
       tags: battery
     - role: window_snapping

@@ -1,0 +1,165 @@
+---
+# hostname — this machine is "thinkpad", and it answers on the LAN as
+# "thinkpad.local". Two halves: the static hostname (systemd's hostnamed) and
+# the mDNS name avahi publishes from it.
+#
+# To rename the machine, change the ONE literal below. Deliberately not a var:
+# no role in this repo carries a defaults/ or vars/ dir, the value is used
+# once, and it's a repo-declared preference of the aws-region / git_config
+# class — edit the task, don't override it at runtime.
+#
+# Where "fedora" comes from today is worth knowing, because it isn't what most
+# people assume. NOT DHCP, and NOT /etc/hostname — that file does exist, but
+# it holds exactly one byte, a newline, as %ghost %config(noreplace) from the
+# systemd rpm, so rpm neither installs nor verifies its content. The name is
+# DEFAULT_HOSTNAME="fedora" in /usr/lib/os-release (shipped by
+# fedora-release-identity-workstation), which hostnamed falls back to whenever
+# the static name is unset — and it says so: `hostnamectl --json=short`
+# reports HostnameSource "default" with StaticHostname null. Two consequences:
+# the current name is package-provided rather than ours, and EVERY stock
+# Fedora Workstation on the LAN is also fedora.local — so this rename lowers
+# the mDNS collision odds rather than introducing them.
+#
+# Setting a static name also ends NetworkManager's claim on the transient one:
+# given a valid static hostname NM skips its DHCP/reverse-DNS hostname update
+# entirely (its own documented behavior), so no hostname-mode=none is needed.
+#
+# What this role deliberately does NOT manage, each for a real reason:
+#   * /etc/hosts — nss-myhostname already resolves the machine's own name in
+#     both directions (proof: "fedora" is in no hosts file today and resolves
+#     fine). Worse, `files` precedes `myhostname` in the nsswitch hosts line,
+#     so a "127.0.0.1 thinkpad" entry would SHADOW the real LAN address. The
+#     "sudo: unable to resolve host" folklore predates nss-myhostname.
+#   * /etc/nsswitch.conf and authselect — that hosts line is owned by the
+#     nss-mdns rpm's scriptlets (posttrans enables the authselect feature
+#     with-mdns4, preuninstall disables it). authselect state also carries
+#     with-fingerprint, which this repo's whole passwordless-become design
+#     rests on, so never drive authselect from here. Same reason not to swap
+#     mdns4_minimal for dual-stack mdns_minimal — which nss-mdns's own README
+#     warns times out under IPv6-first applications.
+#   * /etc/avahi/avahi-daemon.conf, publish-workstation included — a pristine
+#     config(noreplace) file; editing it means owning it and merging .rpmnew
+#     forever. That flag controls the legacy _workstation._tcp advert, which
+#     avahi-daemon.conf(5) describes as useful "for administrative purposes
+#     (i.e. browse for all PCs on the LAN), but ... not required or
+#     recommended by any specification" — it is consumed by admin browsers
+#     (avahi-browse, avahi-discover), NOT by file managers, whose network view
+#     enumerates share types instead. So it is orthogonal to .local resolution
+#     (that's the A record), and avahi names the service
+#     "<hostname> [<mac address>]" — a MAC broadcast on every network a
+#     roaming laptop joins.
+#   * firewalld — the default AND active zone is FedoraWorkstation, which
+#     already permits 1025-65535/udp, so mDNS on 5353 is open (verified live).
+#     Adding the "mdns" service would fork /etc/firewalld/zones into a frozen
+#     copy of a vendor file for zero behavior change — the snapshot-of-a-
+#     vendor-file trap the claude_desktop .desktop rule forbids.
+#   * tailscaled — role ordering does the job (see below); `tailscale set
+#     --hostname` would permanently un-stick the tailnet name from the OS
+#     hostname.
+#   * a reboot — hostnamed sets the running kernel name synchronously, and
+#     avahi follows via the handler.
+#
+# Ordering (site.yml slot 3, right after snapshots): inside the first run's
+# btrfs snapshot coverage, and BEFORE the tailscale role — so the first-ever
+# `tailscale up` registers "thinkpad" and no admin-console rename is needed.
+#
+# Substring-matcher note: `./install.sh hostname` (or `name`) reaches only
+# this role, but `./install.sh host` also sweeps ghostty (g*host*ty) —
+# verified against the matcher, not guessed.
+
+# ansible.builtin.hostname over a guarded `hostnamectl` command task: the
+# module IS that guarded task — it probes `hostnamectl --transient status` and
+# `--static status` and mutates only on a difference — but it also gets check
+# mode right, where a command task would be skipped and report "skipped" when
+# "changed" is the truth. Its SystemdStrategy also sets the permanent name
+# BEFORE the transient one, which is what keeps NetworkManager quiet (the base
+# class does the reverse; only the systemd subclass overrides it). A copy to
+# /etc/hostname would be strictly worse: it bypasses hostnamed, so the running
+# kernel name stays stale until a reboot — and since avahi publishes whatever
+# gethostname() returns, the handler below would then restart the daemon onto
+# the OLD name and silently keep answering as fedora.local.
+#
+# `use: systemd` is not redundant. Autodetection does work (the module runs
+# its own platform probe, so gather_facts: false is irrelevant), but there is
+# no FedoraHostname class — verified, 35 distro subclasses and not one mention
+# of Fedora — so detection rides a single `is_systemd_managed()` canary and
+# the fallback is base Hostname, whose strategy_class is UnimplementedStrategy:
+# a hard fail, not a degrade. Naming the strategy skips that path entirely.
+#
+# become: required. SetStaticHostname is the polkit action
+# org.freedesktop.hostname1.set-static-hostname (auth_admin_keep), so as the
+# user with no polkit agent it fails "Interactive authentication required".
+# As root, systemd short-circuits the polkit query for privileged callers — no
+# agent, no prompt, no timeout under this repo's passwordless become.
+#
+# Side effect, accepted deliberately: the module runs `hostnamectl --pretty
+# --static set-hostname`, and hostnamectl only drops a redundant pretty name
+# when NO flags were passed, so SetPrettyHostname really fires and CREATES
+# /etc/machine-info with PRETTY_HOSTNAME=thinkpad. That's what GNOME Settings
+# shows as "Device Name" and what Bluetooth advertises as the adapter alias —
+# desirable, since leaving those saying "fedora" is exactly the split-brain
+# this rename fixes. It is SEEDED, never converged: change detection reads
+# only --static, so a later `hostnamectl --pretty set-hostname "Aaron's
+# ThinkPad"` is invisible here and survives forever.
+#
+# Check-mode honesty needs no gate: the module's only actions under --check
+# are two read-only status calls, and `hostnamectl --static status` prints an
+# empty string with rc=0 when unset (verified live) — a plain string compare
+# that is never parsed, so a fresh --check reports "changed" truthfully and
+# cannot crash.
+- name: Set the static hostname
+  become: true
+  ansible.builtin.hostname:
+    name: thinkpad
+    use: systemd
+  register: hostname_set
+  notify: Restart avahi-daemon
+
+# The rename only reaches the LAN if avahi is actually running, so assert it —
+# a converged no-op on Workstation (enabled and active out of the box), the
+# tailscaled / podman.socket precedent.
+#
+# avahi and nss-mdns are assumed, never installed. Workstation ships both, and
+# installing nss-mdns would fire its posttrans scriptlet straight into
+# authselect (see the header). That makes this the updates role's
+# fwupd/flatpak pattern: guard on the package existing.
+#
+# The guard form differs from tailscale/battery on purpose. Those use
+# `not ansible_check_mode or <rpm> in ...` because their own install task was
+# only simulated under a fresh --check. This role installs nothing, so an
+# absent avahi is GENUINELY absent (a minimal install, never Workstation) —
+# and the tailscale form would then evaluate true on a real run and hard-fail
+# systemd_service on a unit that is never going to exist. A plain package
+# guard covers the minimal-install case and fresh --check in one clause.
+# avahi-daemon.socket is left alone: the service Requires= it, and Fedora's
+# preset already enables it.
+- name: Ensure avahi is running so the name gets published
+  become: true
+  ansible.builtin.systemd_service:
+    name: avahi-daemon.service
+    enabled: true
+    state: started
+  when: "'avahi' in ansible_facts.packages"
+
+# The one diagnostic worth surfacing, because the obvious way to check it
+# LIES. systemd-resolved answers this machine's OWN <hostname>.local locally,
+# without ever consulting avahi (mDNS is off in resolved on Fedora — avahi
+# owns 5353). Verified live, and resolved says so itself: `resolvectl query
+# fedora.local` closes with "Data from: synthetic" and returns every local
+# address — including ones avahi is not publishing — while a .local name that
+# isn't ours fails outright. So `getent ahosts thinkpad.local`
+# here would succeed the instant the hostname changes even if avahi were still
+# publishing the old name — precisely what would hide a failed restart.
+# Fires only on the run that actually renamed, never under --check (the
+# github_cli / tailscale nudge pattern).
+- name: Note how to verify the new mDNS name
+  ansible.builtin.debug:
+    msg: >-
+      Renamed to {{ hostname_set.name }}. Verify from ANOTHER machine
+      (`ping {{ hostname_set.name }}.local`) or with `avahi-resolve -n
+      {{ hostname_set.name }}.local` — NOT with `getent`/`resolvectl` here,
+      which answer locally whatever avahi publishes. If the name is already
+      taken on this LAN, avahi silently publishes {{ hostname_set.name }}-2
+      instead; check with `busctl call org.freedesktop.Avahi /
+      org.freedesktop.Avahi.Server GetHostName`.
+  when: hostname_set is changed and not ansible_check_mode

@@ -84,6 +84,46 @@ system snapshots don't cover your files. `/var` *is* inside root, so a
 full rollback also rewinds logs and system-side container state
 (rootless podman under `~` is unaffected).
 
+### hostname
+
+Names the machine **thinkpad** and makes it answer on the local network as
+**thinkpad.local**, the way a Mac is reachable at `<name>.local` out of the
+box. Stock Fedora never sets a hostname at all — it falls back to the
+`fedora` baked into `/usr/lib/os-release`, which is both anonymous and the
+same name every other stock Workstation on the network is using.
+
+Nothing here invents the `.local` mechanism: Workstation already runs
+[Avahi](https://avahi.org) and ships `nss-mdns`. The role sets the name,
+makes sure Avahi is running, and restarts it — Avahi reads the hostname only
+at startup, so without that restart the machine keeps answering as
+`fedora.local` until the next reboot.
+
+To call it something else, change the one name in
+`roles/hostname/tasks/main.yml`. Renaming it in GNOME Settings instead works
+until the next `./install.sh`, which puts it back — the name lives in the
+role.
+
+**Check it from another machine** — `ping thinkpad.local`, or
+`avahi-resolve -n thinkpad.local` here. Checking with `getent` or
+`resolvectl` on this laptop proves nothing: systemd-resolved answers your own
+`.local` name locally, whatever Avahi is actually publishing. If some other
+device on the network already claims the name, Avahi quietly publishes
+`thinkpad-2` instead.
+
+Who can reach it: macOS and iOS natively; Windows 10 (1703+) and 11 natively
+— don't install Apple's Bonjour for Windows, it fights the built-in
+responder; other Linux boxes need `nss-mdns`. Note that `.local` is
+same-network only and never travels over Tailscale — remotely this machine is
+`thinkpad.<tailnet>.ts.net`, a different name rather than a fallback.
+
+Two knock-on effects, both intended: GNOME Settings ▸ System shows **Device
+Name** `thinkpad`, and that's the name phones and headphones see when pairing
+over Bluetooth. Already-open terminals keep the old name in their prompt
+until you log back in. And on a non-Workstation base without `avahi`/
+`nss-mdns` installed, the rename still happens but the `.local` half silently
+skips. `./install.sh host` also sweeps ghostty (g·host·ty); use
+`./install.sh hostname`.
+
 ### battery
 
 Swaps Fedora's default power stack (`tuned` + `tuned-ppd`) for **TLP**, which
