@@ -337,6 +337,19 @@ With LUKS full-disk encryption that changes little in practice — offline
 access is already gated by the disk password, and anything running as you
 could read the secrets through the unlocked keyring anyway.
 
+Blanking alone doesn't hold, so the role also stops GNOME from undoing it.
+Logging in at the greeter with your **password** used to silently re-encrypt
+the keyring: `pam_gnome_keyring` hands the typed password to gnome-keyring,
+which notices the keyring has no password and "fixes" that by re-keying it to
+your login password — after which every fingerprint login prompts again. (It
+usually bites right after a system update, because the reboot is when you're
+most likely to type a password at the greeter — the update itself is
+innocent.) The role removes the two lines that pass the password along, in
+`/etc/pam.d/gdm-password` and `gdm-switchable-auth`, and keeps the
+`session … auto_start` line that actually starts the keyring daemon. Those
+files belong to the `gdm` package and can be reset by a gdm update, so the
+fix is re-applied on every `./install.sh` run.
+
 The role also removes the greeter password-only config an earlier revision
 installed, restoring fingerprint at the login screen. If it reports your
 password doesn't match the keyring, the account password was changed

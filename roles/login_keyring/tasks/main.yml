@@ -86,6 +86,69 @@
   register: login_keyring_blank
   when: keyring_state == 'encrypted'
 
+# A blanked keyring does NOT stay blank on its own, and this is what undoes
+# it: pam_gnome_keyring hands the typed login password to gnome-keyring on
+# every *password* login at the greeter. The daemon sees that the login
+# keyring's password (empty) doesn't match the login password and "repairs"
+# the mismatch by re-keying the keyring to it — the daemon binary carries
+# the message verbatim: "fixed login keyring password to match login
+# password". The keyring is encrypted again from that moment, and
+# /etc/pam.d/gdm-fingerprint carries NO pam_gnome_keyring line at all, so
+# every fingerprint login prompts from then on.
+#
+# Traced live on this machine 2026-08-16: a gdm-fingerprint login at 01:55
+# was silent; a gdm-password login at 02:00:27 logged "gkr-pam:
+# gnome-keyring-daemon started properly and unlocked keyring"; the next two
+# fingerprint logins (02:01:57, 02:02:37) raised a gcr-prompter password
+# prompt, and login.keyring had flipped from plaintext "[keyring]" to binary
+# "GnomeKeyring". Nothing in the keyring stack had been updated — the reboot
+# after a dnf upgrade merely made the user type a password at the greeter.
+#
+# So the two password-passing lines go: `auth` stashes the typed password
+# and asks the daemon to unlock with it, `password` re-keys the keyring when
+# the login password changes. Both exist only to hand a password to a
+# keyring that deliberately has none. The `session ... auto_start` line
+# STAYS — that one starts gnome-keyring-daemon for the session and needs no
+# password; dropping it would trade this bug for a dead Secret Service.
+# gdm-autologin is left alone (no password is ever typed there), and so is
+# /etc/pam.d/passwd: against a blank keyring its old-password check simply
+# fails and changes nothing.
+- name: Find the GDM PAM stacks that hand a typed password to gnome-keyring
+  ansible.builtin.find:
+    paths: /etc/pam.d
+    patterns:
+      - gdm-password
+      - gdm-switchable-auth
+    file_type: file
+  register: gdm_keyring_pam_stacks
+
+# These files are rpm-owned by gdm and flagged plain %config, NOT
+# %config(noreplace) — a gdm update whose copy differs reinstalls the vendor
+# file and leaves ours as .rpmsave. That is exactly why this is a converged
+# task rather than a one-off edit: the updates role upgrades gdm at the top
+# of the same play, so a revert is re-applied before the run ends (the
+# brave-desktop-shadow argument — staleness bounded to zero runs by role
+# order). find is check-mode safe, but default([]) keeps the loop from
+# dereferencing a skipped register on a stack that ever stops shipping.
+- name: Drop the password-passing pam_gnome_keyring lines from the GDM stacks
+  become: true
+  ansible.builtin.lineinfile:
+    path: "{{ item.0 }}"
+    regexp: "{{ item.1 }}"
+    state: absent
+  loop: >-
+    {{ (gdm_keyring_pam_stacks.files | default([]) | map(attribute='path') | list)
+       | product(gdm_keyring_pam_regexps) | list }}
+  loop_control:
+    label: "{{ item.0 }}: {{ item.1 }}"
+  vars:
+    # Anchored per module type so `session ... auto_start` is never matched.
+    # The leading `-` is PAM's "skip silently if the module is missing"
+    # syntax and is present on some of these lines, absent on others.
+    gdm_keyring_pam_regexps:
+      - '^\s*-?auth\s+.*pam_gnome_keyring\.so'
+      - '^\s*-?password\s+.*pam_gnome_keyring\.so'
+
 # An earlier revision instead forced the GDM greeter to password-only;
 # those drop-ins are removed here so fingerprint login comes back — but
 # only once the keyring is confirmed blank (the probe said so, or the
