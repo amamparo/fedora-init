@@ -116,6 +116,19 @@ responder; other Linux boxes need `nss-mdns`. Note that `.local` is
 same-network only and never travels over Tailscale — remotely this machine is
 `thinkpad.<tailnet>.ts.net`, a different name rather than a fallback.
 
+Renaming also cleans up after itself in one place you'd never guess. Chromium
+— so Brave, and every Electron app — tags the profile it has open with the
+machine's name, and refuses to touch a profile that some *other* machine
+appears to be holding, which is exactly what a leftover tag looks like once
+the machine has been renamed. The browser then won't start **and shows no
+error at all**, because the message explaining why is drawn by the window that
+never opens; clicking the launcher just does nothing. A fresh install can't
+hit this — the rename happens long before Brave is installed — but the first
+`./install.sh` on a laptop you'd already been using can. The role clears those
+stale tags, and only ever clears one whose process is genuinely gone, so a
+browser left open while `./install.sh` runs is untouched and tidies up after
+itself on exit.
+
 Two knock-on effects, both intended: GNOME Settings ▸ System shows **Device
 Name** `thinkpad`, and that's the name phones and headphones see when pairing
 over Bluetooth. Already-open terminals keep the old name in their prompt

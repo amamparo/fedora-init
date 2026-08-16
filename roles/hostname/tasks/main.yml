@@ -163,3 +163,155 @@
       instead; check with `busctl call org.freedesktop.Avahi /
       org.freedesktop.Avahi.Server GetHostName`.
   when: hostname_set is changed and not ansible_check_mode
+
+# ---------------------------------------------------------------------------
+# Fallout of the rename, cleaned up here rather than in the brave role: the
+# lock below is self-healing until THIS role renames the machine out from
+# under it, so by the add-on rule it belongs to the rename's own role.
+#
+# Chromium — and every Electron app, which embeds it — locks a profile with a
+# symlink whose NAME carries the machine and the pid that took it:
+#
+#   ~/.config/BraveSoftware/Brave-Browser/SingletonLock -> fedora-13834
+#
+# ProcessSingleton parses that back apart at startup. A stale lock naming THIS
+# machine is recovered automatically: it checks the pid, finds it dead, breaks
+# the lock and carries on — which is why an unclean browser exit is normally
+# invisible. A lock naming a DIFFERENT machine is never broken, on the
+# assumption that a profile in a shared/NFS home may genuinely be held by
+# another host, where breaking it would corrupt the profile. So the rename
+# turns a self-healing lock into a permanent one (diagnosed live 2026-08-16,
+# error text verbatim):
+#
+#   ERROR:chrome/browser/process_singleton_posix.cc:365] The profile appears
+#   to be in use by another Brave process (13834) on another computer
+#   (fedora). Brave has locked the profile so that it doesn't get corrupted.
+#   ERROR:chrome/browser/ui/views/message_box_dialog.cc:200] Unable to show
+#   message box: <the same text>
+#
+# The second line is why this is automated instead of merely documented: the
+# dialog explaining the refusal is drawn BY the browser that just refused to
+# start, so nothing reaches the screen and clicking the launcher looks like a
+# no-op with no error anywhere a user would think to look.
+#
+# A pristine machine cannot reach this — site.yml runs hostname in slot 3 and
+# brave in slot 14, so Brave is not yet installed when the rename happens and
+# its first-ever lock already reads thinkpad. The reachable case is the first
+# ./install.sh on a machine that has ALREADY been used: the browser ran as
+# "fedora", a reboot killed it before it could clean up, and this role then
+# renames the host. That is exactly how it happened here.
+#
+# All four tasks are $HOME work — no become, or we would sweep root's profiles
+# and leave the user's alone (the dconf-as-root class).
+
+# Read-only probe, so changed_when: false + check_mode: false — it has to run
+# under --check for the conditionals below to mean anything. ~/.config only:
+# that is where every Chromium/Electron app this repo installs keeps its
+# profile, and this repo installs no flatpaks, so ~/.var/app would be scope
+# creep. A missing path is a warning rather than a failure (verified), so a
+# machine with no ~/.config walks zero entries instead of hard-failing. depth 3
+# reaches the deepest layout in play (BraveSoftware/Brave-Browser/SingletonLock)
+# without walking the whole tree.
+- name: Find Chromium-family profile locks
+  ansible.builtin.find:
+    paths: "{{ lookup('env', 'HOME') }}/.config"
+    patterns: SingletonLock
+    file_type: link
+    recurse: true
+    depth: 3
+  register: singleton_locks
+  changed_when: false
+  check_mode: false
+
+# find returns stat dicts but NOT the link target, so read it separately.
+# follow: false is load-bearing: the target is a relative name that never
+# exists as a file (nothing is ever called "fedora-13834"), so following it
+# would report the link as missing and lose the name we came for.
+- name: Read the machine and pid each lock records
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+  loop: "{{ singleton_locks.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: singleton_targets
+  changed_when: false
+  check_mode: false
+
+# Compared against hostname_set.name, NOT the live `hostname`: the module
+# returns its own `name` parameter unconditionally (verified in its source —
+# `kw = dict(changed=changed, name=name, ...)` is built with no check-mode
+# branch), so this reads "thinkpad" even on the --check run where the rename
+# was only simulated, and the name stays the single literal at the top of this
+# file. Split on the LAST hyphen, because hostnames may contain hyphens
+# ("old-host-name-4242" -> host "old-host-name", pid 4242); they may contain
+# nothing else that regex would treat specially, since RFC 1123 restricts them
+# to letters, digits and hyphen, so interpolating the name is safe here.
+# selectattr('defined') first: a lock whose target we could not read is left
+# strictly alone rather than guessed at.
+- name: Select the locks that name a machine this is no longer called
+  ansible.builtin.set_fact:
+    singleton_foreign: "{{ dict(_paths | zip(_pids)) }}"
+  vars:
+    _foreign: >-
+      {{ singleton_targets.results | default([])
+         | selectattr('stat.lnk_target', 'defined')
+         | selectattr('stat.lnk_target', 'search', '^.+-[0-9]+$')
+         | rejectattr('stat.lnk_target', 'search',
+                      '^' ~ hostname_set.name ~ '-[0-9]+$')
+         | list }}
+    _paths: "{{ _foreign | map(attribute='item.path') | list }}"
+    _pids: >-
+      {{ _foreign | map(attribute='stat.lnk_target')
+         | map('regex_replace', '^.+-([0-9]+)$', '\1') | list }}
+
+# Breaking someone else's lock is only safe with proof that nobody holds it,
+# and a dead pid is that proof: no process, no holder. An ALIVE pid is left
+# alone even though it is usually benign (a browser running across the rename
+# still owns its lock and cleans it up itself on exit). The residual case is
+# pid reuse — the old browser is gone and an unrelated process inherited its
+# number — which this skips rather than risks, and the debug below says so.
+# The asymmetry is deliberate: guessing "stale" wrongly lets a second instance
+# into a live profile and corrupts it, while guessing "held" wrongly costs one
+# manual rm.
+- name: Check whether the process each of those locks names is still running
+  ansible.builtin.stat:
+    path: "/proc/{{ item.value }}"
+  loop: "{{ singleton_foreign | dict2items }}"
+  loop_control:
+    label: "{{ item.key }} (pid {{ item.value }})"
+  register: singleton_pids
+  changed_when: false
+  check_mode: false
+
+# All three files go, not just the lock: SingletonCookie and SingletonSocket
+# carry no hostname of their own, but they belong to the same lock generation
+# and the socket's /tmp target is already gone after the reboot that stranded
+# the lock. Removing the set is what was verified to restore a wedged Brave.
+- name: Break profile locks whose process is gone
+  ansible.builtin.file:
+    path: "{{ item.0.item.key | dirname }}/{{ item.1 }}"
+    state: absent
+  loop: >-
+    {{ singleton_pids.results | default([])
+       | product(['SingletonLock', 'SingletonCookie', 'SingletonSocket'])
+       | list }}
+  loop_control:
+    label: "{{ item.0.item.key | dirname }}/{{ item.1 }}"
+  when: not item.0.stat.exists
+
+# Fires only in the rare case above — a foreign-named lock whose pid is alive.
+# Benign nine times out of ten, so this explains rather than warns, and hands
+# over the one command that fixes the tenth.
+- name: Note a profile lock left alone because its pid is still alive
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.item.key }} records pid {{ item.item.value }}, which is still
+      running — normal if a browser was open across the rename, since it will
+      clean the lock up on exit. If a browser that is definitely NOT running
+      still refuses to start, that pid number was reused: quit the app and
+      `rm {{ item.item.key | dirname }}/Singleton*`.
+  loop: "{{ singleton_pids.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: item.stat.exists
