@@ -333,6 +333,31 @@ the top bar. Fedora already ships the AppIndicator extension (usually as a
 dependency) but leaves it off; this role installs it if missing and enables
 it, so those tray icons appear. Takes effect at your next login.
 
+### fingerprint
+
+Keeps the fingerprint reader working across suspend. `fprintd` is a
+transient daemon — the login screen starts it on demand and it exits ~30
+seconds after the last check — and if the machine sleeps inside that window
+it rides through the suspend holding a USB handle that resume invalidates.
+From then on every fingerprint check fails silently, so GDM stops offering
+fingerprint and asks for your password instead, until the stuck daemon
+finally times out. That is the whole "the sensor sometimes goes offline"
+symptom: whether it works depends only on whether you happened to shut the
+lid within half a minute of the last fingerprint prompt.
+
+The role installs a two-line systemd override
+(`/etc/systemd/system/fprintd.service.d/stop-before-sleep.conf`) that stops
+`fprintd` before the machine sleeps. Nothing needs re-enabling on resume —
+the next fingerprint prompt starts it again against a freshly opened
+sensor. Safe here because the reader can't wake the laptop anyway
+(`power/wakeup` is `disabled`), so there's no wake-on-finger to give up.
+
+If it ever does wedge mid-session, `sudo systemctl restart fprintd` clears
+it immediately. Despite appearances this is **not** a TLP or power-saving
+problem: USB autosuspend on the reader is stock Fedora behaviour (systemd's
+hwdb marks the device autosuspend-safe) and works correctly — turning it
+off changes nothing.
+
 ### login-keyring
 
 Kills the "login keyring did not get unlocked" prompt that appears after a

@@ -70,6 +70,8 @@
       tags: no-overview
     - role: appindicator
       tags: appindicator
+    - role: fingerprint
+      tags: fingerprint
     - role: login_keyring
       tags: login-keyring
     - role: vscode

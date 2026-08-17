@@ -1,0 +1,69 @@
+---
+# Fingerprint: keep the sensor usable across suspend.
+#
+# fprintd is a transient, D-Bus-activated daemon — the greeter's pam_fprintd
+# activates it, and it exits ~30s after the last operation. If the machine
+# suspends inside that window the daemon rides through the sleep still
+# holding an open USB handle, and on resume that handle is a zombie: every
+# transfer returns "endpoint stalled or request not supported", the stale
+# claim is never released ("Device was already claimed"), and pam_fprintd
+# fails with no grantor at all — so GDM/the lock screen silently drop the
+# fingerprint option and offer only a password. Nothing surfaces an error;
+# the reader simply stops being offered.
+#
+# The state clears itself once the wedged instance idles out, which is
+# exactly what makes it look random and unattributable: the sensor is
+# "broken" for one login and fine for the next. Diagnosed live 2026-08-16 —
+# every clean cycle that day had fprintd stop *before* the suspend, and both
+# broken ones had it suspend 28s and 39s after a fingerprint prompt.
+#
+# Why the handle zombies rather than reconnecting: systemd's hwdb marks this
+# class of sensor as unsafe to keep across a sleep
+# (`systemd-hwdb query "usb:v06CBp00F9*"` -> ID_PERSIST=0), and udev honours
+# that at device add (verified with `udevadm test /sys/bus/usb/devices/3-7`).
+# But libfprint flips power/persist back to 1 at runtime — it is the only
+# thing that writes those paths (it carries the sysfs path strings and the
+# error "Failed to disable USB persist by writing to %s", and fprintd's unit
+# grants ReadWritePaths=/sys/devices precisely "to allow tuning USB
+# parameters (wakeup and persist)"). With persist=1 a device that drops
+# across suspend is silently reattached to the same fd instead of raising a
+# clean disconnect, so fprintd keeps a handle that looks alive and isn't.
+#
+# Stopping the daemon is the fix rather than fighting persist: the drop-in
+# is two lines, needs no script, and there is no wake-on-fingerprint to lose
+# (power/wakeup on the sensor is `disabled`). Deliberately ONE mechanism —
+# a udev rule forcing persist=0 would only be overwritten by libfprint's
+# runtime write anyway, and stacking a second workaround is the no-overview
+# trap.
+#
+# NOT a power-management problem, and specifically NOT TLP's doing: the
+# sensor's power/control=auto comes from stock Fedora's
+# /usr/lib/udev/rules.d/60-autosuspend.rules acting on hwdb's
+# ID_AUTOSUSPEND=1 — TLP sets it too, but disabling USB_AUTOSUSPEND would
+# not change the value. Runtime autosuspend also demonstrably works: the
+# device resumes suspended -> active on claim and verifies fine. So this
+# belongs in its own role, not in battery.
+
+# Deliberately unguarded on fprintd being installed, unlike the avahi guard
+# in the hostname role: that one exists because systemd_service hard-fails
+# on an absent unit, whereas a drop-in directory for a unit systemd doesn't
+# know is simply ignored. Writing it unconditionally also means the fix is
+# already in place the first time fprintd is ever activated.
+- name: Ensure the fprintd drop-in directory exists
+  become: true
+  ansible.builtin.file:
+    path: /etc/systemd/system/fprintd.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Stop fprintd before the machine sleeps
+  become: true
+  ansible.builtin.copy:
+    src: stop-before-sleep.conf
+    dest: /etc/systemd/system/fprintd.service.d/stop-before-sleep.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: systemctl daemon-reload

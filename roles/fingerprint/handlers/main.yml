@@ -1,0 +1,16 @@
+---
+# systemd caches unit configuration, so the drop-in does nothing until it is
+# re-read. A handler rather than a converged task: daemon-reload can never
+# report "unchanged", so running it every play would be a permanent
+# changed=1 (the brave/reaper cache-refresh pattern). force_handlers in
+# site.yml keeps the notification from being lost to a later role's failure.
+#
+# No `name:` on the module, deliberately: naming a unit makes
+# systemd_service probe its LoadState and hard-fail when the unit is absent
+# — the trap the battery role works around for power-profiles-daemon. A
+# bare daemon_reload touches no unit, so this stays safe on a base install
+# without fprintd and honest under a fresh --check.
+- name: systemctl daemon-reload
+  become: true
+  ansible.builtin.systemd_service:
+    daemon_reload: true
