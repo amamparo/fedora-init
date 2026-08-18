@@ -28,6 +28,24 @@
 #            rpm ships /usr/share/zsh/site-functions/_just, so
 #            completions auto-load (the fzf-completion case, not the
 #            zoxide one).
+#   vim-enhanced
+#            the editor — the one deliberate classic in an otherwise
+#            modern-picks list, and the only entry needing no zshrc wiring:
+#            the rpm ships its own /etc/profile.d/vim.sh, which aliases
+#            vi=vim for interactive shells. The rpm NAME is load-bearing
+#            twice over. There is no package called plain `vim` (verified:
+#            `dnf5 repoquery --whatprovides vim` -> vim-enhanced, a virtual
+#            Provides), and package_facts only ever keys on REAL package
+#            names — so a bare `vim` here would resolve fine for dnf5 but
+#            never match the guard below, and this whole transaction would
+#            re-resolve (hitting the network) on every converged re-run.
+#            And it really is missing on a stock Workstation: the base
+#            group installs vim-*minimal* instead — /usr/bin/vi, a "Tiny
+#            version" build with -syntax -eval -persistent_undo (`vi
+#            --version`), which is why `vim` is worth installing at all.
+#            Base editor only: system-clipboard yank (`"+y`) lives in the
+#            separate vim-X11 rpm (GVim) — an X11 GUI build is weight for a
+#            terminal editor, and this session is Wayland anyway.
 #
 # One role for the set, deliberately: a baseline toolkit is one concern,
 # and eight one-package roles would be noise. Substring note:
@@ -53,6 +71,7 @@
       - zoxide
       - uv
       - just
+      - vim-enhanced
   ansible.builtin.dnf5:
     name: "{{ cli_tools_packages }}"
     state: present

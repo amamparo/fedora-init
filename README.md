@@ -194,11 +194,15 @@ zshrc), `rg` (ripgrep), `fd`, `bat`, `jq`, `yq` (Fedora ships mikefarah's
 Go yq, the v4 syntax modern docs assume), `btop`, `eza`, `zoxide`
 (`z proj` jumps to a dir you've visited once), `uv` (with `uvx`,
 which many MCP-server configs expect on PATH — mise still owns runtime
-pins), and [`just`](https://just.systems) (a command runner: `just
+pins), [`just`](https://just.systems) (a command runner: `just
 <recipe>` runs recipes from a project's `justfile`, with tab-completion
 out of the box — it has no build graph, so it complements a Makefile
-rather than replacing one). `./install.sh tools` targets only this role
-(`cli` also sweeps github-cli).
+rather than replacing one), and `vim` — the real editor, which a stock
+Fedora install does *not* give you: the base group ships only `vi`, a
+tiny build with no syntax highlighting and no scripting, so the rpm here
+is `vim-enhanced`. It aliases `vi` to `vim` in interactive shells on its
+own, so there is nothing to learn. `./install.sh tools` targets only this
+role (`cli` also sweeps github-cli).
 
 ### git-workspace
 
