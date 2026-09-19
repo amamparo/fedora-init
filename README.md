@@ -404,14 +404,6 @@ VS Code from [Microsoft's official repo](https://code.visualstudio.com/docs/setu
 (`roles/vscode/files/vscode.repo`, the documented content verbatim,
 gpg-verified). Updates then arrive with normal `dnf upgrade`.
 
-### jetbrains-toolbox
-
-[JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/) from the
-official tarball (sha256-verified — JetBrains ships no rpm), installed
-headlessly into `~/.local/share/JetBrains/Toolbox`. The Toolbox window
-opens at the next login to sign in and install IDEs, and the app keeps
-itself up to date from then on. Entirely user-level, no sudo.
-
 ### claude-code
 
 [Claude Code](https://code.claude.com/docs) via Anthropic's native

@@ -9,10 +9,17 @@
 # /usr/share/icons/hicolor/index.theme and merged across basedirs per the XDG
 # icon spec. Without -t the command errors out on the missing index.
 #
-# Not cosmetic bookkeeping: ~/.local/share/icons/hicolor already carries an
-# icon-theme.cache (the JetBrains Toolbox installer writes one), and a cache
-# that doesn't list the new files can hide them from GTK. The refresh is what
-# makes the icon appear without waiting for a fresh login.
+# Not cosmetic bookkeeping: ~/.local/share/icons/hicolor may already carry an
+# icon-theme.cache (this handler's own previous run leaves one; so do some
+# bespoke user-level app installers — xdg-icon-resource itself only refreshes
+# a cache that already exists), and a cache that doesn't list the new files
+# hides them from GTK and from GNOME Shell, whose St icon code forks the same
+# cache logic. The refresh is what makes the icon appear at all, not merely
+# sooner: the cache is trusted whenever its mtime is not older than hicolor/
+# itself, and a file dropped into an existing size subdir never bumps that,
+# so a fresh login would trust the stale cache just the same. Running apps
+# pick the rewritten cache up within seconds, because gtk-update-icon-cache
+# also bumps the hicolor/ mtime GTK polls.
 - name: Refresh the user icon cache
   ansible.builtin.command:
     cmd: gtk-update-icon-cache -f -t {{ lookup('env', 'HOME') }}/.local/share/icons/hicolor

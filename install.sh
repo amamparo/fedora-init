@@ -149,7 +149,7 @@ fi
 if ((secrets_due)); then
     # bw is a single static binary (~45 MB, no rpm exists); unzipped via
     # python3 (always present — ansible runs on it) to skip an unzip rpm.
-    # Presence-guarded and never upgraded after, the jetbrains class.
+    # Presence-guarded and never upgraded after, the reaper class.
     export PATH="$HOME/.local/bin:$PATH"
     if ! command -v bw >/dev/null 2>&1; then
         echo "Installing the Bitwarden CLI to ~/.local/bin/bw..."

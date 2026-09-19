@@ -115,8 +115,8 @@
 # Nautilus (GTK4 included) still reads ~/.config/gtk-3.0/bookmarks; format
 # is "URI [label]" per line, picked up live — no logout needed. Probe for
 # the URI rather than lineinfile-with-regexp: a regexp rewrite would reset
-# a label the user renamed in Files, the same fighting-the-user trap as the
-# Toolbox autostart entry.
+# a label the user renamed in Files — fighting the user over state they are
+# entitled to change, the "bookmark rule" other roles cite.
 - name: Probe for the ~/git bookmark
   ansible.builtin.command:
     argv:

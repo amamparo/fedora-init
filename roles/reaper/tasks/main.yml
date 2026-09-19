@@ -8,7 +8,9 @@
 # --integrate-sys-desktop for the system .desktop entry, --usr-local-bin-symlink
 # for /usr/local/bin/reaper). The binary does NOT self-update on Linux and the
 # updates role can't see it, so "latest" means latest at install time and the
-# launcher's presence is the terminal state (the jetbrains_toolbox rule).
+# launcher's presence is the terminal state — guard on the launcher, never
+# version-probe, the rule claude_code (self-updating binary) and install.sh's
+# bw install (never updated, like this one) share.
 # https://www.reaper.fm/latestversion/ serves the current version as the first
 # line of plain text; the tarball URL is derived from it (7.77 ->
 # files/7.x/reaper777_linux_x86_64.tar.xz — verified live). x86_64 is

@@ -130,7 +130,7 @@
 # Guarded on presence, deliberately not on enabled-state: install enables
 # the plugin, and if the user later turns it off (`claude plugin disable
 # caveman`, or "normal mode" in a session), re-enabling on every run would
-# fight that — the same reasoning as the Toolbox autostart entry.
+# fight that — the bookmark rule (git_workspace).
 - name: Install and enable the caveman plugin
   ansible.builtin.command:
     cmd: claude plugin install caveman@caveman

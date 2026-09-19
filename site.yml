@@ -76,8 +76,6 @@
       tags: login-keyring
     - role: vscode
       tags: vscode
-    - role: jetbrains_toolbox
-      tags: jetbrains-toolbox
     - role: claude_code
       tags: claude-code
     - role: claude_desktop
