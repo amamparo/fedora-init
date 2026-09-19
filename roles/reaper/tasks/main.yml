@@ -522,6 +522,11 @@
       - {key: midieditor, value: 33, why: "p65 one MIDI editor per project"}
       - {key: loopnewitems, value: 0, why: "p42 drag extends, never loops"}
       - {key: projgridmin, value: 18, why: "p26 uncluttered grid lines"}
+      # JACK port counts (REAPER's Linux audio system defaults to JACK, served
+      # by PipeWire — roles/pipewire). Stock 2/2 reaches the laptop mic only;
+      # sandbox-verified, not in mespotine's reference (template comment).
+      - {key: linux_audio_nch_in, value: 16, why: "JACK inputs reach an 8-in interface"}
+      - {key: linux_audio_nch_out, value: 8, why: "JACK outputs for an 8-out interface"}
   loop: "{{ reaper_ini_keys }}"
   loop_control:
     label: "{{ item.key }} ({{ item.why }})"
@@ -741,6 +746,12 @@
       - "    'Marquee select time' if you want that."
       - "20. Two things Live does that Linux cannot: pinch-to-zoom (SWELL discards the gesture"
       - "    — use Ctrl+scroll) and smooth/inertial panning (SWELL quantises to 120-unit clicks)."
+      - "-- audio (JACK, served by PipeWire; interface profiles come from roles/pipewire) --"
+      - "21. Preferences > Audio > Device: Audio system JACK (the default), Input channels 16,"
+      - "    Output channels 8 — seeded on a fresh reaper.ini, back-filled only where the keys"
+      - "    are absent, so an older file that still says 2/2 needs the two numbers by hand."
+      - "    Inputs follow PipeWire's order (default input device first) and are named after"
+      - "    the port: 'Quad Cortex mini Pro:capture_AUX0 (Input 3)'."
       - "NOTE: the guide's p25 'zoom towards your mouse' is deliberately NOT taken for the"
       - "HORIZONTAL axis (zoommode stays 0, cursor-anchored, which is what Live does)."
   when:

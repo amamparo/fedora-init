@@ -1,0 +1,13 @@
+# Managed by fedora-init (roles/pipewire) — the value lives in site.yml
+# (pipewire_jack_latency); edit it there, not here.
+#
+# Read by every JACK client at start (REAPER, any DAW on PipeWire's libjack):
+# ask the graph for this buffer while the client runs. The desktop's default
+# quantum is untouched when no JACK client is open. lock-quantum holds it
+# steady for the client's lifetime — REAPER registers no buffer-size callback,
+# so a quantum change under it would hand process() an nframes it never
+# agreed to.
+jack.properties = {
+  node.latency = {{ pipewire_jack_latency }}
+  node.lock-quantum = true
+}

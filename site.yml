@@ -25,6 +25,18 @@
     gnome_extensions_enabled:
       - rectangle@amamparo
       - no-overview@amamparo
+    # USB audio interfaces roles/pipewire pins to WirePlumber's "Pro Audio"
+    # profile (every channel a raw port, AUX0..n in device order) — ids as
+    # `lsusb` prints them; the name only labels the rendered rule. Add an
+    # interface here, never in the template.
+    pipewire_pro_audio_devices:
+      - name: Neural DSP Quad Cortex mini
+        vendor_id: "0x152a" # Thesycon, the UAC2 stack Neural DSP ships
+        product_id: "0x892f"
+    # Buffer JACK clients (REAPER) ask PipeWire for while they run, as
+    # frames/rate. 128 = 2.7 ms, verified xrun-free on the mini; 256 is the
+    # next step if a session ever crackles.
+    pipewire_jack_latency: 128/48000
   pre_tasks:
     # The rpm -q guard layer: dnf5 hits the network for metadata even when a
     # transaction is a no-op, so every package task guards on these facts to
@@ -86,6 +98,8 @@
       tags: tailscale
     - role: mise
       tags: mise
+    - role: pipewire
+      tags: pipewire
     - role: qpwgraph
       tags: qpwgraph
     - role: reaper

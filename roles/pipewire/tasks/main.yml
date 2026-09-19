@@ -1,0 +1,139 @@
+---
+# PipeWire: make a USB audio interface usable from a DAW.
+#
+# Two user-session drop-ins under ~/.config — NO become anywhere (the
+# dconf-as-root class: root's PipeWire is not the one running the desktop):
+#
+# 1. WirePlumber pins the "Pro Audio" profile on the interfaces listed in
+#    site.yml (pipewire_pro_audio_devices). Stock WirePlumber runs the ALSA
+#    Card Profile (ACP) ranking on every card, and for a class-compliant
+#    8-in/8-out interface that ranking follows the USB descriptor's channel
+#    map: the Quad Cortex mini declares FL FR FC LFE RL RR FLC FRC, so it
+#    lands on "Analog Surround 7.1 Output + Analog Surround 7.1 Input"
+#    (verified live 2026-09-12: EnumProfile index 1, priority 1212). That
+#    profile opens the card through alsa-lib's `surround71:1` plug — which
+#    REMAPS the channel order (ALSA channel 2 came out as capture_RL, 4 as
+#    capture_FC) — and names the inputs after cinema speaker positions, so a
+#    DAW sees "Quad Cortex mini Analog Surround 7.1:capture_LFE". "Pro Audio"
+#    opens `hw:1,0` raw, exposes every channel in device order as AUX0..AUX7
+#    with no mixing, resampling or volume routes, and names the node
+#    "<card> Pro" — REAPER's track input dropdown then reads
+#    "Quad Cortex mini Pro:capture_AUX0 (Input 3)". find-best-profile.lua
+#    skips pro-audio on purpose (it is never the automatic pick), so it has
+#    to be asked for, and `device.profile.priority.rules` is WirePlumber
+#    0.5's documented way to ask (scripts/device/find-preferred-profile.lua:
+#    an ordered list of profile names per matching device, first available
+#    wins). Matched on USB vendor/product id rather than device.name — the
+#    name carries a `-00` unit suffix and the product string, ids don't move.
+#
+#    Precedence, read off the scripts: a profile picked by hand (Settings >
+#    Sound, `wpctl set-profile`) is remembered in
+#    ~/.local/state/wireplumber/default-profile, and find-stored-profile
+#    runs BEFORE find-preferred-profile — a manual choice wins over this
+#    rule until it is changed again. That is the bookmark rule (the user's
+#    override wins), so the role never touches the state file;
+#    `wpctl set-profile <device id> pro-audio` hands control back. It is
+#    also the false-verification trap: `wpctl set-profile` writes that
+#    state, so a rule tested right after a manual switch proves nothing —
+#    delete the state entry, restart wireplumber, then read
+#    `pw-dump <device id> | jq '.[0].info.params.Profile[0]'`: the rule
+#    yields `name: pro-audio, save: false`, a stored choice `save: true`
+#    (the "Found preferred profile" log line is info level — the journal
+#    doesn't carry it at WirePlumber's default log level).
+#
+# 2. pipewire-jack: JACK clients — REAPER's Linux audio system defaults to
+#    JACK, and PipeWire's own libjack.so.0 is what serves it, no jackd — run
+#    at the graph's default quantum (1024 frames = 21 ms per direction at
+#    48 kHz) unless they ask for less. REAPER never asks (its binary carries
+#    jack_get_buffer_size and no jack_set_buffer_size), so the request is
+#    made on its behalf: node.latency = pipewire_jack_latency (128/48000,
+#    2.7 ms). The graph drops to that only while a JACK client is running;
+#    the desktop otherwise keeps its default. node.lock-quantum holds it
+#    steady for the client's lifetime — REAPER registers process,
+#    sample-rate and xrun callbacks but no buffer-size callback, so a
+#    quantum change under it would hand process() an nframes it never
+#    agreed to. Verified 2026-09-12 with pw-record + pw-cat at 128 against
+#    the mini: 0 xruns over 10 s, ~13 µs busy per 2.67 ms cycle. Read by
+#    each client at start — no daemon to restart for this one.
+#
+# Nothing to set for the rate (PipeWire's default clock is already 48000
+# with allowed-rates [48000], the mini's only rate) or MIDI (PipeWire's
+# ALSA-sequencer bridge already exposes "Midi-Bridge:Quad Cortex mini:
+# MIDI 1", and REAPER lists it in JACK mode). Realtime is rtkit's job and
+# already works (pipewire's data-loop runs SCHED_RR 20) — no @pipewire group,
+# no limits.conf.
+#
+# Deliberately NOT done: api.alsa.disable-batch / api.alsa.headroom (the
+# next knobs if 128 ever xruns — leave them until it does);
+# session.suspend-timeout-seconds (the card closing after 5 s idle is fine);
+# any default-sink/source management. WirePlumber makes the mini the default
+# OUTPUT whenever it is plugged in — its Pro sink carries priority.session
+# 1600 against 1000 for the laptop's — and leaves the default INPUT on
+# whatever Settings > Sound last chose. Both are the user's to change there,
+# and both choices are remembered (the bookmark rule again). This is why
+# REAPER's input numbering depends on that Settings choice: pipewire-jack
+# lists the default device's ports first, so the mini is Inputs 1-8 when
+# it is the chosen input and Inputs 3-10 behind the laptop mic otherwise —
+# either way labelled by name.
+
+# libjack.so.0 is PipeWire's (ld.so.conf.d points at
+# /usr/lib64/pipewire-0.3/jack/) and comes from this rpm; pipewire-utils
+# carries pw-top, pw-jack and pw-metadata, the xrun/quantum diagnostics.
+# Both are on a stock Workstation already (ffmpeg's libavdevice pulls the
+# JACK library; utils is in comps), so this is the guard-then-no-op pattern
+# — a minimal install gets them for real. Exact rpm names, the
+# difference-filter guard.
+- name: Install PipeWire's JACK library and the pw-* tools
+  become: true
+  vars:
+    pipewire_packages:
+      - pipewire-jack-audio-connection-kit
+      - pipewire-utils
+  ansible.builtin.dnf5:
+    name: "{{ pipewire_packages }}"
+    state: present
+  when: pipewire_packages | difference(ansible_facts.packages.keys() | list) | length > 0
+
+- name: Ensure the WirePlumber and JACK drop-in directories exist
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - wireplumber/wireplumber.conf.d
+    - pipewire/jack.conf.d
+
+- name: Pin the Pro Audio profile on the DAW interfaces
+  ansible.builtin.template:
+    src: 50-pro-audio-interfaces.conf.j2
+    dest: "{{ lookup('env', 'HOME') }}/.config/wireplumber/wireplumber.conf.d/50-pro-audio-interfaces.conf"
+    mode: "0644"
+  register: pipewire_profile_rule
+  notify: restart wireplumber
+
+- name: Run JACK clients at low latency
+  ansible.builtin.template:
+    src: 50-daw-latency.conf.j2
+    dest: "{{ lookup('env', 'HOME') }}/.config/pipewire/jack.conf.d/50-daw-latency.conf"
+    mode: "0644"
+
+# The DAW side is not automatable from here and only matters once the rule
+# is in place, so the tailscale-up pattern: printed when the profile rule
+# landed, never under --check. REAPER's own defaults are covered by the
+# reaper role (JACK is its Linux default; the 16/8 channel counts are seeded
+# there) — this is the part an already-configured reaper.ini keeps to itself.
+- name: What to do in the DAW (printed once, when the profile rule lands)
+  ansible.builtin.debug:
+    msg:
+      - "PipeWire will open {{ pipewire_pro_audio_devices | map(attribute='name') | join(', ') }} in the Pro Audio profile:"
+      - "every channel a port, AUX0..AUXn in device order, node '<card> Pro'. WirePlumber is"
+      - "restarted at the end of this play, so it applies to an interface plugged in right now."
+      - "REAPER (Options > Preferences > Audio > Device): Audio system = JACK (the Linux"
+      - "default — PipeWire serves it, no jackd). Input channels 16, Output channels 8 if this"
+      - "reaper.ini predates the seed — REAPER opens only as many JACK ports as those say, and"
+      - "the stock 2/2 reaches the laptop mic and nothing else."
+      - "Inputs are numbered by PipeWire's order, default input device first: pick"
+      - "'Quad Cortex mini Pro' in Settings > Sound > Input for Inputs 1-8, or leave the laptop"
+      - "mic there and find it at Inputs 3-10. Either way the dropdown names them"
+      - "'Quad Cortex mini Pro:capture_AUXn'. Anything more exotic: qpwgraph."
+  when: pipewire_profile_rule is changed and not ansible_check_mode

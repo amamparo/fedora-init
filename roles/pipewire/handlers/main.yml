@@ -1,0 +1,20 @@
+---
+# WirePlumber reads its conf.d once at startup — there is no reload path — so
+# a new or changed profile rule takes effect only after a restart (or the next
+# login). Restarting mid-session re-runs profile selection for every card that
+# is already plugged in, which is what makes the rule land on an interface
+# connected right now instead of waiting for a replug. PipeWire itself stays
+# up, so running streams survive and are re-linked in place. User unit on the
+# session bus, NO become (the podman.socket rule).
+#
+# Guarded on the package plainly (the hostname/avahi form, not the
+# battery/tailscale `not ansible_check_mode or …` one): this role installs
+# nothing that provides the unit, so an absent wireplumber is genuinely absent
+# rather than a simulated install, and systemd_service would hard-fail on the
+# missing unit.
+- name: restart wireplumber
+  ansible.builtin.systemd_service:
+    name: wireplumber
+    scope: user
+    state: restarted
+  when: "'wireplumber' in ansible_facts.packages"

@@ -97,6 +97,22 @@ recaddatloop=23044
 ; multi-MIDI screenshot. &128 = 0 keeps "active MIDI item follows selection".
 midieditor=33
 
+; --- Audio device (JACK, served by PipeWire) --------------------------------
+; linux_audio_mode is deliberately NOT written: its default, 0, is JACK, which
+; PipeWire's own libjack serves with no jackd (verified 2026-09-12 by launching
+; a sandboxed REAPER once per value — 0 JACK, 1 ALSA, 2 Dummy Audio,
+; 3 PulseAudio; see roles/pipewire). JACK ports are numbered in PipeWire's
+; physical-port order — the default input device first, then every other
+; interface — and REAPER opens only as many as these two say. The stock 2/2
+; reaches the laptop mic and nothing else, so an 8-in interface behind it
+; (the Quad Cortex mini, pinned to its Pro Audio profile by roles/pipewire)
+; would be invisible. 16 covers the laptop's two mics, an 8-channel interface
+; and headroom; unconnected inputs cost nothing. Not in mespotine's 5.95-era
+; reference — verified with GetNumAudioInputs()/GetInputChannelName() in the
+; same sandbox run, which is the bar for keys that reference can't vouch for.
+linux_audio_nch_in=16
+linux_audio_nch_out=8
+
 ; --- Quality of life (theme-agnostic) ---------------------------------------
 ; Auto-save: to timestamped files in one dedicated dir (saveopts &8),
 ; every 3 minutes (autosaveint), only while not recording (autosavemode 0);

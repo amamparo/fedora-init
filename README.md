@@ -468,6 +468,40 @@ no shims, none of nvm's startup drag. Get runtimes with
 `mise use -g node@lts python@3.13 java@temurin-21`, or drop the `-g` inside
 a project.
 
+### pipewire
+
+PipeWire config for using a USB audio interface from a DAW — two small
+drop-ins under `~/.config`, nothing system-wide:
+
+- **The Quad Cortex mini gets WirePlumber's "Pro Audio" profile.** Left to
+  itself, WirePlumber reads the mini's USB descriptor — which declares a
+  cinema 7.1 speaker layout — and files it as an "Analog Surround 7.1"
+  device: the eight inputs come out remapped and named `LFE`, `RL`, `SR`…,
+  which is meaningless for a guitar interface. Pro Audio opens the card raw:
+  every channel is its own port, `AUX0`–`AUX7` in device order, no mixing
+  or resampling, and the node is called *Quad Cortex mini Pro*. In REAPER
+  the track input dropdown then reads `Quad Cortex mini Pro:capture_AUX0`
+  and so on. Add another interface by its USB ids in `site.yml`
+  (`pipewire_pro_audio_devices`). A profile you pick yourself in Settings ▸
+  Sound is remembered and wins over the rule; `wpctl set-profile <id>
+  pro-audio` hands control back.
+- **JACK clients run at 128 frames (2.7 ms).** REAPER's Linux audio system
+  is JACK by default, and on Fedora that *is* PipeWire — no jackd. PipeWire
+  would otherwise run it at the desktop's 1024-frame buffer (21 ms each
+  way). The lower buffer applies only while a JACK client is open, and the
+  quantum is locked for its lifetime; verified xrun-free on the mini. Raise
+  `pipewire_jack_latency` in `site.yml` to `256/48000` if a session ever
+  crackles.
+
+What it doesn't touch: the default output and input devices. WirePlumber
+makes the mini the default *output* whenever it's plugged in (USB outranks
+the laptop's card) and leaves the default *input* wherever Settings ▸ Sound
+last put it — change either there, and the choice sticks. That input choice
+is what orders REAPER's inputs: pick *Quad Cortex mini Pro* there and it's
+Inputs 1–8; leave the laptop mic and it's Inputs 3–10, still labelled by
+name. MIDI over USB needs nothing — it already shows up as *Midi-Bridge:
+Quad Cortex mini*. Anything fancier is a qpwgraph patch.
+
 ### qpwgraph
 
 [qpwgraph](https://gitlab.freedesktop.org/rncbc/qpwgraph) — a patchbay GUI
@@ -543,6 +577,14 @@ the 60-day evaluation starts on first run; buy a license when it fits.
   toolbars, screensets, mouse modifiers, the REAPER 7 settings with no
   documented key — is printed as a numbered checklist with page numbers the
   first time the role touches your `reaper.ini`.
+- **Audio through PipeWire's JACK, with room for the interface.** REAPER's
+  Linux default audio system is JACK, which PipeWire serves (see
+  [pipewire](#pipewire)), so nothing to switch. What a fresh REAPER *does*
+  get wrong is opening only two JACK inputs and outputs — enough for the
+  laptop mic and not the interface behind it — so the seed sets 16 inputs
+  and 8 outputs. Inputs are named after the PipeWire port they're patched
+  to (`Quad Cortex mini Pro:capture_AUX0`), so picking the interface is a
+  dropdown, not a routing exercise.
 - **Already-configured machines get the settings too.** A machine that has
   run REAPER before doesn't get the seed, so the keys worth having are
   back-filled individually instead — each one added *only if absent*, so
