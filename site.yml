@@ -37,6 +37,40 @@
     # frames/rate. 128 = 2.7 ms, verified xrun-free on the mini; 256 is the
     # next step if a session ever crackles.
     pipewire_jack_latency: 128/48000
+    # --- the local LLM stack: roles/ollama -> litellm -> goose/opencode ----
+    # Models roles/ollama pulls (ollama.com/library tags; a bare name means
+    # :latest). Each is reachable through litellm as ollama/<tag> and is
+    # listed in opencode's model picker. Multi-GB one-time downloads:
+    # qwen3-coder:30b is 19 GB — a 30B MoE with 3B active parameters, so it
+    # generates at small-model speed while reading like a big one, and it
+    # tool-calls (the developer extension / opencode's tools need that).
+    ollama_models:
+      - qwen3-coder:30b
+    # Context window every local model loads with (tokens) — ollama's server
+    # default AND what opencode budgets against. KV cache scales with it;
+    # 32k with the q8_0 cache in the ollama unit is a few GB on the default
+    # model. Agents want 64k+ per upstream's docs; raise it if RAM allows.
+    llm_local_context: 32768
+    # Let ollama use the Intel iGPU through Vulkan (OLLAMA_IGPU_ENABLE).
+    # Measured on this machine (roles/ollama has the numbers): ~10x the
+    # prompt-processing speed and ~2x the generation speed of the CPU path,
+    # coherent output. Costs: inference and the desktop share the GPU (a
+    # game and a model visibly fight), and a load that happens while RAM is
+    # busy may land only partly on the GPU (`ollama ps` says). false = CPU.
+    ollama_igpu: true
+    # Anthropic models litellm routes as anthropic/<id> (key from Bitwarden,
+    # roles/litellm) and opencode lists. context/output are what opencode
+    # budgets against (limit.context) and sends as max_tokens (limit.output);
+    # ids and windows per Anthropic's current model table.
+    anthropic_models:
+      - { id: claude-opus-5, name: Claude Opus 5, context: 1000000, output: 64000 }
+      - { id: claude-sonnet-5, name: Claude Sonnet 5, context: 1000000, output: 64000 }
+      - { id: claude-haiku-4-5, name: Claude Haiku 4.5, context: 200000, output: 64000 }
+    # The litellm route goose and opencode start on (their seeded defaults;
+    # after the seed their config files are theirs to change). Local by
+    # default: free and offline. anthropic/claude-opus-5 is the other obvious
+    # value once the key is seeded.
+    llm_default_model: ollama/qwen3-coder:30b
   pre_tasks:
     # The rpm -q guard layer: dnf5 hits the network for metadata even when a
     # transaction is a no-op, so every package task guards on these facts to
@@ -106,3 +140,11 @@
       tags: reaper
     - role: gimp
       tags: gimp
+    - role: ollama
+      tags: ollama
+    - role: litellm
+      tags: litellm
+    - role: goose
+      tags: goose
+    - role: opencode
+      tags: opencode

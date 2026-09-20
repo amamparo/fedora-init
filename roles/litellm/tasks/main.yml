@@ -1,0 +1,210 @@
+---
+# LiteLLM proxy — ONE OpenAI-compatible endpoint, 127.0.0.1:4000, in front
+# of the local ollama (previous role) and Anthropic's API (key from
+# Bitwarden). goose and opencode (the next two roles) speak only to this:
+# switching a tool between a local model and Claude is a model name, not a
+# reconfiguration, and any new backend is a route here rather than a
+# per-tool setup.
+#
+# No rpm exists (checked Fedora and COPR: r0x0d/python-litellm has never
+# built), and the container image runs as root and would need host
+# networking to reach ollama — so it is a python venv under /opt built with
+# the stock `uv` rpm on the system python (3.14 works: verified, wheels
+# only, no source builds). The venv is created and populated once, guarded
+# on the launcher (the reaper/bw presence class); litellm has no
+# self-update, so the updates role — the sanctioned network exception —
+# runs `uv pip install -U` there and restarts this service on change.
+#
+# System service, dedicated DynamicUser, hardened unit (files/litellm.service
+# explains each line). Everything under /etc and /opt is become; the one
+# controller-side piece is the Bitwarden lookup, which runs as the user.
+#
+# KEYLESS on purpose. The proxy listens on loopback only, on a single-user
+# machine, in front of an ollama that is itself unauthenticated on 11434 —
+# a master key here would sit in goose's and opencode's configs readable by
+# the very same local processes, protecting nothing and adding a secret to
+# every client. The trade-off is the sudo-global-timestamp class (install.sh):
+# any local process can spend the Anthropic key through the proxy, exactly
+# as any local process can read ~/.aws/credentials.
+
+# cli_tools installs uv as part of the CLI baseline; guarded here too so
+# `./install.sh litellm` works alone on a fresh machine (exact rpm name,
+# package-facts guard — the converged re-run never touches dnf).
+- name: Install uv (builds the venv)
+  become: true
+  ansible.builtin.dnf5:
+    name: uv
+    state: present
+  when: "'uv' not in ansible_facts.packages"
+
+- name: Probe for the litellm launcher (/opt/litellm/bin/litellm)
+  ansible.builtin.stat:
+    path: /opt/litellm/bin/litellm
+  register: litellm_bin
+  check_mode: false
+
+# --python /usr/bin/python3 pins the system interpreter: uv would otherwise
+# prefer a managed download under /root/.local. The venv symlinks that
+# python, so a Fedora major upgrade (new python3.X) orphans it — delete
+# /opt/litellm and re-run to rebuild (litellm's requires_python caps at
+# <3.15 today; if Fedora's python outruns it, `uv python install 3.14` and
+# point --python at that instead).
+- name: Create the litellm venv on the system python
+  become: true
+  ansible.builtin.command:
+    argv:
+      - uv
+      - venv
+      - --python
+      - /usr/bin/python3
+      - /opt/litellm
+  args:
+    creates: /opt/litellm/bin/python
+  environment:
+    # Belt-and-braces: --python names the system interpreter, but a typo'd
+    # spec would otherwise make uv silently download a managed CPython
+    # under /root.
+    UV_PYTHON_DOWNLOADS: never
+
+# [proxy] is the extra that brings the server (fastapi/uvicorn/...). No
+# `prisma`: it only matters with a master key or a DATABASE_URL, neither of
+# which this config has. --compile-bytecode because the service runs as an
+# unprivileged DynamicUser with /opt read-only, so python could never write
+# __pycache__ at runtime and would re-parse the whole package on every
+# start (measured: 3.3 s vs 4.8 s to import the proxy).
+- name: Install litellm[proxy] into the venv
+  become: true
+  ansible.builtin.command:
+    argv:
+      - uv
+      - pip
+      - install
+      - --python
+      - /opt/litellm/bin/python
+      - --compile-bytecode
+      - litellm[proxy]
+  args:
+    creates: /opt/litellm/bin/litellm
+
+- name: Ensure /etc/litellm exists
+  become: true
+  ansible.builtin.file:
+    path: /etc/litellm
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# The unit goes in BEFORE the config and the key seed: both notify the
+# restart handler, and with force_handlers a run that aborts between them
+# (the Bitwarden fetch fails loudly by design when the item is missing)
+# would otherwise fire a restart of a unit systemd has never seen and bury
+# the real error under "Could not find the requested service".
+- name: Install the litellm unit
+  become: true
+  ansible.builtin.copy:
+    src: litellm.service
+    dest: /etc/systemd/system/litellm.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: litellm_unit
+  notify: Restart litellm
+
+# Repo-declared, converged (the dconf class): the routes are the same on
+# every machine and carry no secret — those come from the env file below.
+- name: Install the proxy config
+  become: true
+  ansible.builtin.copy:
+    src: config.yaml
+    dest: /etc/litellm/config.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart litellm
+
+# --- the Anthropic key (Bitwarden, seeded once) --------------------------
+# The aws pattern, verbatim in spirit: install.sh signs into the vault only
+# while this file is missing (it probes the same path), the lookup shells
+# out to bw on the controller as the user, and the file is SEEDED ONLY
+# WHEN ABSENT — rotate by editing it (or deleting it and re-running). Vault
+# item: a login named `anthropic`, password = the API key. no_log on the
+# fetch and the write: install.sh always passes --diff and the rendered
+# file IS the secret. /etc/litellm is 0755, so the presence probe works
+# without root even though the file itself is 0600.
+- name: Probe for the litellm secrets file
+  ansible.builtin.stat:
+    path: /etc/litellm/litellm.env
+  register: litellm_env_probe
+  check_mode: false
+
+- name: Fetch the anthropic item from the Bitwarden vault
+  ansible.builtin.set_fact:
+    litellm_bw_item: "{{ lookup('community.general.bitwarden', 'anthropic', search='name', result_count=1) | first }}"
+  no_log: true
+  when:
+    - not litellm_env_probe.stat.exists
+    - lookup('env', 'BW_SESSION') | length > 0
+    - not ansible_check_mode
+
+# 0600 root:root is enough: EnvironmentFile= is read by the service manager
+# before the privilege drop, so the DynamicUser never needs to open it.
+- name: Seed /etc/litellm/litellm.env from the vault item
+  become: true
+  ansible.builtin.copy:
+    dest: /etc/litellm/litellm.env
+    content: |
+      # Seeded once by fedora-init (roles/litellm) from the Bitwarden item
+      # `anthropic`; after that this file is yours — rotate the key here.
+      ANTHROPIC_API_KEY={{ litellm_bw_item.login.password }}
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: litellm_bw_item is defined
+  notify: Restart litellm
+
+- name: Note the pending Anthropic key seed
+  ansible.builtin.debug:
+    msg: >-
+      /etc/litellm/litellm.env not seeded — anthropic/* routes will answer
+      with an AuthenticationError until it is. Run ./install.sh litellm (it
+      signs into Bitwarden and fetches the `anthropic` item).
+  when:
+    - not litellm_env_probe.stat.exists
+    - lookup('env', 'BW_SESSION') | length == 0
+    - not ansible_check_mode
+
+# --- the service --------------------------------------------------------
+# The restart handler daemon-reloads first; run it now so the enable/start
+# below sees the unit.
+- name: Flush handlers so the new unit is loaded before it is started
+  ansible.builtin.meta: flush_handlers
+
+# The battery gate in its brave/vscode form: on a fresh --check the UNIT is
+# only simulated and systemd_service would hard-fail probing it. Keyed on
+# the unit task, not the venv — a venv left by an aborted run with no unit
+# file must not crash a dry run.
+- name: Enable and start litellm
+  become: true
+  ansible.builtin.systemd_service:
+    name: litellm.service
+    enabled: true
+    state: started
+  register: litellm_start
+  when: not (ansible_check_mode and litellm_unit is changed)
+
+# /health/liveliness needs no key and no model; /health would make a real
+# request to every route (and can't for wildcards). Cold start is 3-10 s
+# depending on load (it imports the whole package), hence the retries. Not
+# when a dry run only simulated the unit or the start (the ollama note).
+- name: Wait for litellm to answer on 127.0.0.1:4000
+  ansible.builtin.uri:
+    url: http://127.0.0.1:4000/health/liveliness
+  register: litellm_health
+  until: litellm_health.status == 200
+  retries: 30
+  delay: 1
+  changed_when: false
+  check_mode: false
+  when: not (ansible_check_mode and (litellm_unit is changed or litellm_start is changed))

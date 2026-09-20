@@ -48,3 +48,25 @@
     enabled: true
     state: started
   when: not ansible_check_mode or 'podman' in ansible_facts.packages
+
+# --- Podman Desktop -------------------------------------------------------
+# The GUI (containers, pods, images, kube, extensions) — a pure add-on,
+# meaningless without podman, so it lives here (the caveman rule). Upstream's
+# documented Linux install is the Flathub flatpak; no Fedora rpm exists and
+# the COPRs are one-person electron rebuilds. Fedora's stock, FILTERED
+# flathub remote already exposes io.podman_desktop.PodmanDesktop (verified:
+# `flatpak remote-ls flathub` lists it), so there is no remote to add and no
+# filter to lift. The first flatpak this repo installs: the updates role's
+# `flatpak update` keeps it current. The module runs `flatpak list --system`
+# before touching anything, so a converged re-run stays offline. System
+# scope + become like every other flatpak under /var/lib/flatpak; guarded on
+# the flatpak rpm like the updates role (Workstation ships it, a minimal
+# install may not). ~180 MB download plus the freedesktop runtime.
+# Podman Desktop finds the user podman socket enabled above by itself.
+- name: Install Podman Desktop (Flathub)
+  become: true
+  community.general.flatpak:
+    name: io.podman_desktop.PodmanDesktop
+    remote: flathub
+    state: present
+  when: "'flatpak' in ansible_facts.packages"

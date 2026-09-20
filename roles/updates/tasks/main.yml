@@ -70,8 +70,9 @@
     msg: "Firmware updates applied — some only take effect at the next reboot."
   when: "'fwupd' in ansible_facts.packages and updates_firmware.rc == 0"
 
-# Flatpaks (Workstation ships flatpak; this repo installs none itself, but
-# Software would report updates for any the user added).
+# Flatpaks (Workstation ships flatpak): keeps the Podman Desktop flatpak the
+# podman role installs current, plus anything the user added — Software
+# would report those too.
 - name: Update flatpaks
   become: true
   ansible.builtin.command:
@@ -79,3 +80,146 @@
   register: updates_flatpak
   when: "'flatpak' in ansible_facts.packages"
   changed_when: "'Nothing to do' not in updates_flatpak.stdout"
+
+# --- the out-of-dnf pieces this repo installs -----------------------------
+# Three things below live outside dnf and have no self-updater worth the
+# name, so "bring the system current" covers them here, presence-guarded
+# like fwupd/flatpak above (a machine that never ran their roles skips).
+# Everything network-touching here is the sanctioned exception this role
+# already is. The version/latest probes are read-only and run under --check;
+# the upgrades themselves cannot be simulated (`command` has no check-mode
+# support, and the ollama include's tempfile never registers a path in check
+# mode), so a dry run skips them — the debug below is what tells a dry run
+# that ollama would move.
+
+# ollama (roles/ollama): an upstream release under /usr/local, cut every few
+# days. `ollama --version` reports the RUNNING DAEMON's version when it can
+# reach one ("ollama version is X") and only mentions the binary's own
+# ("Warning: client version is X") when they differ or the daemon is down
+# — so the probe points OLLAMA_HOST at a closed port to force the offline
+# branch, which always prints the on-disk binary's version, rc 0, all on
+# stdout. The first digit run in that output is the version (no
+# backslashes in the regex on purpose: Jinja string literals decode
+# escapes, so a '\1' backref is chr(1) by the time the filter sees it).
+# Latest comes from GitHub's releases/latest redirect (no API rate limit);
+# when it differs, the same include roles/ollama uses re-installs and
+# restarts the daemon. 1.36 GiB per upgrade (the bundle has no CPU-only
+# variant) — the price of tracking upstream, accepted in roles/ollama.
+- name: Probe for the ollama launcher
+  ansible.builtin.stat:
+    path: /usr/local/bin/ollama
+  register: updates_ollama_bin
+  check_mode: false
+
+- name: Read the installed ollama binary's version
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/ollama
+      - --version
+  environment:
+    OLLAMA_HOST: 127.0.0.1:1
+  register: updates_ollama_version
+  changed_when: false
+  check_mode: false
+  when: updates_ollama_bin.stat.exists
+
+- name: Look up the latest ollama release tag
+  ansible.builtin.uri:
+    url: https://github.com/ollama/ollama/releases/latest
+    follow_redirects: none
+    status_code: 302
+  register: updates_ollama_latest
+  changed_when: false
+  check_mode: false
+  when: updates_ollama_bin.stat.exists
+
+- name: Report a pending ollama upgrade under --check
+  ansible.builtin.debug:
+    msg: >-
+      ollama {{ (updates_ollama_version.stdout ~ ' ' ~ updates_ollama_version.stderr)
+                | regex_search('[0-9][0-9.]*') }} is installed and
+      {{ updates_ollama_latest.location | basename }} is the latest release —
+      a real run re-installs it (a ~1.4 GB download).
+  when:
+    - ansible_check_mode
+    - updates_ollama_bin.stat.exists
+    - >-
+      'v' ~ ((updates_ollama_version.stdout ~ ' ' ~ updates_ollama_version.stderr)
+             | regex_search('[0-9][0-9.]*'))
+      != updates_ollama_latest.location | basename
+
+- name: Upgrade ollama to the latest release
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: ollama_install
+  vars:
+    ollama_install_tag: "{{ updates_ollama_latest.location | basename }}"
+  when:
+    - updates_ollama_bin.stat.exists
+    - >-
+      'v' ~ ((updates_ollama_version.stdout ~ ' ' ~ updates_ollama_version.stderr)
+             | regex_search('[0-9][0-9.]*'))
+      != updates_ollama_latest.location | basename
+
+# litellm (roles/litellm): a venv under /opt with no self-update. uv prints
+# "Installed N packages" on stderr only when something changed ("Checked N
+# packages" otherwise) — verified — and the proxy reads its code once, so a
+# change needs a restart (this role's own handler, named distinctly).
+# Guarded on the UNIT, not just the venv: the unit is the last thing the
+# litellm role writes, so it is the honest "fully installed" marker — a
+# venv left by a run that aborted before the unit (a failed Bitwarden
+# fetch, say) must not trigger an upgrade whose restart handler would
+# hard-fail on a unit systemd has never seen.
+- name: Probe for the litellm unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/litellm.service
+  register: updates_litellm_unit
+  check_mode: false
+
+- name: Upgrade litellm in its venv
+  become: true
+  ansible.builtin.command:
+    argv:
+      - uv
+      - pip
+      - install
+      - --python
+      - /opt/litellm/bin/python
+      - --compile-bytecode
+      - --upgrade
+      - litellm[proxy]
+  register: updates_litellm
+  changed_when: "'Installed' in updates_litellm.stderr"
+  when: updates_litellm_unit.stat.exists
+  notify: Restart litellm after upgrade
+
+# opencode (roles/opencode, OpenCode 2): its updater only notifies by
+# default, so `opencode upgrade` is the upgrade. `--method curl` pins the
+# install method: when detection fails the command blocks on an
+# interactive "Install anyways?" prompt even with stdin closed — the
+# Ansible-hang class (verified on V1; V2 has the same prompt code). The
+# V2 path runs the vendor script with --no-modify-path itself; the PATH
+# below is belt-and-braces against the V1 script's ~/.zshrc append (the
+# zshrc has the dir too, but only from the next login on). Output when
+# current: "OpenCode upgrade skipped: X is already installed"; a FAILED
+# upgrade exits 0 with "Upgrade failed" in stdout (verified), hence the
+# explicit failed_when, and only "Upgrade complete" counts as changed.
+- name: Probe for opencode
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.opencode/bin/opencode"
+  register: updates_opencode_bin
+  check_mode: false
+
+- name: Upgrade opencode
+  ansible.builtin.command:
+    argv:
+      - "{{ lookup('env', 'HOME') }}/.opencode/bin/opencode"
+      - upgrade
+      - --method
+      - curl
+  environment:
+    PATH: "{{ lookup('env', 'HOME') }}/.opencode/bin:{{ lookup('env', 'PATH') }}"
+  register: updates_opencode
+  changed_when: "'Upgrade complete' in updates_opencode.stdout"
+  failed_when: updates_opencode.rc != 0 or 'Upgrade failed' in updates_opencode.stdout
+  when: updates_opencode_bin.stat.exists

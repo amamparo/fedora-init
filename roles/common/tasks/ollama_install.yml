@@ -1,0 +1,87 @@
+---
+# Fetch ONE upstream ollama release and lay it out the way ollama.com's
+# install.sh does — /usr/local/bin/ollama + /usr/local/lib/ollama — minus
+# the CUDA runtimes an Intel machine can never load. Shared by roles/ollama
+# (first install) and roles/updates (upgrade), the gnome_extension.yml
+# precedent for a cross-role include.
+#
+# Parameter: ollama_install_tag — the GitHub release tag (e.g. v0.34.2).
+# Callers resolve "latest" themselves (see roles/ollama for the redirect
+# trick) because the updates role has to compare it against the installed
+# version BEFORE deciding to include this file. Included via include_role
+# (name: common, tasks_from: ollama_install), like gnome_extension.
+#
+# Why not upstream's install.sh: it has no installed-version check, rm -rf's
+# and re-downloads the full 1.36 GiB bundle on every run, bakes the invoking
+# user's $PATH into a root-owned unit, and leaves cuda_v12/cuda_v13 (2.0 GiB
+# of 2.1) on disk. The release asset is the same bundle the script fetches,
+# so pulling it directly — checksum-verified against the release's
+# sha256sum.txt (get_url matches the filename in that file; its "./" prefix
+# is stripped by the module) and extracted with the CUDA dirs excluded —
+# gets bin/ollama + the CPU variants + lib/ollama/vulkan in 97 MiB. Archive
+# paths carry no "./" prefix (verified against the tarball listing), so the
+# --exclude patterns below are bare. gtar detects the zstd stream itself;
+# unarchive only needs the zstd rpm present (stock Fedora).
+#
+# tempfile has no check-mode support: under --check it is skipped and
+# registers no .path, so every task guards on that (the claude_code
+# pattern) and a fresh --check stays clean.
+- name: Install the upstream ollama release {{ ollama_install_tag }}
+  block:
+    - name: Create a temp dir for the ollama bundle
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: ollama-install.
+      register: ollama_tmp
+
+    - name: Download the ollama Linux bundle (checksum from the release)
+      ansible.builtin.get_url:
+        url: https://github.com/ollama/ollama/releases/download/{{ ollama_install_tag }}/ollama-linux-amd64.tar.zst
+        checksum: sha256:https://github.com/ollama/ollama/releases/download/{{ ollama_install_tag }}/sha256sum.txt
+        dest: "{{ ollama_tmp.path }}/ollama-linux-amd64.tar.zst"
+        mode: "0644"
+      when: ollama_tmp.path is defined
+
+    # Upstream's own upgrade instruction (docs/linux.mdx: "remove the old
+    # libraries with rm -rf ... first"): a stale runner or backend .so from
+    # the previous version must not coexist with the new tree.
+    - name: Remove the previous ollama library tree
+      become: true
+      ansible.builtin.file:
+        path: /usr/local/lib/ollama
+        state: absent
+      when: ollama_tmp.path is defined
+
+    - name: Unpack ollama into /usr/local (CUDA runtimes excluded)
+      become: true
+      ansible.builtin.unarchive:
+        src: "{{ ollama_tmp.path }}/ollama-linux-amd64.tar.zst"
+        dest: /usr/local
+        remote_src: true
+        extra_opts:
+          - --exclude=lib/ollama/cuda_v12
+          - --exclude=lib/ollama/cuda_v13
+      when: ollama_tmp.path is defined
+
+    # An upgrade must land on the running daemon; a first install has no
+    # unit yet (roles/ollama writes and starts it after this include), and
+    # this include can't notify that role's handler from the updates role.
+    - name: Probe for the ollama unit (absent until the first install)
+      ansible.builtin.stat:
+        path: /etc/systemd/system/ollama.service
+      register: ollama_unit_probe
+      check_mode: false
+
+    - name: Restart ollama on the new binary
+      become: true
+      ansible.builtin.systemd_service:
+        name: ollama.service
+        state: restarted
+      when: ollama_tmp.path is defined and ollama_unit_probe.stat.exists
+
+  always:
+    - name: Remove the downloaded bundle and temp dir
+      ansible.builtin.file:
+        path: "{{ ollama_tmp.path }}"
+        state: absent
+      when: ollama_tmp.path is defined

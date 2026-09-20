@@ -9,8 +9,8 @@
 # rpms) and runs site.yml locally. Bare arguments select roles by substring,
 # like the old per-module filenames; dash arguments (--check, --diff, --tags,
 # -v...) pass through to ansible-playbook. When a role needs vault secrets
-# (aws) and its target file is missing, it also signs into Bitwarden first —
-# terminal prompts only, no browser.
+# (aws, litellm) and its target file is missing, it also signs into Bitwarden
+# first — terminal prompts only, no browser.
 #
 set -euo pipefail
 
@@ -27,6 +27,10 @@ if [[ ! -f $script || ! -f "$(dirname "$script")/site.yml" ]]; then
 fi
 
 cd "$(dirname "$script")"
+
+# The Bitwarden CLI helpers, shared with `just seed-bitwarden`
+# (scripts/seed-bitwarden.sh). Functions only; used further down.
+source scripts/bw-lib.sh
 
 # Under curl|bash stdin is the exhausted pipe; the sudo prompt below and the
 # login-keyring password prompt (an ansible pause task) both need the
@@ -70,13 +74,14 @@ SUDO_KEEPALIVE=$!
 
 # One EXIT trap for everything (bash keeps a single trap per signal): stop
 # the keepalive, sweep the bw download dir a failure may have stranded, and
-# invalidate the Bitwarden session key even when the play aborts mid-run —
-# locking only on the success path would leave the session valid exactly
-# when a failed run stranded it.
+# invalidate the Bitwarden session key this run opened even when the play
+# aborts mid-run — locking only on the success path would leave the session
+# valid exactly when a failed run stranded it. A BW_SESSION inherited from
+# the shell is borrowed, not locked (scripts/bw-lib.sh sets the flag).
 cleanup() {
     kill "$SUDO_KEEPALIVE" 2>/dev/null || true
     [[ -z ${bw_tmp:-} ]] || rm -rf "$bw_tmp"
-    [[ -z ${BW_SESSION:-} ]] || bw lock >/dev/null 2>&1 || true
+    [[ -z ${bw_session_opened:-} ]] || bw lock >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -126,57 +131,41 @@ for arg in "$@"; do
 done
 
 # ---- Bitwarden-backed secrets ----------------------------------------
-# The aws role seeds ~/.aws/credentials through the community.general
-# bitwarden lookup, which shells out to the bw CLI *on the controller* —
-# the vault has to be unlocked before ansible-playbook starts, and the
-# sign-in prompts (email, master password, TOTP) need the terminal, which
-# tasks don't have. So the sign-in lives here, gated against needless
-# prompts: skipped when the seed target already exists (a converged
-# machine), under --check/-C (the role check-gates its seed tasks to
-# match), and when a tag selection excludes the aws role.
+# The aws role seeds ~/.aws/credentials and the litellm role seeds
+# /etc/litellm/litellm.env through the community.general bitwarden lookup,
+# which shells out to the bw CLI *on the controller* — the vault has to be
+# unlocked before ansible-playbook starts, and the sign-in prompts (email,
+# master password, TOTP) need the terminal, which tasks don't have. So the
+# sign-in lives here, gated against needless prompts: only for roles whose
+# seed target is still missing (a converged machine never prompts), never
+# under --check/-C (the roles check-gate their seed tasks to match), and
+# only when the tag selection reaches such a role. /etc/litellm is 0755, so
+# probing its 0600 file needs no root.
+secret_roles=()
+[[ -f "$HOME/.aws/credentials" ]] || secret_roles+=(aws)
+[[ -f /etc/litellm/litellm.env ]] || secret_roles+=(litellm)
 secrets_due=0
-[[ -f "$HOME/.aws/credentials" ]] || secrets_due=1
+for r in "${secret_roles[@]}"; do
+    if ((${#tags[@]})); then
+        [[ " ${tags[*]} " == *" $r "* ]] && secrets_due=1
+    elif [[ " ${passthru[*]} " == *" -t "* || " ${passthru[*]} " == *-tags* ]]; then
+        # A passthru --tags/--skip-tags selection: approximate by looking for
+        # the role name among the words (--skip-tags aws is the one false
+        # positive — a needless prompt, nothing worse).
+        [[ " ${passthru[*]} " == *"$r"* ]] && secrets_due=1
+    else
+        secrets_due=1
+    fi
+done
 [[ " $* " == *" --check "* || " $* " == *" -C "* ]] && secrets_due=0
-if ((${#tags[@]})); then
-    [[ " ${tags[*]} " == *" aws "* ]] || secrets_due=0
-elif [[ " ${passthru[*]} " == *" -t "* || " ${passthru[*]} " == *-tags* ]]; then
-    # A passthru --tags/--skip-tags selection: approximate by looking for
-    # "aws" among the words (--skip-tags aws is the one false positive —
-    # a needless prompt, nothing worse).
-    [[ " ${passthru[*]} " == *aws* ]] || secrets_due=0
-fi
 
 if ((secrets_due)); then
-    # bw is a single static binary (~45 MB, no rpm exists); unzipped via
-    # python3 (always present — ansible runs on it) to skip an unzip rpm.
-    # Presence-guarded and never upgraded after, the reaper class.
-    export PATH="$HOME/.local/bin:$PATH"
-    if ! command -v bw >/dev/null 2>&1; then
-        echo "Installing the Bitwarden CLI to ~/.local/bin/bw..."
-        bw_tmp="$(mktemp -d)"
-        curl -fsSL 'https://bitwarden.com/download/?app=cli&platform=linux' -o "$bw_tmp/bw.zip"
-        python3 -m zipfile -e "$bw_tmp/bw.zip" "$bw_tmp"
-        install -D -m 0755 "$bw_tmp/bw" "$HOME/.local/bin/bw"
-        rm -rf "$bw_tmp"
-    fi
-    # Sign-in state persists in ~/.config/Bitwarden CLI (vault items stay
-    # encrypted there; treat the auth tokens like the blanked login keyring
-    # — LUKS is the at-rest story), so this is email + master password +
-    # TOTP the first time, master password alone on later seeds. The
-    # Bitwarden cloud can additionally demand the personal API key
-    # client_secret (its bot check — web vault > Settings > Security >
-    # Keys). A failed sign-in does NOT abort the run: the play continues
-    # without a session and the aws role notes the pending seed instead —
-    # the gh/tailscale non-blocking pattern.
-    if bw login --check >/dev/null 2>&1; then
-        echo "Bitwarden unlock (the aws role fetches keys from the vault):"
-        BW_SESSION="$(bw unlock --raw)" || BW_SESSION=""
-    else
-        echo "Bitwarden sign-in (the aws role fetches keys from the vault):"
-        BW_SESSION="$(bw login --raw)" || BW_SESSION=""
-    fi
-    if [[ -n $BW_SESSION ]]; then
-        export BW_SESSION
+    bw_ensure_installed
+    # A failed sign-in does NOT abort the run: the play continues without a
+    # session and the roles note their pending seed instead — the
+    # gh/tailscale non-blocking pattern.
+    bw_open_session "${secret_roles[*]} fetch secrets from the vault"
+    if [[ -n ${BW_SESSION:-} ]]; then
         bw sync >/dev/null || true   # a stale cached vault may still hold the item
     else
         echo "warning: Bitwarden sign-in failed — continuing without secrets" >&2

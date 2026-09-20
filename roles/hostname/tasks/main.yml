@@ -206,9 +206,14 @@
 
 # Read-only probe, so changed_when: false + check_mode: false — it has to run
 # under --check for the conditionals below to mean anything. ~/.config only:
-# that is where every Chromium/Electron app this repo installs keeps its
-# profile, and this repo installs no flatpaks, so ~/.var/app would be scope
-# creep. A missing path is a warning rather than a failure (verified), so a
+# that is where every Chromium/Electron app this repo installs natively keeps
+# its profile. The one flatpak it installs (Podman Desktop, an Electron app
+# under ~/.var/app) lands AFTER this rename in role order, and flatpak's PID
+# namespace makes the host-side liveness check below meaningless for a
+# sandboxed lock (its pid is the sandbox's), so ~/.var/app stays out of
+# scope — the manual fix there is `rm ~/.var/app/<id>/config/*/Singleton*`
+# with the app closed. A missing path is a warning rather than a failure
+# (verified), so a
 # machine with no ~/.config walks zero entries instead of hard-failing. depth 3
 # reaches the deepest layout in play (BraveSoftware/Brave-Browser/SingletonLock)
 # without walking the whole tree.

@@ -10,9 +10,9 @@
 # package_facts guard — no vendor .repo file, unlike vscode/tailscale, hence
 # no fresh-`--check` repo gate to carry.
 #
-# Substring-matcher note: `./install.sh gh` also sweeps ghostty (its tag
-# "ghostty" contains "gh") — harmless, both idempotent; use `./install.sh
-# github` to hit only this role.
+# Substring-matcher note: `./install.sh gh` reaches ONLY ghostty — the tag
+# `github-cli` does not contain "gh" (g-i-t-h-u-b), so it never selects this
+# role; use `./install.sh github` (or `github-cli`) to hit only this role.
 - name: Install the GitHub CLI
   become: true
   ansible.builtin.dnf5:

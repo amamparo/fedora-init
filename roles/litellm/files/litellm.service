@@ -1,0 +1,57 @@
+# Managed by fedora-init (roles/litellm).
+[Unit]
+Description=LiteLLM proxy (OpenAI-compatible gateway to ollama and Anthropic)
+# Ordering only: litellm talks to ollama lazily, per request, so it needs
+# the unit started, not answering.
+After=ollama.service
+Wants=ollama.service
+
+[Service]
+Type=exec
+# A transient unprivileged user; implies ProtectSystem=strict,
+# ProtectHome=read-only, NoNewPrivileges, PrivateTmp. StateDirectory is the
+# one writable place and doubles as $HOME (litellm needs neither, verified,
+# but a HOME that exists costs nothing).
+DynamicUser=yes
+StateDirectory=litellm
+WorkingDirectory=/var/lib/litellm
+Environment=HOME=/var/lib/litellm
+# PRODUCTION: no .env auto-loading from the working dir. The local cost
+# map: skip the raw.githubusercontent.com fetch at import (a 5 s timeout
+# offline) and use the JSON bundled with the installed version — refreshed
+# by the updates role's upgrade. The feedback box is a startup banner.
+Environment=LITELLM_MODE=PRODUCTION
+Environment=LITELLM_LOCAL_MODEL_COST_MAP=True
+Environment=LITELLM_DONT_SHOW_FEEDBACK_BOX=true
+# Secrets (ANTHROPIC_API_KEY) — 0600 root:root, seeded by the role from
+# Bitwarden. Read by the service manager before the privilege drop, so the
+# DynamicUser never needs to open it. The leading "-" makes it optional:
+# the proxy runs without it (anthropic/* routes then fail cleanly).
+EnvironmentFile=-/etc/litellm/litellm.env
+# --host: litellm's own default is 0.0.0.0. --port 4000: the default too,
+# spelled out because litellm silently picks a RANDOM port when 4000 is
+# already taken instead of failing — if clients can't connect, check
+# `ss -ltnp | grep litellm` before anything else.
+ExecStart=/opt/litellm/bin/litellm --config /etc/litellm/config.yaml --host 127.0.0.1 --port 4000
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+# Hardening for a python HTTP daemon that needs nothing but loopback
+# sockets (and outbound HTTPS for Anthropic).
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictNamespaces=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

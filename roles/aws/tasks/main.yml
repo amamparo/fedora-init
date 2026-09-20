@@ -4,8 +4,9 @@
 # access keys fetched from Bitwarden.
 #
 # The keys never touch this repo. install.sh installs the bw CLI and signs
-# into the vault (master password + TOTP, all on the terminal) ONLY when
-# ~/.aws/credentials is absent, exporting BW_SESSION; the bitwarden lookup
+# into the vault (master password + TOTP, all on the terminal) ONLY while a
+# seed target is missing — this role's ~/.aws/credentials or the litellm
+# role's /etc/litellm/litellm.env — exporting BW_SESSION; the bitwarden lookup
 # below shells out to bw on the CONTROLLER, which is why the login can't be
 # a task (no tty there) and rides install.sh instead — the chezmoi
 # "install and auth the password manager before anything reads secrets"

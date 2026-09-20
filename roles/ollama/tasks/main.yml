@@ -1,0 +1,260 @@
+---
+# Ollama — the local model server, a system service on 127.0.0.1:11434 that
+# litellm (next role) fronts for goose and opencode.
+#
+# Upstream release, NOT Fedora's rpm, deliberately: F44's ollama is 0.12.11
+# (Nov 2025) and will stay there for the life of the release (Bodhi/Koji:
+# the maintainer moved on to F45/F46), it reports version 0.0.0, it cannot
+# load any 2026 model family (gemma4, qwen3.5, devstral-small-2 all need a
+# newer engine), it ships no Vulkan backend, and it hard-requires ROCm —
+# `dnf install ollama` is 23 packages / 2 GiB download / 5 GiB on disk of
+# AMD libraries an Intel machine can never load (rocm-llvm-static alone is
+# 1.9 GiB). The two F44 COPRs are the same 1.36 GiB upstream bundle repacked
+# by a single maintainer with "Codex Automation" changelogs. So: the
+# release asset, installed the way ollama.com/install.sh lays it out
+# (/usr/local/bin + /usr/local/lib/ollama) via the shared include in
+# roles/common — see that file for why the script itself isn't run.
+#
+# "Latest" is resolved at install time and the launcher's presence is the
+# guard (the reaper pattern); a converged re-run touches no network. Unlike
+# reaper, upstream cuts a release every few days and there is no
+# self-update, so the updates role — the sanctioned network exception —
+# re-resolves latest and re-runs the same include when the installed
+# version lags. Each upgrade is a 1.36 GiB download for 97 MiB of payload
+# (the bundle has no CPU-only variant); that is the price of currency.
+#
+# THE iGPU DECISION (ollama_igpu in site.yml), measured 2026-09-20 on this
+# machine with the 0.34.2 tarball in a sandbox, a 1.5k-token prompt, 32k
+# context, q8_0 KV cache, greedy — on battery, with other agents
+# contending, so lower bounds, not benchmarks. tokens/s, prompt / generation:
+#   qwen3-coder:30b (the default model)  CPU 2 threads (llama.cpp's
+#     auto-detect here) 6 / 3 — CPU 4 threads 12 / 7 — CPU 8 threads
+#     13 / 2.5 (the E-cores drag lockstep threading down) — iGPU, fully
+#     offloaded, 154-196 / 22-24, model load 23 s.
+#   qwen3:8b  CPU 2 threads 11 / 4.5 — 4 threads 14 / 6.3 — 8 threads
+#     14 / 0.8 — iGPU 180-210 / 14-15.
+# Coherent output in every run; KHR cooperative-matrix path confirmed
+# active. So: iGPU on by default (the difference between an unusable and a
+# usable local coding agent), LLAMA_ARG_THREADS=4 for the CPU side. Caveats
+# that stay true: (1) Mesa reports the GPU's free memory as 0.9 x
+# MemAvailable, and ollama fits layers to that number at LOAD time, so a
+# model loaded while the desktop is using RAM lands partly on the CPU —
+# `ollama ps` PROCESSOR must read 100% GPU, and a reload (`ollama stop
+# <model>`) fixes it; (2) the desktop compositor and any game share the
+# GPU — generation swung 10-14 tokens/s with a Steam game running; (3) the
+# runs were on Mesa 26.1.8 while `updates` carries 26.2.2, which has an
+# open llama.cpp q8_0-KV-cache hang report on a much older Intel
+# generation (Gen9.5) — re-check coherence after the first play. A/B any
+# time with OLLAMA_IGPU_ENABLE=0 on the unit (explicit deny) and
+# `ollama run <model> --verbose`. ggml-vulkan knows the 12-core PTL part
+# (0xB080) but not this 4-core 0xB090, so a few tile heuristics run with a
+# placeholder core count — upstream one-liner, perf impact unmeasured.
+#
+# The daemon is root-free: a dedicated `ollama` system user (upstream's
+# layout, plus the render group for the iGPU — Fedora's udev makes
+# /dev/dri/renderD128 0666 so the group isn't strictly needed, but a
+# stricter policy would otherwise silently drop the GPU), HOME and models
+# under /var/lib/ollama, unit hardened with ProtectSystem=strict. Model
+# pulls run as the desktop user through the API (no become): the server
+# does the writing.
+
+# The Vulkan path needs Mesa's ICD. Workstation ships mesa-vulkan-drivers
+# in the base-graphical comps group (steam is the only rpm that requires
+# it), but a minimal install would leave ollama silently on the CPU — say
+# so rather than failing, since the CPU path still works.
+- name: Warn when the iGPU is requested without a Vulkan driver
+  ansible.builtin.debug:
+    msg: >-
+      ollama_igpu is true but mesa-vulkan-drivers is not installed — ollama
+      will find no Vulkan device and run on the CPU. `sudo dnf install
+      mesa-vulkan-drivers` (Workstation ships it) and restart ollama.
+  when: ollama_igpu | bool and 'mesa-vulkan-drivers' not in ansible_facts.packages
+
+- name: Probe for the ollama launcher (/usr/local/bin/ollama)
+  ansible.builtin.stat:
+    path: /usr/local/bin/ollama
+  register: ollama_bin
+  check_mode: false
+
+# GitHub's releases/latest is a 302 to /releases/tag/<tag>: reading the
+# Location header gets the tag with no API call, so no 60/hour
+# unauthenticated rate limit to trip (the api.github.com route was seen
+# rate-limited on this machine). uri has no check-mode support and is
+# skipped under --check, which is why the include below guards on the
+# registered .location rather than crashing a fresh dry run.
+- name: Look up the latest ollama release tag
+  ansible.builtin.uri:
+    url: https://github.com/ollama/ollama/releases/latest
+    follow_redirects: none
+    status_code: 302
+  register: ollama_latest
+  changed_when: false
+  when: not ollama_bin.stat.exists
+
+- name: Install the latest ollama release
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: ollama_install
+  vars:
+    ollama_install_tag: "{{ ollama_latest.location | basename }}"
+  when: not ollama_bin.stat.exists and ollama_latest.location is defined
+
+# The service account. system + nologin like Fedora's own sysusers entry
+# for the rpm (`u ollama - "Runs Ollama" /var/lib/ollama /sbin/nologin`);
+# the home dir is created below with the ownership the daemon needs
+# (systemd sets $HOME from this record, and ollama keeps its registry key
+# and caches under $HOME/.ollama).
+- name: Create the ollama group
+  become: true
+  ansible.builtin.group:
+    name: ollama
+    system: true
+
+- name: Create the ollama service user
+  become: true
+  ansible.builtin.user:
+    name: ollama
+    group: ollama
+    system: true
+    home: /var/lib/ollama
+    create_home: false
+    shell: /sbin/nologin
+    groups: render
+    append: true
+
+# ollama serve hard-requires a writable $HOME at startup (it generates
+# $HOME/.ollama/id_ed25519 before it even listens): a missing or root-owned
+# /var/lib/ollama is a silent 3-second crash loop under Restart=always.
+- name: Ensure the ollama home exists
+  become: true
+  ansible.builtin.file:
+    path: /var/lib/ollama
+    state: directory
+    owner: ollama
+    group: ollama
+    mode: "0755"
+
+# The model store is a NESTED BTRFS SUBVOLUME, not a directory, because of
+# the snapshots role: /var/lib is inside the root subvolume that snapper
+# snapshots before and after every dnf transaction, and btrfs snapshots are
+# not recursive — a nested subvolume is a barrier its files never appear
+# in. As a plain directory every 19 GB model blob present at snapshot time
+# would be pinned by that pre/post pair (`ollama rm` frees nothing until
+# the number-cleanup reaper drops them) and a `snapper undochange` would
+# revert pulls. Probe the filesystem first: on anything but btrfs a plain
+# directory is all there is. `creates:` makes this one-shot and honest under
+# --check; a pre-existing plain directory (an older revision of this role)
+# is left as it is rather than migrated.
+- name: Probe the filesystem type under /var/lib
+  ansible.builtin.command:
+    argv:
+      - stat
+      - -f
+      - -c
+      - "%T"
+      - /var/lib
+  register: ollama_fstype
+  changed_when: false
+  check_mode: false
+
+- name: Create the model store as a nested btrfs subvolume
+  become: true
+  ansible.builtin.command:
+    argv:
+      - btrfs
+      - subvolume
+      - create
+      - /var/lib/ollama/models
+  args:
+    creates: /var/lib/ollama/models
+  when: ollama_fstype.stdout == 'btrfs'
+
+- name: Ensure the model store exists and belongs to ollama
+  become: true
+  ansible.builtin.file:
+    path: /var/lib/ollama/models
+    state: directory
+    owner: ollama
+    group: ollama
+    mode: "0755"
+
+# Repo-owned unit (there is no vendor one — the installer script would
+# have written its own, with the invoking user's $PATH baked in). The
+# environment is the whole configuration surface ollama has; see the
+# template for what each line does and why.
+- name: Install the ollama unit
+  become: true
+  ansible.builtin.template:
+    src: ollama.service.j2
+    dest: /etc/systemd/system/ollama.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: ollama_unit
+  notify: Restart ollama
+
+# The enable/start below must see the unit systemd just learned about, so
+# run the pending restart (which daemon-reloads first) now rather than at
+# the end of the play.
+- name: Flush handlers so the new unit is loaded before it is started
+  ansible.builtin.meta: flush_handlers
+
+# Gated for a fresh --check: systemd_service probes the unit's LoadState
+# even in check mode and hard-fails when the UNIT was only simulated (the
+# battery gotcha) — the brave/vscode repo-file form, keyed on the unit
+# task, not on the binary: a half-installed machine with the binary but no
+# unit file must not crash a dry run either.
+- name: Enable and start ollama
+  become: true
+  ansible.builtin.systemd_service:
+    name: ollama.service
+    enabled: true
+    state: started
+  register: ollama_start
+  when: not (ansible_check_mode and ollama_unit is changed)
+
+# Health: GET / answers "Ollama is running" (verified in server/routes.go).
+# Read-only, so it runs under --check too — except when a dry run only
+# SIMULATED the unit or the start (a stopped daemon, a run that aborted
+# between writing the unit and starting it): nothing is listening then, and
+# a real probe would fail a dry run that should say "would start".
+- name: Wait for ollama to answer on 127.0.0.1:11434
+  ansible.builtin.uri:
+    url: http://127.0.0.1:11434/
+    return_content: true
+  register: ollama_health
+  until: ollama_health.status == 200 and 'Ollama is running' in ollama_health.content
+  retries: 15
+  delay: 1
+  changed_when: false
+  check_mode: false
+  when: not (ansible_check_mode and (ollama_unit is changed or ollama_start is changed))
+
+# --- models --------------------------------------------------------------
+# `ollama list` has no machine-readable output; GET /api/tags is the
+# listing. A name without a tag means :latest, so normalise before
+# comparing, or "qwen3" would never match the registry's "qwen3:latest"
+# and re-pull every run. Pulls are resumable and multi-GB (the list in
+# site.yml says how big each one is), guarded per model so a converged
+# re-run stays offline.
+- name: List the models ollama has pulled
+  ansible.builtin.uri:
+    url: http://127.0.0.1:11434/api/tags
+  register: ollama_tags
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: not (ansible_check_mode and (ollama_unit is changed or ollama_start is changed))
+
+- name: Pull the models declared in site.yml (ollama_models)
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/ollama
+      - pull
+      - "{{ item }}"
+  loop: "{{ ollama_models }}"
+  when: >-
+    (ollama_tags.status | default(0)) == 200
+    and (item if ':' in item else item ~ ':latest')
+        not in (ollama_tags.json.models | default([]) | map(attribute='name') | list)
+  changed_when: true

@@ -27,13 +27,15 @@ sudo tickets, delete the drop-in.
 Run a subset of roles by substring: `./install.sh battery zsh` — or without
 a checkout, append `-s battery` after `bash` in the one-liner.
 
-If a role needs secrets (today just **aws**), the script also installs the
-Bitwarden CLI and signs into your vault right on the terminal — master
+If a role needs secrets (**aws** and **litellm**), the script also installs
+the Bitwarden CLI and signs into your vault right on the terminal — master
 password + TOTP, no browser — before the play starts. That only happens
-while the secret's target file is missing; a converged machine never
+while a secret's target file is missing; a converged machine never
 prompts. And it's never a roadblock: no vault yet, or a failed sign-in,
-just means everything else still configures and the aws role prints a
-reminder — re-run `./install.sh aws` whenever you're ready.
+just means everything else still configures and the role prints a
+reminder — re-run `./install.sh aws` (or `litellm`) whenever you're ready.
+To put the secrets *into* the vault from this machine, `just seed-bitwarden`
+(see [Bitwarden items](#bitwarden-items)).
 
 Prove idempotency instead of trusting it:
 
@@ -64,8 +66,13 @@ is what `./install.sh <substring>` matches against.
 
 Everything Fedora's Software app would report, applied: all rpm updates,
 firmware via fwupd/LVFS (reboot-staged ones get called out), and flatpak
-updates for anything you've added. Runs first so the rest of the play
-resolves against fresh metadata.
+updates (Podman Desktop, plus anything you've added). Runs first so the rest
+of the play resolves against fresh metadata. It also brings the three
+installs that live outside dnf current: ollama (re-installed from the
+upstream release whenever one moved — a ~1.4 GB download), the litellm venv
+(`uv pip install --upgrade`, then a restart) and opencode (`opencode
+upgrade`). Under `--check` the version probes run but the upgrades
+themselves are skipped; a pending ollama upgrade is printed.
 
 ### snapshots
 
@@ -127,7 +134,9 @@ hit this — the rename happens long before Brave is installed — but the first
 `./install.sh` on a laptop you'd already been using can. The role clears those
 stale tags, and only ever clears one whose process is genuinely gone, so a
 browser left open while `./install.sh` runs is untouched and tidies up after
-itself on exit.
+itself on exit. Flatpak apps are not swept (their lock lives under
+`~/.var/app` and records a sandbox pid): if the Podman Desktop flatpak won't
+start after the rename, close it and `rm ~/.var/app/<id>/config/*/Singleton*`.
 
 Two knock-on effects, both intended: GNOME Settings ▸ System shows **Device
 Name** `thinkpad`, and that's the name phones and headphones see when pairing
@@ -233,7 +242,8 @@ run would revert.
 The [GitHub CLI](https://cli.github.com) (`gh`) from Fedora's own repos —
 `gh` for PRs, issues, `gh repo clone`, `gh api`, gists. Run `gh auth login`
 once to authenticate (browser/device flow). `./install.sh github` targets just
-this role; `./install.sh gh` also sweeps ghostty (harmless).
+this role — note `./install.sh gh` reaches only ghostty (the tag `github-cli`
+doesn't contain "gh").
 
 ### aws
 
@@ -450,7 +460,12 @@ version on every run. `podman-docker` keeps the
 `podman-tui` gives a terminal dashboard (containers/images/pods), and the
 user API socket is enabled for docker-API tools — compose and
 testcontainers mostly auto-detect it; if one doesn't, point it at
-`DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock`.
+`DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock`. Also installs
+[Podman Desktop](https://podman-desktop.io) — the GUI for containers, pods,
+images and Kubernetes — as its official Flathub flatpak
+(`io.podman_desktop.PodmanDesktop`, already exposed by Fedora's stock
+flathub remote), kept current by the updates role's `flatpak update`. It
+finds the user socket above on its own.
 
 ### tailscale
 
@@ -613,6 +628,112 @@ and pattern data, and the third-party plugin packages Fedora also carries
 (`gimp-data-extras`, `gimp-dds-plugin`, `gimpfx-foundry`…) are all left to
 `sudo dnf install` if you ever want them.
 
+### ollama
+
+[Ollama](https://ollama.com) — the local model server, as a system service
+on `127.0.0.1:11434` (loopback only; litellm sits in front). Installed from
+the upstream release, not Fedora's rpm: F44's package is frozen at 0.12.11
+(it can't load any 2026 model family) and drags 2 GiB of AMD ROCm onto an
+Intel machine. The role fetches the current release tarball, verifies it
+against the release's checksums, and unpacks `bin/ollama` + `lib/ollama`
+into `/usr/local` with the CUDA runtimes left out (97 MiB instead of
+2.1 GiB). A dedicated `ollama` user runs it with its models in
+`/var/lib/ollama/models` — a nested btrfs subvolume, so the snapshots role's
+pre/post snapshots never pin 19 GB model blobs. Ollama has no self-update
+and cuts a release every few days, so the **updates** role re-installs it
+whenever upstream moved (a ~1.4 GB download each time).
+
+The models to pull are declared in `site.yml` (`ollama_models`, default
+`qwen3-coder:30b` — a 19 GB tool-calling coding model with 3B active
+parameters, so it generates at small-model speed) and pulled once, guarded
+on what the server already has. Local context is `llm_local_context`
+(32k; agents like more, RAM permitting), the K/V cache is 8-bit, a model
+stays loaded 30 minutes after its last request, and ollama.com cloud
+features are off (`OLLAMA_NO_CLOUD=1`, which also stops a signed
+phone-home on every start). The Intel iGPU is used through Vulkan
+(`ollama_igpu: true`): measured here on the default model at ~190 tokens/s
+prompt processing and ~23 tokens/s generation, against 12 and 7 on the
+CPU's four P-cores (6 and 3 at llama.cpp's own 2-thread default) — the
+difference between an unusable and a usable local coding agent. Two things to know: a model loaded while the desktop
+is using a lot of RAM may land only partly on the GPU (`ollama ps` should
+say 100% GPU; `ollama stop <model>` and retry), and inference shares the
+GPU with games and the compositor. Set `ollama_igpu: false` for CPU-only
+(4 threads, the P-cores — 8 is slower). The first bare `ollama` you type
+shows a sign-in/continue-locally screen; "continue locally" is the answer.
+`journalctl -u ollama` logs one line per API request.
+
+### litellm
+
+[LiteLLM](https://docs.litellm.ai) proxy — one OpenAI-compatible endpoint,
+`http://127.0.0.1:4000/v1`, in front of ollama and Anthropic. goose and
+opencode talk only to it, so a local model and Claude are one model-name
+apart: `ollama/<tag>` for anything ollama has pulled (a wildcard route —
+`ollama pull` something new and it's reachable), `anthropic/<id>`
+(`anthropic/claude-opus-5`…) for Claude. No rpm exists, so it's a python
+venv under `/opt/litellm` built with the stock `uv` (~650 MB), run as a
+hardened systemd service (`litellm.service`, dedicated dynamic user);
+`/etc/litellm/config.yaml` is the routes. Health: `curl
+127.0.0.1:4000/health/liveliness`. Upgrades ride the updates role.
+
+**Keyless on purpose.** The proxy is loopback-only on a single-user
+machine, in front of an ollama that is unauthenticated anyway; a master
+key would sit in goose's and opencode's configs with the same readers.
+The Anthropic key is the one secret: seeded once into
+`/etc/litellm/litellm.env` (0600 root) from the Bitwarden login item named
+`anthropic` (password = the API key), exactly like the aws credentials —
+the role prints a reminder while it's missing, and `anthropic/*` routes
+answer with an AuthenticationError until then. Rotate by editing that
+file (and `systemctl restart litellm`), or delete it and re-run.
+
+### goose
+
+[goose](https://github.com/aaif-goose/goose) — Block's terminal coding
+agent, from Fedora's own repos (updates ride `dnf upgrade`; the rpm
+compiles out `goose update`). Pre-configured through
+`/etc/goose/config.yaml`, a system layer goose reads under your own
+`~/.config/goose/config.yaml` and never writes: provider `litellm`,
+`LITELLM_HOST` pointed at the proxy, the default model from `site.yml`
+(`llm_default_model`), telemetry off. Your own choices — `goose configure`,
+`/model`, `/mode` — land in the user file and win. `goose info --check`
+is the smoke test (it makes a real request). Tools run without an approval
+step by default (`GOOSE_MODE: auto`); `smart_approve` or `approve` in the
+user file if you'd rather confirm shell commands.
+
+### opencode
+
+[OpenCode 2](https://opencode.ai) — the terminal coding agent, installed
+from its npm platform package (the V2 line's distribution; the V1 line is
+what GitHub's releases page still shows) into `~/.opencode/bin` (the
+vendor's layout; the zsh role puts it on PATH — log out and back in the
+first time) and pre-configured for the proxy. Two files in
+`~/.config/opencode`: `opencode.json` is managed from `site.yml` (the
+`litellm` provider with every local and Anthropic model listed — opencode
+can't discover a custom provider's models), `opencode.jsonc` is seeded once
+with the default model and then yours (that's also where MCP servers,
+agents and keybinds go). Pick models in the TUI; V2's updater only notifies
+by default, so the updates role runs `opencode upgrade`.
+
+## Bitwarden items
+
+Two roles seed secrets from your vault, both matched by exact item name:
+
+| item | type | fields | seeds |
+|---|---|---|---|
+| `aws` | login | username = Access Key ID, password = Secret Access Key | `~/.aws/credentials` (aws) |
+| `anthropic` | login | password = the API key | `/etc/litellm/litellm.env` (litellm) |
+
+Create them in the web vault or push them from here: `just seed-bitwarden`
+upserts them from `SEED_AWS_ACCESS_KEY_ID`, `SEED_AWS_SECRET_ACCESS_KEY`
+and `SEED_ANTHROPIC_API_KEY` — or hidden prompts for whichever is unset
+(blank skips, prompted or exported). Only what you supply is written: an
+item you skip is left alone, an existing item keeps every field you didn't
+give (a new secret key keeps its key id), and nothing else in the vault is
+touched. Two refusals: *creating* `aws` needs both fields (a half item would
+seed a broken credentials file), and an existing item of another type named
+`aws` or `anthropic` must be renamed first — the roles match by name alone.
+A Bitwarden session you already have exported is used and left unlocked.
+`just` alone lists the recipes (`check` runs the safe lint gate).
+
 ## Adding a role
 
 Drop `roles/<name>/` with a `tasks/main.yml` and add it to `site.yml` —
@@ -630,4 +751,4 @@ contributor rules):
 - `become: true` per task, only for system mutations; anything touching the
   user session (dconf, `$HOME`, session D-Bus) runs as the user
 - static assets live in `roles/<name>/files/`
-- lint with `ansible-lint --offline` before committing
+- lint with `ansible-lint --offline` (`just check` runs the whole safe gate) before committing

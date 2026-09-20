@@ -1,0 +1,94 @@
+---
+# goose (github.com/aaif-goose/goose — Block's CLI coding agent, now under
+# the Agentic AI Foundation) — a stock Fedora rpm (1.38.0 in `updates`,
+# 1.45.0 in updates-testing; the rpm URL still says block/goose, and it
+# declares Conflicts: golang-github-pressly-goose, the DB-migration tool
+# that also ships /usr/bin/goose — so this is the right one and no
+# collision handling is needed). Plain guarded dnf5, no vendor .repo and so
+# no fresh-`--check` repo gate: the github_cli/gimp pattern. Fedora builds
+# it with the `disable-update` feature (Patch2 in the 1.38 spec, cargo
+# flags in 1.45), so `goose update` is compiled out and new versions ride
+# the updates role's `dnf upgrade` — verified against both binaries. Only
+# /usr/bin/goose matters (1.45 drops goosed); never reference goosed.
+#
+# Its own role, not a litellm add-on: goose talks to any provider, so the
+# dependency-direction merge test fails (the github_cli call). What makes
+# it "pre-configured to connect to litellm" is the config layer below.
+#
+# THE LAYER: goose merges /etc/goose/config.yaml, then any
+# GOOSE_ADDITIONAL_CONFIG_FILES, then ~/.config/goose/config.yaml — later
+# wins, and ONLY the user file is ever written (verified in config/base.rs
+# for 1.38/1.45/1.51 and live: the wizard, `/model`, `/mode` and the
+# telemetry answer all land in the user file; the /etc file is never
+# rewritten). Any layer existing is what suppresses the first-run wizard
+# (`Config::exists()` is any-of). So the system file is the repo-declared,
+# converged provider config (the dconf class — no secrets in it, so no
+# no_log, honest under --check), and the user's own choices layer on top
+# untouched (the bookmark rule) with no seed-once file to reason about.
+# The user file, once goose writes it, is in goose's structured shape
+# (active_provider + providers.<name>) — which beats the flat keys below
+# by design, so a `goose configure` switch sticks.
+#
+# What the layer sets, all verified against the 1.38.0 source and a live
+# run against a stub proxy:
+#   - The litellm provider is built in (provider name "litellm"). Its API
+#     key is optional despite being flagged `required` (that flag only
+#     drives the wizard): absent means no Authorization header — exactly
+#     what the keyless proxy wants. Secrets are never read from config
+#     files anyway. (The wizard itself refuses an empty key: type anything
+#     if you ever go through it; the keyless proxy ignores it.)
+#   - LITELLM_HOST MUST be set: the 1.38 fallback is https://api.litellm.ai
+#     (their cloud), not localhost — fixed in 1.51, which Fedora doesn't
+#     ship.
+#   - GOOSE_TELEMETRY_ENABLED: without a recorded choice the first
+#     interactive `goose session` opens a consent prompt. Off.
+#   - No extensions block: developer (shell + file editing) is a platform
+#     extension with default_enabled, injected on every config read — a
+#     fresh install sends all 18 tools with no config at all (verified;
+#     an earlier draft seeded it for nothing).
+#   - GOOSE_MODE stays at goose's default (auto: tools run without an
+#     approval step). `smart_approve` / `approve` is one key in the user
+#     file if a local model doing unattended shell work reads as too bold.
+#
+# Never probe with `goose --version`: EVERY invocation (even --help) writes
+# a log under ~/.local/state/goose — presence is the package_facts guard.
+
+- name: Install goose
+  become: true
+  ansible.builtin.dnf5:
+    name: goose
+    state: present
+  when: "'goose' not in ansible_facts.packages"
+
+- name: Ensure /etc/goose exists
+  become: true
+  ansible.builtin.file:
+    path: /etc/goose
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the system goose config pointing at litellm
+  become: true
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/goose/config.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  register: goose_layer
+
+# `goose info --check` makes one real request through the proxy (it loads
+# the model) and reports Auth/Connection — the one-command smoke test. Not
+# under --check: the layer is simulated there and this would print on
+# every dry run.
+- name: Report the goose smoke test
+  ansible.builtin.debug:
+    msg: >-
+      goose is configured for litellm ({{ llm_default_model }}). Verify with
+      `goose info --check`. Switch models with `goose configure` (or
+      `/model` in a session) — your choice lands in ~/.config/goose/config.yaml
+      and wins over the system layer; edit llm_default_model in site.yml to
+      change the repo default.
+  when: goose_layer is changed and not ansible_check_mode

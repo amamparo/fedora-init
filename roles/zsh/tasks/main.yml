@@ -84,15 +84,24 @@
   failed_when: false
   check_mode: false
 
-# One-time by construction: after a converged run cmp rc == 0 and this skips,
-# so the backup is never clobbered by a later re-run.
+# One-time for real: guarded on the backup NOT existing yet. The cmp gate
+# alone is not enough — every time this repo's zshrc asset changes (fzf and
+# zoxide lines, the opencode PATH line) the installed copy differs again,
+# and without this guard the backup would be overwritten with fedora-init's
+# own previous zshrc, losing the pre-fedora-init original it exists to keep.
+- name: Probe for an existing ~/.zshrc.pre-fedora-init backup
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.zshrc.pre-fedora-init"
+  register: zshrc_backup
+  check_mode: false
+
 - name: Back up the existing ~/.zshrc to ~/.zshrc.pre-fedora-init
   ansible.builtin.copy:
     src: "{{ lookup('env', 'HOME') }}/.zshrc"
     dest: "{{ lookup('env', 'HOME') }}/.zshrc.pre-fedora-init"
     remote_src: true
     mode: preserve
-  when: zshrc_stat.stat.exists and zshrc_cmp.rc != 0
+  when: zshrc_stat.stat.exists and zshrc_cmp.rc != 0 and not zshrc_backup.stat.exists
 
 - name: Install ~/.zshrc
   ansible.builtin.copy:
