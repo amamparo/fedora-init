@@ -687,17 +687,27 @@ file (and `systemctl restart litellm`), or delete it and re-run.
 
 ### goose
 
-[goose](https://github.com/aaif-goose/goose) — Block's terminal coding
-agent, from Fedora's own repos (updates ride `dnf upgrade`; the rpm
-compiles out `goose update`). Pre-configured through
-`/etc/goose/config.yaml`, a system layer goose reads under your own
-`~/.config/goose/config.yaml` and never writes: provider `litellm`,
-`LITELLM_HOST` pointed at the proxy, the default model from `site.yml`
-(`llm_default_model`), telemetry off. Your own choices — `goose configure`,
-`/model`, `/mode` — land in the user file and win. `goose info --check`
-is the smoke test (it makes a real request). Tools run without an approval
-step by default (`GOOSE_MODE: auto`); `smart_approve` or `approve` in the
-user file if you'd rather confirm shell commands.
+[Goose](https://github.com/aaif-goose/goose) — Block's coding agent, as the
+**desktop app**, from upstream's per-release rpm (there is no repo, no
+Fedora package and the flatpak bundle can't see the config below; the app
+can't update itself on Linux, so the updates role installs each new
+release). It replaces Fedora's `goose` CLI rpm, which the role removes:
+the desktop bundles that very CLI as its backend
+(`/usr/lib/Goose/resources/bin/goose`, if you ever want it in a terminal).
+Pre-configured through `/etc/goose/config.yaml`, a system layer goose
+merges under your own `~/.config/goose/config.yaml` and never writes:
+provider `litellm`, `LITELLM_HOST` pointed at the proxy, the default model
+from `site.yml` (`llm_default_model`), telemetry off — so the first launch
+skips the provider wizard and the consent dialog. Your own choices in
+Settings land in the user file and win. The role also generates a launcher
+shadow in `~/.local/share/applications` so the window binds to its icon
+(the app's Wayland id is `goose`, the vendor entry doesn't say so). Tools
+run without an approval step by default; `GOOSE_MODE: smart_approve` in
+the user file if you'd rather confirm shell commands. Two upstream quirks:
+inside Goose, `uvx`/`npx`/`node` are bundled shims that fetch their own
+toolchains into `~/.config/goose/mcp-hermit` (name absolute paths in
+extension configs if you want the host's), and after the updates role
+installs a new release, quit and relaunch a running Goose.
 
 ### opencode
 

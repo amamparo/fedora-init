@@ -1,6 +1,6 @@
 # Managed by fedora-init (roles/goose) — llm_default_model lives in site.yml;
-# edit it there, not here. goose never writes this file: your own choices
-# (`goose configure`, /model, /mode, the telemetry answer) go to
+# edit it there, not here. Goose never writes this file: your own choices
+# (the desktop's Settings, /model, /mode, the telemetry answer) go to
 # ~/.config/goose/config.yaml and take precedence over everything here.
 #
 # Provider: the local litellm proxy (roles/litellm), keyless on loopback.
@@ -8,9 +8,10 @@
 # anthropic/<model id> for Claude (once the Anthropic key is seeded).
 GOOSE_PROVIDER: litellm
 GOOSE_MODEL: {{ llm_default_model }}
-# Mandatory: with this key absent goose 1.38 falls back to
-# https://api.litellm.ai, not localhost.
+# Mandatory twice over: it is what makes the desktop count litellm as a
+# configured provider (no key needed), and without it the built-in
+# fallback host is upstream's cloud, not localhost.
 LITELLM_HOST: http://127.0.0.1:4000
-# Off, and recorded — an unrecorded choice makes the first `goose session`
-# open a consent prompt.
+# Off, and recorded — an unrecorded choice makes the first launch (and
+# the first `goose session`) open a consent prompt.
 GOOSE_TELEMETRY_ENABLED: false

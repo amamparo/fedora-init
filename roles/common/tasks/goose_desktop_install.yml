@@ -1,0 +1,56 @@
+---
+# Install (or upgrade to) ONE upstream Goose desktop release from its GitHub
+# rpm. Shared by roles/goose (first install) and roles/updates (upgrade) via
+# include_role (name: common, tasks_from: goose_desktop_install), the
+# ollama_install precedent.
+#
+# Parameter: goose_install_tag — the release tag (e.g. v1.51.0). The asset
+# name is deterministic: Goose-<tag minus v>-1.x86_64.rpm (electron-forge's
+# rpm maker: Name "Goose", Release 1, no dist tag — verified on the 1.51.0
+# asset). The standard build, not -vulkan: that variant only swaps the
+# BUNDLED local-inference llama.cpp to its Vulkan backend, irrelevant behind
+# ollama/litellm.
+#
+# Downloaded to a temp file and installed from the PATH, never `dnf5 name:
+# <url>`: the dnf5 module resolves its goal — which for a URL spec means
+# fetching the ~170 MB rpm — BEFORE it looks at check mode, so a fresh
+# `--check` would download it just to simulate. tempfile has no check-mode
+# support and registers no .path under --check, which gates everything
+# below (the claude_code pattern). The rpm is UNSIGNED (rpm -qpi: Signature
+# (none); upstream publishes no checksum file, only a Sigstore attestation
+# that needs an authenticated gh), so disable_gpg_check is permanent here —
+# unlike the RPM Fusion release rpms, no key ever arrives; HTTPS from GitHub
+# is the trust boundary, the claude_desktop "unofficial-squared" class.
+# A newer rpm over an older installed Goose is an Upgrade transaction to
+# dnf5 (the module maps it to Installed); the same version resolves to an
+# empty transaction — which is why callers guard on package_facts and the
+# version compare, keeping converged re-runs offline.
+- name: Install the upstream Goose desktop release {{ goose_install_tag }}
+  block:
+    - name: Create a temp dir for the Goose rpm
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: goose-install.
+      register: goose_tmp
+
+    - name: Download the Goose desktop rpm
+      ansible.builtin.get_url:
+        url: https://github.com/aaif-goose/goose/releases/download/{{ goose_install_tag }}/Goose-{{ goose_install_tag | regex_replace('^v', '') }}-1.x86_64.rpm
+        dest: "{{ goose_tmp.path }}/Goose.rpm"
+        mode: "0644"
+      when: goose_tmp.path is defined
+
+    - name: Install the Goose desktop rpm
+      become: true
+      ansible.builtin.dnf5:
+        name: "{{ goose_tmp.path }}/Goose.rpm"
+        state: present
+        disable_gpg_check: true
+      when: goose_tmp.path is defined
+
+  always:
+    - name: Remove the downloaded rpm and temp dir
+      ansible.builtin.file:
+        path: "{{ goose_tmp.path }}"
+        state: absent
+      when: goose_tmp.path is defined

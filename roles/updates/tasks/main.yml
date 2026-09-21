@@ -82,8 +82,8 @@
   changed_when: "'Nothing to do' not in updates_flatpak.stdout"
 
 # --- the out-of-dnf pieces this repo installs -----------------------------
-# Three things below live outside dnf and have no self-updater worth the
-# name, so "bring the system current" covers them here, presence-guarded
+# Four things below live outside dnf's repos and have no self-updater worth
+# the name, so "bring the system current" covers them here, presence-guarded
 # like fwupd/flatpak above (a machine that never ran their roles skips).
 # Everything network-touching here is the sanctioned exception this role
 # already is. The version/latest probes are read-only and run under --check;
@@ -160,6 +160,56 @@
       'v' ~ ((updates_ollama_version.stdout ~ ' ' ~ updates_ollama_version.stderr)
              | regex_search('[0-9][0-9.]*'))
       != updates_ollama_latest.location | basename
+
+# Goose desktop (roles/goose): an upstream rpm the app cannot self-update
+# (electron-updater's Linux path is AppImage-only). Guarded on the rpm
+# being installed at all — the first run reaches this before the goose role
+# has run. `ansible_facts.packages.Goose[0].version` is "1.51.0", the tag
+# "v1.51.0", hence the 'v' ~ compare, the ollama shape. A pending upgrade
+# is ~170 MB.
+- name: Look up the latest Goose release tag
+  ansible.builtin.uri:
+    url: https://github.com/aaif-goose/goose/releases/latest
+    follow_redirects: none
+    status_code: 302
+  register: updates_goose_latest
+  changed_when: false
+  check_mode: false
+  when: "'Goose' in ansible_facts.packages"
+
+- name: Report a pending Goose upgrade under --check
+  ansible.builtin.debug:
+    msg: >-
+      Goose {{ ansible_facts.packages.Goose[0].version }} is installed and
+      {{ updates_goose_latest.location | basename }} is the latest release —
+      a real run installs it (a ~170 MB download).
+  when:
+    - ansible_check_mode
+    - "'Goose' in ansible_facts.packages"
+    - "'v' ~ ansible_facts.packages.Goose[0].version != updates_goose_latest.location | basename"
+
+- name: Upgrade Goose to the latest release
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: goose_desktop_install
+  vars:
+    goose_install_tag: "{{ updates_goose_latest.location | basename }}"
+  when:
+    - "'Goose' in ansible_facts.packages"
+    - "'v' ~ ansible_facts.packages.Goose[0].version != updates_goose_latest.location | basename"
+
+# rpm replaces /usr/lib/Goose underneath a running Electron app; the live
+# main process keeps its old inodes but any later child spawn (new window,
+# renderer restart) runs the NEW files against the OLD main — the classic
+# "relaunch to update" hazard. The play can't restart a user GUI app, so
+# say so.
+- name: Note that a running Goose must be relaunched after the upgrade
+  ansible.builtin.debug:
+    msg: "Goose was upgraded in place — quit and relaunch it if it is open."
+  when:
+    - not ansible_check_mode
+    - "'Goose' in ansible_facts.packages"
+    - "'v' ~ ansible_facts.packages.Goose[0].version != updates_goose_latest.location | basename"
 
 # litellm (roles/litellm): a venv under /opt with no self-update. uv prints
 # "Installed N packages" on stderr only when something changed ("Checked N
