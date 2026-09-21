@@ -207,8 +207,9 @@
 # Read-only probe, so changed_when: false + check_mode: false — it has to run
 # under --check for the conditionals below to mean anything. ~/.config only:
 # that is where every Chromium/Electron app this repo installs natively keeps
-# its profile. The one flatpak it installs (Podman Desktop, an Electron app
-# under ~/.var/app) lands AFTER this rename in role order, and flatpak's PID
+# its profile. The one Electron flatpak it installs (Podman Desktop, under
+# ~/.var/app; Alpaca is GTK and writes no such lock) lands AFTER this
+# rename in role order, and flatpak's PID
 # namespace makes the host-side liveness check below meaningless for a
 # sandboxed lock (its pid is the sandbox's), so ~/.var/app stays out of
 # scope — the manual fix there is `rm ~/.var/app/<id>/config/*/Singleton*`

@@ -151,6 +151,8 @@
       tags: gimp
     - role: ollama
       tags: ollama
+    - role: alpaca
+      tags: alpaca
     - role: litellm
       tags: litellm
     - role: goose

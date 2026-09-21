@@ -68,7 +68,7 @@ is what `./install.sh <substring>` matches against.
 
 Everything Fedora's Software app would report, applied: all rpm updates,
 firmware via fwupd/LVFS (reboot-staged ones get called out), and flatpak
-updates (Podman Desktop, plus anything you've added). Runs first so the rest
+updates (Podman Desktop and Alpaca, plus anything you've added). Runs first so the rest
 of the play resolves against fresh metadata. It also brings the four
 installs that live outside dnf's repos current: ollama (re-installed from
 the upstream release whenever one moved — a ~1.4 GB download), Goose (the
@@ -141,7 +141,8 @@ stale tags, and only ever clears one whose process is genuinely gone, so a
 browser left open while `./install.sh` runs is untouched and tidies up after
 itself on exit. Flatpak apps are not swept (their lock lives under
 `~/.var/app` and records a sandbox pid): if the Podman Desktop flatpak won't
-start after the rename, close it and `rm ~/.var/app/<id>/config/*/Singleton*`.
+start after the rename, close it and `rm ~/.var/app/<id>/config/*/Singleton*`
+(Alpaca is a GTK app and has no such lock).
 
 Two knock-on effects, both intended: GNOME Settings ▸ System shows **Device
 Name** `thinkpad`, and that's the name phones and headphones see when pairing
@@ -666,6 +667,34 @@ GPU with games and the compositor. Set `ollama_igpu: false` for CPU-only
 (4 threads, the P-cores — 8 is slower). The first bare `ollama` you type
 shows a sign-in/continue-locally screen; "continue locally" is the answer.
 `journalctl -u ollama` logs one line per API request.
+
+### alpaca
+
+There is no official Ollama app for Linux — the desktop app Ollama ships
+is macOS and Windows only, and the Linux download is the server + CLI the
+ollama role already installs. [Alpaca](https://github.com/Jeffser/Alpaca)
+is the client this repo picks instead: a native GNOME (GTK4/libadwaita)
+chat window with a model library that pulls and deletes models *through*
+the system daemon, so a model pulled from Alpaca lands in
+`/var/lib/ollama/models` exactly like `ollama pull` (and shows up for
+litellm and goose straight away; opencode needs the tag added to
+`ollama_models` too). Installed from Flathub (`com.jeffser.Alpaca`, on
+Fedora's stock remote) and kept current by the updates role — the first
+install is a ~1.2 GB download including the GNOME 50 runtime, since the
+Flathub build bundles voice and image extras. App search for "ollama"
+finds it.
+
+The role pre-configures one "Ollama (External)" instance pointing at
+`127.0.0.1:11434` and selects it, so the first launch opens on a chat with
+your models instead of an onboarding guide whose "Create Ollama Instance"
+button would download a second ollama into the sandbox. The seed lands
+only while Alpaca has no instances at all (the same condition that shows
+the guide): edit it under Ctrl+I as you like — edits stick — and if you
+remove it, add your own; delete every instance and the next run seeds it
+again instead of the guide. Don't add an "Ollama (Managed)"
+instance and don't install the `com.jeffser.Alpaca.Plugins.Ollama`
+extension (end-of-life upstream, unused by Alpaca 9):
+both are a second daemon beside the one this repo runs.
 
 ### litellm
 
