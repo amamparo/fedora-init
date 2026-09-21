@@ -682,9 +682,11 @@ apart: `ollama/<tag>` for anything ollama has pulled (a wildcard route —
 (`anthropic/claude-opus-5`…) for Claude. No rpm exists, so it's a python
 venv under `/opt/litellm` built with the stock `uv`, run as a hardened
 systemd service (`litellm.service`, dedicated dynamic user);
-`/etc/litellm/config.yaml` is the routes (models are managed there, not in
-the UI). Health: `curl 127.0.0.1:4000/health/liveliness`. Upgrades ride the
-updates role.
+`/etc/litellm/config.yaml` is the baseline routes and settings; whatever
+you change in the admin UI (models, settings, its own pages — the Chat page
+is off until you switch it on under Settings) is kept in the database and
+layered over that file, so a re-run never undoes it. Health:
+`curl 127.0.0.1:4000/health/liveliness`. Upgrades ride the updates role.
 
 The UI needs a **master key** and a **database**, and the role provides
 both: the key is generated once into `/etc/litellm/litellm.env` (root-only —

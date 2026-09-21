@@ -87,9 +87,14 @@
 # controller-side pieces — the Bitwarden lookup and the client keys under
 # $HOME — run as the user.
 #
-# STORE_MODEL_IN_DB stays off: with it the UI writes settings into the DB,
-# which then wins over config.yaml on every shared key — it would fight the
-# converged /etc/litellm/config.yaml. Models are managed in the config.
+# store_model_in_db is ON (files/config.yaml): the admin UI persists what it
+# changes in the database, deep-merged over config.yaml on every shared key
+# (DB wins, untouched keys keep the file's value). It was off until
+# 2026-09-20 to keep the converged file authoritative, but the UI's own
+# settings — the Chat page toggle among them — live only in the database
+# and their endpoint refuses to write while the flag is off. config.yaml is
+# therefore the baseline the UI layers on, not the whole truth; the file
+# header says so.
 
 # --- toolchain rpms -------------------------------------------------------
 # cli_tools installs uv as part of the CLI baseline; listed here too so

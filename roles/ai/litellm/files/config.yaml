@@ -1,9 +1,11 @@
 # Managed by fedora-init (roles/ai/litellm) — edit there, not here; the role
 # puts this file back. Secrets never go in this file: they live in
-# /etc/litellm/litellm.env and are referenced as os.environ/NAME. Models
-# are managed HERE, not in the admin UI: STORE_MODEL_IN_DB stays off, so the
-# database never overlays these settings (with it on, the DB wins on every
-# key both define).
+# /etc/litellm/litellm.env and are referenced as os.environ/NAME. This file
+# is the BASELINE: with store_model_in_db on (below) the admin UI's changes
+# are stored in the database and deep-merged over it at start and every
+# reload — a key the UI has set wins over the same key here, a key it has
+# never touched stays whatever this file says. Models added in the UI join
+# the routes below rather than replacing them.
 model_list:
   # Every model ollama has pulled, as ollama/<tag> — a wildcard route, so a
   # new `ollama pull` is reachable with no config change. ollama_chat/ (the
@@ -44,3 +46,11 @@ general_settings:
   # once by the role into /etc/litellm/litellm.env. Clients never use it:
   # they get llm_api virtual keys (roles/ai/litellm/tasks/client_key.yml).
   master_key: os.environ/LITELLM_MASTER_KEY
+  # Let the admin UI persist what it changes (models, settings, fallbacks,
+  # its own UI flags) in the database. Required for the UI's settings
+  # pages: PATCH /update/ui_settings — which is how the Chat page is
+  # switched on (`enable_chat_ui`, a DB-only flag with no config or env
+  # form) — refuses with "Set STORE_MODEL_IN_DB=True" while this is off.
+  # Same switch as the STORE_MODEL_IN_DB env var. The precedence this buys
+  # is stated in the header.
+  store_model_in_db: true
