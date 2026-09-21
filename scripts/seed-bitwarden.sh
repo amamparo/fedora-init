@@ -67,9 +67,10 @@ if [[ -z $aws_id && -z $aws_secret && -z $anthropic_key ]]; then
 fi
 
 bw_ensure_installed
-bw_open_session "seeding vault items"
+bw_open_session "seeding vault items"   # unlock/sign-in + sync, re-sign-in on an expired login
 [[ -n ${BW_SESSION:-} ]] || { echo "Bitwarden sign-in failed — nothing written." >&2; exit 1; }
-bw sync >/dev/null   # edit against the current vault, not a stale cache
+# Edits go to the server, so unlike install.sh a cached vault is no use here.
+[[ -n $bw_synced ]] || { echo "The vault could not be synced (offline?) — nothing written." >&2; exit 1; }
 
 # upsert_login NAME USERNAME PASSWORD — an empty field means "leave it alone"
 # (or null on create). Existing items are edited in place, so their id,

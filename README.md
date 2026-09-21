@@ -732,6 +732,9 @@ touched. Two refusals: *creating* `aws` needs both fields (a half item would
 seed a broken credentials file), and an existing item of another type named
 `aws` or `anthropic` must be renamed first — the roles match by name alone.
 A Bitwarden session you already have exported is used and left unlocked.
+If the CLI's stored sign-in has expired (the master password is accepted
+but the sync fails with `invalid_grant`), both this and `./install.sh` sign
+you in again instead of failing.
 `just` alone lists the recipes (`check` runs the safe lint gate).
 
 ## Adding a role

@@ -164,10 +164,10 @@ if ((secrets_due)); then
     # A failed sign-in does NOT abort the run: the play continues without a
     # session and the roles note their pending seed instead — the
     # gh/tailscale non-blocking pattern.
+    # Syncs too (a stale cached vault may still hold the item, so a failed
+    # sync short of an expired sign-in is a warning, not a stop).
     bw_open_session "${secret_roles[*]} fetch secrets from the vault"
-    if [[ -n ${BW_SESSION:-} ]]; then
-        bw sync >/dev/null || true   # a stale cached vault may still hold the item
-    else
+    if [[ -z ${BW_SESSION:-} ]]; then
         echo "warning: Bitwarden sign-in failed — continuing without secrets" >&2
     fi
 fi
