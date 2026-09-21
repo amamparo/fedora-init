@@ -1,0 +1,27 @@
+# Managed by fedora-init (roles/audio/pipewire) — the device list lives in site.yml
+# (pipewire_pro_audio_devices); edit it there, not here.
+#
+# Pins WirePlumber's "Pro Audio" profile on the DAW interfaces: every channel
+# becomes a raw port (AUX0..AUXn, device order, no mixing or resampling)
+# instead of the surround/stereo layout ACP guesses from the USB descriptor.
+# A profile picked by hand (Settings > Sound, `wpctl set-profile`) is
+# remembered in ~/.local/state/wireplumber/default-profile and wins over this
+# rule; `wpctl set-profile <device id> pro-audio` hands control back.
+device.profile.priority.rules = [
+{% for dev in pipewire_pro_audio_devices %}
+  # {{ dev.name }}
+  {
+    matches = [
+      {
+        device.vendor.id = "{{ dev.vendor_id }}"
+        device.product.id = "{{ dev.product_id }}"
+      }
+    ]
+    actions = {
+      update-props = {
+        priorities = [ "pro-audio" ]
+      }
+    }
+  }
+{% endfor %}
+]

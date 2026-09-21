@@ -1,0 +1,285 @@
+---
+# Bring the system current — everything Fedora's Software app would report:
+# rpm updates (dnf), firmware (fwupd/LVFS), and flatpaks when present.
+#
+# This role is the repo's DELIBERATE exception to the zero-network
+# converged-re-run rule: its concern is drift from upstream, which is
+# undetectable offline. It runs first in site.yml so every later role
+# resolves against fresh metadata — stale metadata plus mirror lag once
+# 404'd a package (podman-tui) mid-play.
+
+# The one safe parallelism in a dnf-dominated play: libdnf5 downloads only
+# 3 packages concurrently by default, and every dnf transaction in this
+# repo (this upgrade included) inherits the setting. Bumping it makes the
+# download phase INSIDE each serial dnf step concurrent without touching
+# task order — the transactions themselves can never overlap (one rpm
+# lock). 8 is the sweet spot commonly used with Fedora's mirror network;
+# past ~10 mirrors throttle and gains vanish. First task in the first role
+# so even this play's own upgrade benefits.
+- name: Let dnf download 8 packages in parallel (default 3)
+  become: true
+  community.general.ini_file:
+    path: /etc/dnf/dnf.conf
+    section: main
+    option: max_parallel_downloads
+    value: "8"
+    no_extra_spaces: true
+    mode: "0644"
+
+# update_cache is load-bearing: without it, libdnf5 trusts any cache inside
+# its expiry window, and hours-stale metadata can reference rpms already
+# pruned from mirrors (the podman-tui 404). This is what actually delivers
+# the fresh-metadata promise for the rest of the play.
+# noqa: the whole point of this task is latest.
+- name: Upgrade all rpm packages # noqa: package-latest
+  become: true
+  ansible.builtin.dnf5:
+    name: "*"
+    state: latest
+    update_cache: true
+
+# Firmware via fwupd — the LVFS updates the Software app shows. Guarded on
+# fwupd being installed (Workstation ships it; minimal installs may not).
+# get-updates exit codes, verified on this host: 0 = updates available,
+# 2 = nothing to do.
+- name: Refresh firmware metadata (LVFS)
+  become: true
+  ansible.builtin.command:
+    cmd: fwupdmgr refresh --force
+  changed_when: false
+  when: "'fwupd' in ansible_facts.packages"
+
+- name: Check for firmware updates
+  become: true
+  ansible.builtin.command:
+    cmd: fwupdmgr get-updates
+  register: updates_firmware
+  changed_when: false
+  failed_when: updates_firmware.rc not in [0, 2]
+  when: "'fwupd' in ansible_facts.packages"
+
+- name: Apply firmware updates
+  become: true
+  ansible.builtin.command:
+    cmd: fwupdmgr update --assume-yes --no-reboot-check
+  when: "'fwupd' in ansible_facts.packages and updates_firmware.rc == 0"
+  changed_when: true
+
+- name: Report that firmware updates are staged
+  ansible.builtin.debug:
+    msg: "Firmware updates applied — some only take effect at the next reboot."
+  when: "'fwupd' in ansible_facts.packages and updates_firmware.rc == 0"
+
+# Flatpaks (Workstation ships flatpak): keeps the Podman Desktop flatpak the
+# podman role installs current, plus anything the user added — Software
+# would report those too.
+- name: Update flatpaks
+  become: true
+  ansible.builtin.command:
+    cmd: flatpak update --noninteractive
+  register: updates_flatpak
+  when: "'flatpak' in ansible_facts.packages"
+  changed_when: "'Nothing to do' not in updates_flatpak.stdout"
+
+# --- the out-of-dnf pieces this repo installs -----------------------------
+# Four things below live outside dnf's repos and have no self-updater worth
+# the name, so "bring the system current" covers them here, presence-guarded
+# like fwupd/flatpak above (a machine that never ran their roles skips).
+# Everything network-touching here is the sanctioned exception this role
+# already is. The version/latest probes are read-only and run under --check;
+# the upgrades themselves cannot be simulated (`command` has no check-mode
+# support, and the ollama include's tempfile never registers a path in check
+# mode), so a dry run skips them — the debug below is what tells a dry run
+# that ollama would move.
+
+# ollama (roles/ai/ollama): an upstream release under /usr/local, cut every few
+# days. `ollama --version` reports the RUNNING DAEMON's version when it can
+# reach one ("ollama version is X") and only mentions the binary's own
+# ("Warning: client version is X") when they differ or the daemon is down
+# — so the probe points OLLAMA_HOST at a closed port to force the offline
+# branch, which always prints the on-disk binary's version, rc 0, all on
+# stdout. The first digit run in that output is the version (no
+# backslashes in the regex on purpose: Jinja string literals decode
+# escapes, so a '\1' backref is chr(1) by the time the filter sees it).
+# Latest comes from GitHub's releases/latest redirect (no API rate limit);
+# when it differs, the same include roles/ai/ollama uses re-installs and
+# restarts the daemon. 1.36 GiB per upgrade (the bundle has no CPU-only
+# variant) — the price of tracking upstream, accepted in roles/ai/ollama.
+- name: Probe for the ollama launcher
+  ansible.builtin.stat:
+    path: /usr/local/bin/ollama
+  register: updates_ollama_bin
+  check_mode: false
+
+- name: Read the installed ollama binary's version
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/ollama
+      - --version
+  environment:
+    OLLAMA_HOST: 127.0.0.1:1
+  register: updates_ollama_version
+  changed_when: false
+  check_mode: false
+  when: updates_ollama_bin.stat.exists
+
+- name: Look up the latest ollama release tag
+  ansible.builtin.uri:
+    url: https://github.com/ollama/ollama/releases/latest
+    follow_redirects: none
+    status_code: 302
+  register: updates_ollama_latest
+  changed_when: false
+  check_mode: false
+  when: updates_ollama_bin.stat.exists
+
+- name: Report a pending ollama upgrade under --check
+  ansible.builtin.debug:
+    msg: >-
+      ollama {{ (updates_ollama_version.stdout ~ ' ' ~ updates_ollama_version.stderr)
+                | regex_search('[0-9][0-9.]*') }} is installed and
+      {{ updates_ollama_latest.location | basename }} is the latest release —
+      a real run re-installs it (a ~1.4 GB download).
+  when:
+    - ansible_check_mode
+    - updates_ollama_bin.stat.exists
+    - >-
+      'v' ~ ((updates_ollama_version.stdout ~ ' ' ~ updates_ollama_version.stderr)
+             | regex_search('[0-9][0-9.]*'))
+      != updates_ollama_latest.location | basename
+
+- name: Upgrade ollama to the latest release
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: ollama_install
+  vars:
+    ollama_install_tag: "{{ updates_ollama_latest.location | basename }}"
+  when:
+    - updates_ollama_bin.stat.exists
+    - >-
+      'v' ~ ((updates_ollama_version.stdout ~ ' ' ~ updates_ollama_version.stderr)
+             | regex_search('[0-9][0-9.]*'))
+      != updates_ollama_latest.location | basename
+
+# Goose desktop (roles/ai/goose): an upstream rpm the app cannot self-update
+# (electron-updater's Linux path is AppImage-only). Guarded on the rpm
+# being installed at all — the first run reaches this before the goose role
+# has run. `ansible_facts.packages.Goose[0].version` is "1.51.0", the tag
+# "v1.51.0", hence the 'v' ~ compare, the ollama shape. A pending upgrade
+# is ~170 MB.
+- name: Look up the latest Goose release tag
+  ansible.builtin.uri:
+    url: https://github.com/aaif-goose/goose/releases/latest
+    follow_redirects: none
+    status_code: 302
+  register: updates_goose_latest
+  changed_when: false
+  check_mode: false
+  when: "'Goose' in ansible_facts.packages"
+
+- name: Report a pending Goose upgrade under --check
+  ansible.builtin.debug:
+    msg: >-
+      Goose {{ ansible_facts.packages.Goose[0].version }} is installed and
+      {{ updates_goose_latest.location | basename }} is the latest release —
+      a real run installs it (a ~170 MB download).
+  when:
+    - ansible_check_mode
+    - "'Goose' in ansible_facts.packages"
+    - "'v' ~ ansible_facts.packages.Goose[0].version != updates_goose_latest.location | basename"
+
+- name: Upgrade Goose to the latest release
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: goose_desktop_install
+  vars:
+    goose_install_tag: "{{ updates_goose_latest.location | basename }}"
+  when:
+    - "'Goose' in ansible_facts.packages"
+    - "'v' ~ ansible_facts.packages.Goose[0].version != updates_goose_latest.location | basename"
+
+# rpm replaces /usr/lib/Goose underneath a running Electron app; the live
+# main process keeps its old inodes but any later child spawn (new window,
+# renderer restart) runs the NEW files against the OLD main — the classic
+# "relaunch to update" hazard. The play can't restart a user GUI app, so
+# say so.
+- name: Note that a running Goose must be relaunched after the upgrade
+  ansible.builtin.debug:
+    msg: "Goose was upgraded in place — quit and relaunch it if it is open."
+  when:
+    - not ansible_check_mode
+    - "'Goose' in ansible_facts.packages"
+    - "'v' ~ ansible_facts.packages.Goose[0].version != updates_goose_latest.location | basename"
+
+# litellm (roles/ai/litellm): a venv under /opt with no self-update. uv prints
+# "Installed N packages" on stderr only when something changed ("Checked N
+# packages" otherwise) — verified — and the proxy reads its code once, so a
+# change needs a restart (this role's own handler, named distinctly).
+# Guarded on the UNIT, not the venv: the litellm role writes the unit only
+# after the venv, the prisma fetch/generate and the PostgreSQL setup all
+# succeeded, so a venv left by a run that aborted in any of those must not
+# trigger an upgrade whose restart handler would hard-fail on a unit
+# systemd has never seen.
+- name: Probe for the litellm unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/litellm.service
+  register: updates_litellm_unit
+  check_mode: false
+
+- name: Upgrade litellm in its venv
+  become: true
+  ansible.builtin.command:
+    argv:
+      - uv
+      - pip
+      - install
+      - --python
+      - /opt/litellm/bin/python
+      - --compile-bytecode
+      - --upgrade
+      - litellm[proxy]
+  register: updates_litellm
+  changed_when: "'Installed' in updates_litellm.stderr"
+  when: updates_litellm_unit.stat.exists
+  notify: Restart litellm after upgrade
+
+# A new litellm usually ships a new schema.prisma: the migrations apply
+# themselves at the restart, but the generated client must be rebuilt by
+# us (offline once the engines are cached) — the shared include is
+# cmp-gated, so it is a no-op when the schema didn't move.
+- name: Regenerate the Prisma client if litellm's schema changed
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: litellm_prisma_generate
+  when: updates_litellm_unit.stat.exists
+
+# opencode (roles/ai/opencode, OpenCode 2): its updater only notifies by
+# default, so `opencode upgrade` is the upgrade. `--method curl` pins the
+# install method: when detection fails the command blocks on an
+# interactive "Install anyways?" prompt even with stdin closed — the
+# Ansible-hang class (verified on V1; V2 has the same prompt code). The
+# V2 path runs the vendor script with --no-modify-path itself; the PATH
+# below is belt-and-braces against the V1 script's ~/.zshrc append (the
+# zshrc has the dir too, but only from the next login on). Output when
+# current: "OpenCode upgrade skipped: X is already installed"; a FAILED
+# upgrade exits 0 with "Upgrade failed" in stdout (verified), hence the
+# explicit failed_when, and only "Upgrade complete" counts as changed.
+- name: Probe for opencode
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.opencode/bin/opencode"
+  register: updates_opencode_bin
+  check_mode: false
+
+- name: Upgrade opencode
+  ansible.builtin.command:
+    argv:
+      - "{{ lookup('env', 'HOME') }}/.opencode/bin/opencode"
+      - upgrade
+      - --method
+      - curl
+  environment:
+    PATH: "{{ lookup('env', 'HOME') }}/.opencode/bin:{{ lookup('env', 'PATH') }}"
+  register: updates_opencode
+  changed_when: "'Upgrade complete' in updates_opencode.stdout"
+  failed_when: updates_opencode.rc != 0 or 'Upgrade failed' in updates_opencode.stdout
+  when: updates_opencode_bin.stat.exists

@@ -101,7 +101,8 @@ if ! rpm -q "${pkgs[@]}" >/dev/null 2>&1; then
 fi
 
 # Map bare arguments onto role tags by substring (tags are role dir names
-# with underscores as hyphens; see site.yml). Dash arguments pass through —
+# with underscores as hyphens, whatever group dir they sit in; see
+# site.yml). Dash arguments pass through —
 # including the separate value word of options that take one.
 tags=() passthru=() expect_value=0
 for arg in "$@"; do
@@ -122,9 +123,11 @@ for arg in "$@"; do
         continue
     fi
     matched=0
-    for d in roles/*/; do
+    for d in roles/*/*/; do
+        # Roles sit one level down, under their group (roles/<group>/<role>);
+        # the file test skips roles/common's tasks/ dir, which is not a role.
+        [[ -f "$d/tasks/main.yml" ]] || continue
         role="$(basename "$d")"
-        [[ $role == common ]] && continue
         tag="${role//_/-}"
         [[ $tag == *"$arg"* ]] && { tags+=("$tag"); matched=1; }
     done

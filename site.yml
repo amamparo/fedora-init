@@ -8,7 +8,9 @@
 #
 # Roles run in the old NN-module order. Tags carry the old module names, so
 # `./install.sh battery` still works (install.sh substring-matches bare args
-# against role names).
+# against role names). The roles are grouped on disk by context —
+# roles/{system,desktop,dev,ai,audio}/<role> — but named bare here:
+# ansible.cfg's roles_path lists every group dir.
 - name: fedora-init
   hosts: localhost
   gather_facts: false
@@ -25,7 +27,7 @@
     gnome_extensions_enabled:
       - rectangle@amamparo
       - no-overview@amamparo
-    # USB audio interfaces roles/pipewire pins to WirePlumber's "Pro Audio"
+    # USB audio interfaces roles/audio/pipewire pins to WirePlumber's "Pro Audio"
     # profile (every channel a raw port, AUX0..n in device order) — ids as
     # `lsusb` prints them; the name only labels the rendered rule. Add an
     # interface here, never in the template.
@@ -37,8 +39,8 @@
     # frames/rate. 128 = 2.7 ms, verified xrun-free on the mini; 256 is the
     # next step if a session ever crackles.
     pipewire_jack_latency: 128/48000
-    # --- the local LLM stack: roles/ollama -> litellm -> goose/opencode ----
-    # Models roles/ollama pulls (ollama.com/library tags; a bare name means
+    # --- the local LLM stack: roles/ai/ollama -> litellm -> goose/opencode ----
+    # Models roles/ai/ollama pulls (ollama.com/library tags; a bare name means
     # :latest). Each is reachable through litellm as ollama/<tag> and is
     # listed in opencode's model picker. Multi-GB one-time downloads:
     # qwen3-coder:30b is 19 GB — a 30B MoE with 3B active parameters, so it
@@ -52,14 +54,14 @@
     # model. Agents want 64k+ per upstream's docs; raise it if RAM allows.
     llm_local_context: 32768
     # Let ollama use the Intel iGPU through Vulkan (OLLAMA_IGPU_ENABLE).
-    # Measured on this machine (roles/ollama has the numbers): ~10x the
+    # Measured on this machine (roles/ai/ollama has the numbers): ~10x the
     # prompt-processing speed and ~2x the generation speed of the CPU path,
     # coherent output. Costs: inference and the desktop share the GPU (a
     # game and a model visibly fight), and a load that happens while RAM is
     # busy may land only partly on the GPU (`ollama ps` says). false = CPU.
     ollama_igpu: true
     # Anthropic models litellm routes as anthropic/<id> (key from Bitwarden,
-    # roles/litellm) and opencode lists. context/output are what opencode
+    # roles/ai/litellm) and opencode lists. context/output are what opencode
     # budgets against (limit.context) and sends as max_tokens (limit.output);
     # ids and windows per Anthropic's current model table.
     anthropic_models:

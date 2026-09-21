@@ -3,8 +3,8 @@
 # fedora-init — `just seed-bitwarden`: upsert the vault items the roles read.
 #
 # The roles that seed secrets fetch them from these Bitwarden login items:
-#   aws        username = AWS Access Key ID, password = Secret Access Key   (roles/aws)
-#   anthropic  password = Anthropic API key                                (roles/litellm)
+#   aws        username = AWS Access Key ID, password = Secret Access Key   (roles/dev/aws)
+#   anthropic  password = Anthropic API key                                (roles/ai/litellm)
 #
 # Values come from the environment — SEED_AWS_ACCESS_KEY_ID,
 # SEED_AWS_SECRET_ACCESS_KEY, SEED_ANTHROPIC_API_KEY — or, when a variable is

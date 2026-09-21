@@ -1,6 +1,9 @@
 # Shared install-a-bundled-GNOME-extension steps. Callers include this with:
 #   ext_uuid:        extension uuid, e.g. rectangle@amamparo
-#   ext_role:        role whose files/ holds the extension source
+#   ext_src:         absolute dir of the extension source in the caller's
+#                    files/ — set with set_fact from the caller's role_path
+#                    BEFORE the include: vars on include_role are templated
+#                    lazily, inside this role, where role_path is common's
 #   ext_has_schemas: whether schemas/ exists and needs glib-compile-schemas
 #
 # Wayland can't hot-reload GNOME Shell: changes take effect at next login.
@@ -30,7 +33,7 @@
 #                                re-compile — forever
 - name: "Mirror into the user extension dir: {{ ext_uuid }}"
   ansible.posix.synchronize:
-    src: "{{ playbook_dir }}/roles/{{ ext_role }}/files/{{ ext_uuid }}/"
+    src: "{{ ext_src }}/"
     dest: "{{ lookup('env', 'HOME') }}/.local/share/gnome-shell/extensions/{{ ext_uuid }}/"
     delete: true
     recursive: true

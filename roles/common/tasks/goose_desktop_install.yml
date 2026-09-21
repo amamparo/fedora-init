@@ -1,6 +1,6 @@
 ---
 # Install (or upgrade to) ONE upstream Goose desktop release from its GitHub
-# rpm. Shared by roles/goose (first install) and roles/updates (upgrade) via
+# rpm. Shared by roles/ai/goose (first install) and roles/system/updates (upgrade) via
 # include_role (name: common, tasks_from: goose_desktop_install), the
 # ollama_install precedent.
 #

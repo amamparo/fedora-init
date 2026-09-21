@@ -1,12 +1,12 @@
 ---
 # Fetch ONE upstream ollama release and lay it out the way ollama.com's
 # install.sh does — /usr/local/bin/ollama + /usr/local/lib/ollama — minus
-# the CUDA runtimes an Intel machine can never load. Shared by roles/ollama
-# (first install) and roles/updates (upgrade), the gnome_extension.yml
+# the CUDA runtimes an Intel machine can never load. Shared by roles/ai/ollama
+# (first install) and roles/system/updates (upgrade), the gnome_extension.yml
 # precedent for a cross-role include.
 #
 # Parameter: ollama_install_tag — the GitHub release tag (e.g. v0.34.2).
-# Callers resolve "latest" themselves (see roles/ollama for the redirect
+# Callers resolve "latest" themselves (see roles/ai/ollama for the redirect
 # trick) because the updates role has to compare it against the installed
 # version BEFORE deciding to include this file. Included via include_role
 # (name: common, tasks_from: ollama_install), like gnome_extension.
@@ -64,7 +64,7 @@
       when: ollama_tmp.path is defined
 
     # An upgrade must land on the running daemon; a first install has no
-    # unit yet (roles/ollama writes and starts it after this include), and
+    # unit yet (roles/ai/ollama writes and starts it after this include), and
     # this include can't notify that role's handler from the updates role.
     - name: Probe for the ollama unit (absent until the first install)
       ansible.builtin.stat:

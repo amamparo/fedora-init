@@ -111,7 +111,7 @@ at startup, so without that restart the machine keeps answering as
 `fedora.local` until the next reboot.
 
 To call it something else, change the one name in
-`roles/hostname/tasks/main.yml`. Renaming it in GNOME Settings instead works
+`roles/system/hostname/tasks/main.yml`. Renaming it in GNOME Settings instead works
 until the next `./install.sh`, which puts it back — the name lives in the
 role.
 
@@ -170,7 +170,7 @@ API with TLP as the backend. Verify with `sudo tlp-stat -s`.
 ### window-snapping
 
 Installs the bundled GNOME Shell extension
-`roles/window_snapping/files/rectangle@amamparo/` (~120 lines, no
+`roles/desktop/window_snapping/files/rectangle@amamparo/` (~120 lines, no
 third-party deps) and one native keybinding. "Cmd" on a PC keyboard is the
 **Super** (Windows) key.
 
@@ -191,12 +191,12 @@ The arrows also snap straight out of a maximized (or fullscreen) window —
 Super+Alt+F then Super+Alt+← goes directly to the left half. Maximize fills
 the work area but keeps the top bar, and Alt+F10 (its stock binding) still
 works. Prefer true fullscreen? See the comment in
-`roles/window_snapping/tasks/main.yml`.
+`roles/desktop/window_snapping/tasks/main.yml`.
 
 ### zsh
 
 Installs zsh + [oh-my-zsh](https://ohmyz.sh) (shallow git clone, never
-auto-updated afterwards), drops in `roles/zsh/files/zshrc` (robbyrussell
+auto-updated afterwards), drops in `roles/dev/zsh/files/zshrc` (robbyrussell
 theme, `plugins=(git)` only), and makes zsh the login shell. A pre-existing
 `~/.zshrc` that differs is backed up once to `~/.zshrc.pre-fedora-init`.
 
@@ -239,7 +239,7 @@ pager: `git diff`/`show`/`blame` render with syntax highlighting,
 within-line change emphasis, and `n`/`N` to jump between files. Terminal
 only — scripts and tools see plain git output. The pager settings are
 repo-declared (same class as the aws region defaults): edit them in
-`roles/git_workspace/tasks/main.yml`, not with `git config`, which a later
+`roles/dev/git_workspace/tasks/main.yml`, not with `git config`, which a later
 run would revert.
 
 ### github-cli
@@ -254,7 +254,7 @@ doesn't contain "gh").
 
 The AWS CLI v2 from Fedora's own repos, with `~/.aws` set up the way
 `aws configure` would: region/output defaults in `~/.aws/config` (edit them
-in `roles/aws/tasks/main.yml` — the role puts them back if changed
+in `roles/dev/aws/tasks/main.yml` — the role puts them back if changed
 elsewhere), and the access keys seeded into `~/.aws/credentials` (0600)
 from your **Bitwarden** vault. install.sh signs in on the terminal (master
 password + TOTP; the Bitwarden cloud sometimes also asks for your personal
@@ -301,7 +301,7 @@ name, delete `~/.local/share/applications/brave-browser.desktop` and drop the
 task.
 
 The app icon is swapped for a Netscape-styled Brave lion
-(`roles/brave/files/icons/`, with the unscaled master kept beside the
+(`roles/desktop/brave/files/icons/`, with the unscaled master kept beside the
 installed sizes). It's installed into `~/.local/share/icons/hicolor`, which
 overrides the icon *theme* rather than naming a file in the launcher entry —
 so the new mark is used everywhere the icon appears, windows and
@@ -314,7 +314,7 @@ is what makes it survive `dnf upgrade`. To go back to the stock mark, delete
 
 The handful of desktop settings that differ from stock: dark mode, battery
 percentage, minimize/maximize window buttons, empty dock, touchpad speed,
-the wallpaper (`roles/gnome_prefs/files/amber-d.jxl`, staged into
+the wallpaper (`roles/desktop/gnome_prefs/files/amber-d.jxl`, staged into
 `~/.local/share/backgrounds` and set for both light and dark), and the
 display config: 1680×1050 with a variable refresh rate at 100% scale (the
 panel is 1920×1200 and Fedora defaults it to 125%). None of those three is a
@@ -322,14 +322,14 @@ gsettings key — they live in `monitors.xml` and are applied via mutter's
 D-Bus API, laptop panel only, so run it undocked or set docked layouts in
 Settings. The playbook owns those three: a resolution, refresh rate or scale
 picked by hand in Settings ▸ Displays is put back on the next run, so change
-them in `roles/gnome_prefs/tasks/main.yml` instead. Runs as the desktop
+them in `roles/desktop/gnome_prefs/tasks/main.yml` instead. Runs as the desktop
 user — no privilege escalation.
 
 ### ghostty
 
 [Ghostty](https://ghostty.org) as the terminal, from the COPR its own
 install docs point Fedora at, themed Moonfly (edit
-`roles/ghostty/files/config` — it's repo-owned). Fedora's stock Ptyxis is
+`roles/desktop/ghostty/files/config` — it's repo-owned). Fedora's stock Ptyxis is
 removed once ghostty is in place, so it's gone from app search and
 launching entirely; searching "terminal" finds Ghostty (its desktop entry
 ships the keyword).
@@ -338,7 +338,7 @@ ships the keyword).
 
 GNOME opens the Activities overview at every login and has no setting to
 turn that off. Installs the second bundled micro-extension
-(`roles/no_overview/files/no-overview@amamparo/`, ~10 lines), which hides
+(`roles/desktop/no_overview/files/no-overview@amamparo/`, ~10 lines), which hides
 the overview the moment session startup completes, so logins land on the
 desktop. On GNOME 50 the overview still *flashes* briefly — the shell
 starts its login animation before extensions load, so hiding it is the
@@ -416,7 +416,7 @@ keyring in Seahorse (`sudo dnf install seahorse`).
 ### vscode
 
 VS Code from [Microsoft's official repo](https://code.visualstudio.com/docs/setup/linux)
-(`roles/vscode/files/vscode.repo`, the documented content verbatim,
+(`roles/dev/vscode/files/vscode.repo`, the documented content verbatim,
 gpg-verified). Updates then arrive with normal `dnf upgrade`.
 
 ### claude-code
@@ -546,7 +546,7 @@ the 60-day evaluation starts on first run; buy a license when it fits.
   REAPER's built-in *Default_7.0_theme_adjuster* script.
 
   To update it: download the current package from Reapertips, then replace
-  `roles/reaper/files/Reapertips Theme.ReaperThemeZip` and
+  `roles/audio/reaper/files/Reapertips Theme.ReaperThemeZip` and
   `reapertips-license.txt` from it. Diff the rest before touching it — on the
   v1.9 → v1.93b update every other asset was byte-identical. Two traps: the
   `RT_`-prefixed icons and *all* the track icons come from the separate
@@ -773,7 +773,11 @@ safe lint gate, `litellm-master-key` prints the admin UI password.
 
 ## Adding a role
 
-Drop `roles/<name>/` with a `tasks/main.yml` and add it to `site.yml` —
+Roles live under `roles/<group>/<name>/` — `system`, `desktop`, `dev`,
+`ai` or `audio`; `site.yml`, the tags and `./install.sh <substring>` all
+use the bare role name. Those five groups are the ones `roles_path` in
+`ansible.cfg` lists, so a new group needs an entry there too. Drop
+`roles/<group>/<name>/` with a `tasks/main.yml` and add it to `site.yml` —
 roles run in the order listed there, tagged with the role name
 (underscores become hyphens). Conventions, in brief (CLAUDE.md has the full
 contributor rules):
@@ -787,5 +791,5 @@ contributor rules):
   must do zero network work
 - `become: true` per task, only for system mutations; anything touching the
   user session (dconf, `$HOME`, session D-Bus) runs as the user
-- static assets live in `roles/<name>/files/`
+- static assets live in `roles/<group>/<name>/files/`
 - lint with `ansible-lint --offline` (`just check` runs the whole safe gate) before committing

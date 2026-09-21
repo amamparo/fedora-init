@@ -1,0 +1,46 @@
+# Managed by fedora-init (roles/ai/litellm) — edit there, not here; the role
+# puts this file back. Secrets never go in this file: they live in
+# /etc/litellm/litellm.env and are referenced as os.environ/NAME. Models
+# are managed HERE, not in the admin UI: STORE_MODEL_IN_DB stays off, so the
+# database never overlays these settings (with it on, the DB wins on every
+# key both define).
+model_list:
+  # Every model ollama has pulled, as ollama/<tag> — a wildcard route, so a
+  # new `ollama pull` is reachable with no config change. ollama_chat/ (the
+  # /api/chat backend) is the prefix that carries native tool calling; plain
+  # ollama/ goes to /api/generate and only emulates tools via JSON mode.
+  # Context length is set server-side (OLLAMA_CONTEXT_LENGTH in the unit).
+  # reasoning_effort is dropped on the way in: litellm maps it to ollama's
+  # `think: true`, which ollama rejects with a 400 for a model without the
+  # thinking capability (qwen3-coder), and OpenCode 2 sends it on every
+  # session-title request. Thinking-capable models think by default on
+  # ollama anyway, so nothing is lost. drop_params (below) already covers
+  # the params ollama_chat never supported, such as OpenCode 2's `store`.
+  - model_name: "ollama/*"
+    litellm_params:
+      model: "ollama_chat/*"
+      api_base: "http://127.0.0.1:11434"
+      additional_drop_params: ["reasoning_effort"]
+  # Anthropic, as anthropic/<model id> (anthropic/claude-opus-5, ...). With
+  # the env file absent the proxy still starts and these routes answer with
+  # a clean AuthenticationError (verified on 1.102.0).
+  - model_name: "anthropic/*"
+    litellm_params:
+      model: "anthropic/*"
+      api_key: os.environ/ANTHROPIC_API_KEY
+litellm_settings:
+  # Drop OpenAI params a backend doesn't support instead of erroring.
+  drop_params: true
+  # Make /v1/models and /model/info list what ollama has actually pulled and
+  # what Anthropic actually serves (by asking them) instead of the static
+  # cost-map guess ("ollama/llama2") — goose's model list reads /model/info.
+  check_provider_endpoint: true
+  # Never download HuggingFace tokenizers into $HOME; count tokens with the
+  # bundled tiktoken for every model.
+  disable_hf_tokenizer_download: true
+general_settings:
+  # The master key gates every endpoint but the health probes, signs the
+  # admin UI's sessions and IS the UI password (user `admin`). Generated
+  # once by the role into /etc/litellm/litellm.env. Clients never use it:
+  # they get llm_api virtual keys (roles/ai/litellm/tasks/client_key.yml).
+  master_key: os.environ/LITELLM_MASTER_KEY

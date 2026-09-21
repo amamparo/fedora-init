@@ -1,6 +1,6 @@
 ---
 # Regenerate litellm's Prisma client when its schema changed. Shared by
-# roles/litellm (first install) and roles/updates (after `uv pip install
+# roles/ai/litellm (first install) and roles/system/updates (after `uv pip install
 # --upgrade`), via include_role (name: common, tasks_from:
 # litellm_prisma_generate).
 #
@@ -21,7 +21,7 @@
 # fetched — and a generate there would abort the play with "No module
 # named prisma" (caught in review). rc 0 = client current, 1 = schema
 # differs, 2 = no generated client yet, 3 = prisma or the CLI missing
-# (nothing to do here — roles/litellm installs them), anything else = no
+# (nothing to do here — roles/ai/litellm installs them), anything else = no
 # venv at all (a fresh --check; stdout empty). partials.py is checked
 # alongside the schema because the generator copies schema.prisma in
 # FIRST and renders partials.py LAST (its DEFERRED_TEMPLATES), and its
