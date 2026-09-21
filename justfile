@@ -25,7 +25,7 @@ install *args:
 seed-bitwarden:
     scripts/seed-bitwarden.sh
 
-# The litellm admin UI (http://litellm.localhost:4000/ui) logs in as
+# The litellm admin UI (http://litellm.localhost/ui) logs in as
 # `admin` with the master key, which lives root-only in
 # /etc/litellm/litellm.env.
 

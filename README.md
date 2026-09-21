@@ -671,8 +671,11 @@ shows a sign-in/continue-locally screen; "continue locally" is the answer.
 
 [LiteLLM](https://docs.litellm.ai) proxy — one OpenAI-compatible endpoint,
 `http://127.0.0.1:4000/v1`, in front of ollama and Anthropic, with its
-**admin UI at `http://litellm.localhost:4000/ui`** (the `.localhost` name
-resolves to loopback everywhere with no configuration). goose and
+**admin UI at `http://litellm.localhost/ui`** (the `.localhost` name
+resolves to loopback everywhere with no configuration; port 80 is a
+systemd socket handing connections to `systemd-socket-proxyd`, which
+forwards to :4000 — no reverse-proxy package, and no TLS because browsers
+already treat `*.localhost` as a secure context over plain http). goose and
 opencode talk only to it, so a local model and Claude are one model-name
 apart: `ollama/<tag>` for anything ollama has pulled (a wildcard route —
 `ollama pull` something new and it's reachable), `anthropic/<id>`

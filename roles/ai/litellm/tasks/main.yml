@@ -1,7 +1,7 @@
 ---
 # LiteLLM proxy — ONE OpenAI-compatible endpoint, 127.0.0.1:4000, in front
 # of the local ollama (previous role) and Anthropic's API (key from
-# Bitwarden), with its ADMIN UI at http://litellm.localhost:4000/ui. goose
+# Bitwarden), with its ADMIN UI at http://litellm.localhost/ui. goose
 # and opencode (the next two roles) speak only to this: switching a tool
 # between a local model and Claude is a model name, not a reconfiguration,
 # and any new backend is a route here rather than a per-tool setup.
@@ -518,10 +518,32 @@
     - lookup('env', 'BW_SESSION') | length == 0
     - not ansible_check_mode
 
+# --- port 80: http://litellm.localhost ------------------------------------
+# A socket unit on loopback:80 plus systemd's own socket-proxyd forwarding
+# to :4000 (files/litellm-http.{socket,service} explain the pieces) — no
+# reverse-proxy package, no TLS (browsers treat *.localhost as a secure
+# context over plain http). The socket is what gets enabled; the service
+# is socket-activated. Both notify the http handler, which daemon-reloads
+# and restarts the SOCKET (restarting the socket also stops a running
+# forwarder, so the service picks up its own changes on the next connect).
+- name: Install the litellm port-80 units
+  become: true
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /etc/systemd/system/{{ item }}
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - litellm-http.socket
+    - litellm-http.service
+  register: litellm_http_units
+  notify: Restart litellm-http
+
 # --- the service ----------------------------------------------------------
-# The restart handler daemon-reloads first; run it now so the enable/start
-# below sees the unit.
-- name: Flush handlers so the new unit is loaded before it is started
+# The restart handlers daemon-reload first; run them now so the enable/start
+# below sees the units.
+- name: Flush handlers so the new units are loaded before they are started
   ansible.builtin.meta: flush_handlers
 
 # The battery gate in its brave/vscode form: on a fresh --check the UNIT is
@@ -553,6 +575,30 @@
   changed_when: false
   check_mode: false
   when: not (ansible_check_mode and (litellm_unit is changed or litellm_start is changed))
+
+# The socket, not the service (socket-activated). Same fresh-check gate.
+- name: Enable and start the litellm port-80 socket
+  become: true
+  ansible.builtin.systemd_service:
+    name: litellm-http.socket
+    enabled: true
+    state: started
+  when: not (ansible_check_mode and litellm_http_units is changed)
+
+# Through the forwarder this time: proves the socket, the activation and
+# the Host passthrough in one request.
+- name: Wait for litellm to answer on http://litellm.localhost
+  ansible.builtin.uri:
+    url: http://litellm.localhost/health/liveliness
+  register: litellm_http_health
+  until: litellm_http_health.status == 200
+  retries: 15
+  delay: 1
+  changed_when: false
+  check_mode: false
+  when:
+    - (litellm_health.status | default(0)) == 200
+    - not (ansible_check_mode and litellm_http_units is changed)
 
 # --- client keys ----------------------------------------------------------
 # The master key is read back from the root-only env file (become on the
@@ -588,7 +634,7 @@
 - name: Report the admin UI
   ansible.builtin.debug:
     msg: >-
-      LiteLLM admin UI: http://litellm.localhost:4000/ui — user `admin`,
+      LiteLLM admin UI: http://litellm.localhost/ui — user `admin`,
       password = the master key (`just litellm-master-key`). Per-client
       virtual keys for {{ litellm_clients | join(', ') }} live in
       ~/.config/litellm/keys/ and show up under Virtual Keys.

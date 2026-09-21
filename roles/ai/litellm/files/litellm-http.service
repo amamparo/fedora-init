@@ -1,0 +1,28 @@
+# Managed by fedora-init (roles/ai/litellm).
+#
+# The port-80 forwarder behind litellm-http.socket: systemd's own
+# socket-proxyd, which ships with the systemd rpm, streams each accepted
+# connection to the proxy on 127.0.0.1:4000 byte for byte (the Host header
+# arrives intact, so litellm's UI redirects come out as
+# http://litellm.localhost/...). Socket-activated, never enabled itself;
+# exits when idle and is respawned by the socket. No TLS: browsers treat
+# *.localhost as a secure context over plain http, so the UI needs none.
+[Unit]
+Description=LiteLLM port-80 forwarder (systemd-socket-proxyd to 127.0.0.1:4000)
+Requires=litellm-http.socket litellm.service
+After=litellm-http.socket litellm.service
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=1min 127.0.0.1:4000
+DynamicUser=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+NoNewPrivileges=yes

@@ -1,0 +1,17 @@
+# Managed by fedora-init (roles/ai/litellm).
+#
+# http://litellm.localhost/ui without the :4000 — port 80 on BOTH loopback
+# addresses (resolved synthesizes *.localhost as ::1 first, then 127.0.0.1;
+# listening only on v4 would cost every connection one refused attempt),
+# opened by systemd as root and handed to the unprivileged forwarder in
+# litellm-http.service on first connect. Clients keep talking to :4000
+# directly; this is for the browser.
+[Unit]
+Description=LiteLLM admin UI on port 80 (http://litellm.localhost)
+
+[Socket]
+ListenStream=127.0.0.1:80
+ListenStream=[::1]:80
+
+[Install]
+WantedBy=sockets.target
