@@ -70,9 +70,9 @@
     msg: "Firmware updates applied — some only take effect at the next reboot."
   when: "'fwupd' in ansible_facts.packages and updates_firmware.rc == 0"
 
-# Flatpaks (Workstation ships flatpak): keeps the flatpaks the podman
-# (Podman Desktop) and alpaca roles install current, plus anything the user
-# added — Software would report those too.
+# Flatpaks (Workstation ships flatpak): keeps the Podman Desktop flatpak the
+# podman role installs current, plus anything the user added — Software
+# would report those too.
 - name: Update flatpaks
   become: true
   ansible.builtin.command:

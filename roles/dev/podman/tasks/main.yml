@@ -57,8 +57,7 @@
 # (configured with a filter file that has read `# Unfiltered` since F38)
 # already exposes io.podman_desktop.PodmanDesktop (verified:
 # `flatpak remote-ls flathub` lists it), so there is no remote to add and no
-# filter to lift. The first flatpak this repo installed (alpaca is the
-# other): the updates role's
+# filter to lift. The first flatpak this repo installs: the updates role's
 # `flatpak update` keeps it current. The module runs `flatpak list --system`
 # before touching anything, so a converged re-run stays offline. System
 # scope + become like every other flatpak under /var/lib/flatpak; guarded on
