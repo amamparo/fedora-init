@@ -66,6 +66,13 @@
       - { id: claude-opus-5, name: Claude Opus 5, context: 1000000, output: 64000 }
       - { id: claude-sonnet-5, name: Claude Sonnet 5, context: 1000000, output: 64000 }
       - { id: claude-haiku-4-5, name: Claude Haiku 4.5, context: 200000, output: 64000 }
+    # Clients the litellm role mints a virtual key for (key_alias = the
+    # name, stored in ~/.config/litellm/keys/<name>; the goose and opencode
+    # roles read theirs from there). Each shows up as its own Virtual Key in
+    # the admin UI, with its own spend and logs.
+    litellm_clients:
+      - goose
+      - opencode
     # The litellm route goose and opencode start on (their seeded defaults;
     # after the seed their config files are theirs to change). Local by
     # default: free and offline. anthropic/claude-opus-5 is the other obvious

@@ -1,18 +1,30 @@
 # Managed by fedora-init (roles/litellm).
 [Unit]
 Description=LiteLLM proxy (OpenAI-compatible gateway to ollama and Anthropic)
-# Ordering only: litellm talks to ollama lazily, per request, so it needs
-# the unit started, not answering.
-After=ollama.service
+# ollama: ordering only — litellm talks to it lazily, per request, so it
+# needs the unit started, not answering. PostgreSQL: a hard requirement —
+# the proxy runs its migrations first thing at start, and postgresql.service
+# is Type=notify, so After= here means "ready", not merely "spawned". It
+# also inherits postgresql.service's After=network-online.target, so this
+# service now starts after NetworkManager-wait-online rather than right
+# behind ollama — a few seconds at boot, nothing more.
+After=ollama.service postgresql.service
 Wants=ollama.service
+Requires=postgresql.service
 
 [Service]
 Type=exec
 # A transient unprivileged user; implies ProtectSystem=strict,
 # ProtectHome=read-only, NoNewPrivileges, PrivateTmp. StateDirectory is the
-# one writable place and doubles as $HOME (litellm needs neither, verified,
-# but a HOME that exists costs nothing).
+# one writable place and is $HOME: the Environment= line below is REQUIRED
+# (a DynamicUser's record home is `/`, which systemd skips), and the Prisma
+# CLI mkdirs $HOME/.cache/prisma/… at every start.
 DynamicUser=yes
+# The dynamic user's NAME, pinned: PostgreSQL's peer auth maps the socket
+# peer's OS name 1:1 onto the `litellm` role, and without User= the name is
+# merely derived from the unit's filename — a renamed or templated unit
+# would silently fail every start with "Peer authentication failed".
+User=litellm
 StateDirectory=litellm
 WorkingDirectory=/var/lib/litellm
 Environment=HOME=/var/lib/litellm
@@ -23,10 +35,34 @@ Environment=HOME=/var/lib/litellm
 Environment=LITELLM_MODE=PRODUCTION
 Environment=LITELLM_LOCAL_MODEL_COST_MAP=True
 Environment=LITELLM_DONT_SHOW_FEEDBACK_BOX=true
-# Secrets (ANTHROPIC_API_KEY) — 0600 root:root, seeded by the role from
-# Bitwarden. Read by the service manager before the privilege drop, so the
-# DynamicUser never needs to open it. The leading "-" makes it optional:
-# the proxy runs without it (anthropic/* routes then fail cleanly).
+# The database: Fedora's PostgreSQL over its unix socket with PEER auth —
+# the DynamicUser is named after the unit, `litellm`, which is also the
+# database role and the database. Prisma's documented socket form
+# (`?host=<socket dir>`); litellm's URL rewriting keeps `host=` intact
+# (verified). /run/postgresql, never the /tmp socket: PrivateTmp hides
+# /tmp from this service.
+Environment=DATABASE_URL=postgresql://litellm@localhost/litellm?host=/run/postgresql
+# Prisma at runtime (every start runs `prisma --version` + `prisma migrate
+# deploy` through the Node CLI): the pre-fetched CLI + engines under /opt
+# (read-only), executed DIRECTLY by litellm instead of through the python
+# wrapper that imports a 77-table client first — 0.3 s per call instead of
+# 8 s (PRISMA_OFFLINE_MODE + PRISMA_CLI_PATH are upstream's own runtime
+# settings). CHECKPOINT_DISABLE keeps the Prisma CLI from phoning
+# checkpoint.prisma.io. Node itself is /usr/bin/node on systemd's default
+# PATH (the nodejs22 rpms).
+Environment=PRISMA_BINARY_CACHE_DIR=/opt/litellm/prisma-binaries
+Environment=PRISMA_CLI_PATH=/opt/litellm/prisma-binaries/node_modules/.bin/prisma
+Environment=PRISMA_OFFLINE_MODE=true
+Environment=PRISMA_CLI_QUERY_ENGINE_TYPE=binary
+Environment=CHECKPOINT_DISABLE=1
+# Secrets — 0600 root:root, one KEY=value per line: LITELLM_MASTER_KEY
+# (generated once by the role; the UI password and what signs its
+# sessions) and ANTHROPIC_API_KEY (seeded from Bitwarden). Read by the
+# service manager before the privilege drop, so the DynamicUser never
+# needs to open it. The leading "-" makes it optional: the proxy runs
+# without it (anthropic/* routes then fail cleanly; with no master key
+# 1.102 runs keyless, and litellm's main since 2026-09-20 refuses to boot).
+# LITELLM_SALT_KEY encrypts what the UI stores beyond keys and spend.
 EnvironmentFile=-/etc/litellm/litellm.env
 # --host: litellm's own default is 0.0.0.0. --port 4000: the default too,
 # spelled out because litellm silently picks a RANDOM port when 4000 is
@@ -36,8 +72,11 @@ ExecStart=/opt/litellm/bin/litellm --config /etc/litellm/config.yaml --host 127.
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=30
-# Hardening for a python HTTP daemon that needs nothing but loopback
-# sockets (and outbound HTTPS for Anthropic).
+# Hardening for a python HTTP daemon that needs loopback sockets, the
+# PostgreSQL unix socket (AF_UNIX; connect() on a socket file is fine under
+# ProtectSystem=strict), a loopback port to its own query-engine child, and
+# outbound HTTPS for Anthropic. No MemoryDenyWriteExecute: Node's JIT
+# needs W+X.
 PrivateDevices=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

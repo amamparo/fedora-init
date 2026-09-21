@@ -1,6 +1,9 @@
 # Managed by fedora-init (roles/litellm) — edit there, not here; the role
 # puts this file back. Secrets never go in this file: they live in
-# /etc/litellm/litellm.env and are referenced as os.environ/NAME.
+# /etc/litellm/litellm.env and are referenced as os.environ/NAME. Models
+# are managed HERE, not in the admin UI: STORE_MODEL_IN_DB stays off, so the
+# database never overlays these settings (with it on, the DB wins on every
+# key both define).
 model_list:
   # Every model ollama has pulled, as ollama/<tag> — a wildcard route, so a
   # new `ollama pull` is reachable with no config change. ollama_chat/ (the
@@ -36,6 +39,8 @@ litellm_settings:
   # bundled tiktoken for every model.
   disable_hf_tokenizer_download: true
 general_settings:
-  # Keyless on purpose (roles/litellm/tasks/main.yml says why). 1.102
-  # ignores this key; 1.103+ refuses to boot keyless without it (PR #42019).
-  dangerously_permit_weak_or_unset_master_key: true
+  # The master key gates every endpoint but the health probes, signs the
+  # admin UI's sessions and IS the UI password (user `admin`). Generated
+  # once by the role into /etc/litellm/litellm.env. Clients never use it:
+  # they get llm_api virtual keys (roles/litellm/tasks/client_key.yml).
+  master_key: os.environ/LITELLM_MASTER_KEY

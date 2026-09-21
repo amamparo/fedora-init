@@ -30,8 +30,10 @@ a checkout, append `-s battery` after `bash` in the one-liner.
 If a role needs secrets (**aws** and **litellm**), the script also installs
 the Bitwarden CLI and signs into your vault right on the terminal — master
 password + TOTP, no browser — before the play starts. That only happens
-while a secret's target file is missing; a converged machine never
-prompts. And it's never a roadblock: no vault yet, or a failed sign-in,
+while a secret is still unseeded (`~/.aws/credentials` missing; the
+`ANTHROPIC_API_KEY=` line missing from `/etc/litellm/litellm.env`, a file
+the litellm role also keeps its generated keys in); a converged machine
+never prompts. And it's never a roadblock: no vault yet, or a failed sign-in,
 just means everything else still configures and the role prints a
 reminder — re-run `./install.sh aws` (or `litellm`) whenever you're ready.
 To put the secrets *into* the vault from this machine, `just seed-bitwarden`
@@ -67,12 +69,15 @@ is what `./install.sh <substring>` matches against.
 Everything Fedora's Software app would report, applied: all rpm updates,
 firmware via fwupd/LVFS (reboot-staged ones get called out), and flatpak
 updates (Podman Desktop, plus anything you've added). Runs first so the rest
-of the play resolves against fresh metadata. It also brings the three
-installs that live outside dnf current: ollama (re-installed from the
-upstream release whenever one moved — a ~1.4 GB download), the litellm venv
-(`uv pip install --upgrade`, then a restart) and opencode (`opencode
-upgrade`). Under `--check` the version probes run but the upgrades
-themselves are skipped; a pending ollama upgrade is printed.
+of the play resolves against fresh metadata. It also brings the four
+installs that live outside dnf's repos current: ollama (re-installed from
+the upstream release whenever one moved — a ~1.4 GB download), Goose (the
+upstream rpm, re-installed when a release moved — relaunch it afterwards),
+the litellm venv (`uv pip install --upgrade`, its Prisma client
+regenerated when the schema changed, then a restart) and opencode
+(`opencode upgrade`). Under `--check` the version probes run but the
+upgrades themselves are skipped; pending ollama and Goose upgrades are
+printed.
 
 ### snapshots
 
@@ -665,25 +670,39 @@ shows a sign-in/continue-locally screen; "continue locally" is the answer.
 ### litellm
 
 [LiteLLM](https://docs.litellm.ai) proxy — one OpenAI-compatible endpoint,
-`http://127.0.0.1:4000/v1`, in front of ollama and Anthropic. goose and
+`http://127.0.0.1:4000/v1`, in front of ollama and Anthropic, with its
+**admin UI at `http://litellm.localhost:4000/ui`** (the `.localhost` name
+resolves to loopback everywhere with no configuration). goose and
 opencode talk only to it, so a local model and Claude are one model-name
 apart: `ollama/<tag>` for anything ollama has pulled (a wildcard route —
 `ollama pull` something new and it's reachable), `anthropic/<id>`
 (`anthropic/claude-opus-5`…) for Claude. No rpm exists, so it's a python
-venv under `/opt/litellm` built with the stock `uv` (~650 MB), run as a
-hardened systemd service (`litellm.service`, dedicated dynamic user);
-`/etc/litellm/config.yaml` is the routes. Health: `curl
-127.0.0.1:4000/health/liveliness`. Upgrades ride the updates role.
+venv under `/opt/litellm` built with the stock `uv`, run as a hardened
+systemd service (`litellm.service`, dedicated dynamic user);
+`/etc/litellm/config.yaml` is the routes (models are managed there, not in
+the UI). Health: `curl 127.0.0.1:4000/health/liveliness`. Upgrades ride the
+updates role.
 
-**Keyless on purpose.** The proxy is loopback-only on a single-user
-machine, in front of an ollama that is unauthenticated anyway; a master
-key would sit in goose's and opencode's configs with the same readers.
-The Anthropic key is the one secret: seeded once into
-`/etc/litellm/litellm.env` (0600 root) from the Bitwarden login item named
-`anthropic` (password = the API key), exactly like the aws credentials —
-the role prints a reminder while it's missing, and `anthropic/*` routes
-answer with an AuthenticationError until then. Rotate by editing that
-file (and `systemctl restart litellm`), or delete it and re-run.
+The UI needs a **master key** and a **database**, and the role provides
+both: the key is generated once into `/etc/litellm/litellm.env` (root-only —
+`just litellm-master-key` prints it; UI login is user `admin`, password =
+that key), and the database is Fedora's own PostgreSQL rpm, reached over
+its unix socket with peer auth (no password; its localhost TCP port stays
+on ident auth, which no login can pass).
+The Prisma toolchain the database path needs — Node (`nodejs22` rpms),
+the `openssl` CLI, the Prisma CLI + engines — is staged read-only under
+`/opt/litellm`, so the service starts offline. Clients never hold the
+master key: the role mints one **virtual key per client** (goose,
+opencode — `litellm_clients` in `site.yml`) into `~/.config/litellm/keys/`
+and re-mints it if the database ever forgets it; each is its own row under
+Virtual Keys, with its own spend and logs.
+
+The Anthropic key is the one vault secret: seeded once into the same env
+file from the Bitwarden login item named `anthropic` (password = the API
+key), exactly like the aws credentials — the role prints a reminder while
+it's missing, and `anthropic/*` routes answer with an AuthenticationError
+until then. Rotate by editing that line (and `systemctl restart litellm`),
+or delete it and re-run.
 
 ### goose
 
@@ -697,8 +716,10 @@ the desktop bundles that very CLI as its backend
 Pre-configured through `/etc/goose/config.yaml`, a system layer goose
 merges under your own `~/.config/goose/config.yaml` and never writes:
 provider `litellm`, `LITELLM_HOST` pointed at the proxy, the default model
-from `site.yml` (`llm_default_model`), telemetry off — so the first launch
-skips the provider wizard and the consent dialog. Your own choices in
+from `site.yml` (`llm_default_model`), telemetry off, secrets in
+`~/.config/goose/secrets.yaml` (where the role keeps goose's own litellm
+key current) — so the first launch skips the provider wizard and the
+consent dialog. Your own choices in
 Settings land in the user file and win. The role also generates a launcher
 shadow in `~/.local/share/applications` so the window binds to its icon
 (the app's Wayland id is `goose`, the vendor entry doesn't say so). Tools
@@ -718,7 +739,8 @@ vendor's layout; the zsh role puts it on PATH — log out and back in the
 first time) and pre-configured for the proxy. Two files in
 `~/.config/opencode`: `opencode.json` is managed from `site.yml` (the
 `litellm` provider with every local and Anthropic model listed — opencode
-can't discover a custom provider's models), `opencode.jsonc` is seeded once
+can't discover a custom provider's models — and its key as a `{file:}`
+reference to `~/.config/litellm/keys/opencode`), `opencode.jsonc` is seeded once
 with the default model and then yours (that's also where MCP servers,
 agents and keybinds go). Pick models in the TUI; V2's updater only notifies
 by default, so the updates role runs `opencode upgrade`.
@@ -747,7 +769,7 @@ but the sync fails with `invalid_grant`), both this and `./install.sh` sign
 you in again instead of failing.
 `just` alone lists the recipes: `install` runs `./install.sh` with any
 arguments passed through (`just install battery --check`), `check` runs the
-safe lint gate.
+safe lint gate, `litellm-master-key` prints the admin UI password.
 
 ## Adding a role
 

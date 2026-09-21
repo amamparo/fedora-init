@@ -9,8 +9,9 @@
 # rpms) and runs site.yml locally. Bare arguments select roles by substring,
 # like the old per-module filenames; dash arguments (--check, --diff, --tags,
 # -v...) pass through to ansible-playbook. When a role needs vault secrets
-# (aws, litellm) and its target file is missing, it also signs into Bitwarden
-# first — terminal prompts only, no browser.
+# (aws, litellm) and that secret is still unseeded (~/.aws/credentials
+# absent; the ANTHROPIC_API_KEY= line absent from /etc/litellm/litellm.env),
+# it also signs into Bitwarden first — terminal prompts only, no browser.
 #
 set -euo pipefail
 
@@ -139,11 +140,13 @@ done
 # sign-in lives here, gated against needless prompts: only for roles whose
 # seed target is still missing (a converged machine never prompts), never
 # under --check/-C (the roles check-gate their seed tasks to match), and
-# only when the tag selection reaches such a role. /etc/litellm is 0755, so
-# probing its 0600 file needs no root.
+# only when the tag selection reaches such a role. The litellm env file
+# holds more than the vault secret (the generated master key shares it),
+# so the probe is for the LINE, as root (0600; sudo is already primed —
+# -n so it can never prompt here).
 secret_roles=()
 [[ -f "$HOME/.aws/credentials" ]] || secret_roles+=(aws)
-[[ -f /etc/litellm/litellm.env ]] || secret_roles+=(litellm)
+sudo -n grep -qs '^ANTHROPIC_API_KEY=' /etc/litellm/litellm.env || secret_roles+=(litellm)
 secrets_due=0
 for r in "${secret_roles[@]}"; do
     if ((${#tags[@]})); then

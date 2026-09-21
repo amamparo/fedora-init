@@ -33,8 +33,9 @@
 # place the first launch skips the provider wizard (GOOSE_PROVIDER is set),
 # skips the telemetry consent dialog (GOOSE_TELEMETRY_ENABLED is present),
 # treats litellm as CONFIGURED — the built-in litellm provider's configured
-# check is "LITELLM_HOST set OR a key stored" (providers/init.rs), so the
-# keyless proxy needs no dummy key. The first launch writes ONE thing to
+# check is "LITELLM_HOST set OR a key stored" (providers/init.rs). The proxy
+# is keyed, so goose's own virtual key goes into ~/.config/goose/secrets.yaml
+# (the section below). The first launch writes ONE thing to
 # ~/.config/goose/config.yaml — an `extensions:` block syncing the bundled
 # extensions (developer on, four off) — which merges per entry with the
 # layer below and never touches its keys. Your own choices (Settings) land
@@ -128,6 +129,69 @@
     group: root
     mode: "0644"
   register: goose_layer
+
+# --- the litellm virtual key --------------------------------------------
+# With the proxy keyed, goose sends `Authorization: Bearer $LITELLM_API_KEY`
+# — a SECRET, which goose never reads from config.yaml: env, then the
+# keyring, then ~/.config/goose/secrets.yaml (a plain mapping, 0600). The
+# layer above turns the keyring off, so the file is the store. The litellm
+# role minted `~/.config/litellm/keys/goose`; this copies it in, MERGING
+# into whatever other secrets goose has stored and gating on the LOGICAL
+# value, not bytes — goose rewrites the file with its own YAML formatting
+# whenever it stores a secret, and a bytes comparison would flip-flop
+# against it forever (the claude_code settings.json lesson). $HOME, NO
+# become. Skipped while the key file doesn't exist yet (a fresh --check, or
+# a run where the proxy never came up): goose then runs keyless and gets a
+# 401 until the next play.
+- name: Probe for the goose client key
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/litellm/keys/goose"
+  register: goose_client_key_file
+  check_mode: false
+
+- name: Read the goose client key
+  ansible.builtin.slurp:
+    src: "{{ lookup('env', 'HOME') }}/.config/litellm/keys/goose"
+  register: goose_client_key_raw
+  no_log: true
+  when: goose_client_key_file.stat.exists
+
+- name: Read goose's current secrets file (absent on a fresh machine)
+  ansible.builtin.slurp:
+    src: "{{ lookup('env', 'HOME') }}/.config/goose/secrets.yaml"
+  register: goose_secrets_raw
+  no_log: true
+  failed_when: false
+  check_mode: false
+  when: goose_client_key_file.stat.exists
+
+- name: Parse goose's secrets, defaulting to empty
+  ansible.builtin.set_fact:
+    goose_secrets: >-
+      {{ (goose_secrets_raw.content | b64decode | from_yaml)
+         if (goose_secrets_raw.content is defined
+             and (goose_secrets_raw.content | b64decode | trim | length) > 0)
+         else {} }}
+    goose_client_key: "{{ goose_client_key_raw.content | b64decode | trim }}"
+  no_log: true
+  when: goose_client_key_file.stat.exists
+
+- name: Ensure ~/.config/goose exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/goose"
+    state: directory
+    mode: "0755"
+  when: goose_client_key_file.stat.exists
+
+- name: Store the litellm virtual key in goose's secrets
+  ansible.builtin.copy:
+    dest: "{{ lookup('env', 'HOME') }}/.config/goose/secrets.yaml"
+    content: "{{ goose_secrets | combine({'LITELLM_API_KEY': goose_client_key}) | to_nice_yaml }}"
+    mode: "0600"
+  no_log: true
+  when:
+    - goose_client_key_file.stat.exists
+    - (goose_secrets.LITELLM_API_KEY | default('')) != goose_client_key
 
 # --- the launcher shadow (see the header) ---------------------------------
 # Absent on a fresh --check (the rpm was only simulated) — the stat gate

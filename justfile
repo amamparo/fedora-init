@@ -25,6 +25,14 @@ install *args:
 seed-bitwarden:
     scripts/seed-bitwarden.sh
 
+# The litellm admin UI (http://litellm.localhost:4000/ui) logs in as
+# `admin` with the master key, which lives root-only in
+# /etc/litellm/litellm.env.
+
+# Print the LiteLLM master key (the admin UI password)
+litellm-master-key:
+    sudo grep '^LITELLM_MASTER_KEY=' /etc/litellm/litellm.env | cut -d= -f2-
+
 # ansible-lint is not a stock rpm; uvx (cli_tools) fetches it when it isn't
 # on PATH.
 

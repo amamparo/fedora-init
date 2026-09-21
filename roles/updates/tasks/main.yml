@@ -215,11 +215,11 @@
 # "Installed N packages" on stderr only when something changed ("Checked N
 # packages" otherwise) — verified — and the proxy reads its code once, so a
 # change needs a restart (this role's own handler, named distinctly).
-# Guarded on the UNIT, not just the venv: the unit is the last thing the
-# litellm role writes, so it is the honest "fully installed" marker — a
-# venv left by a run that aborted before the unit (a failed Bitwarden
-# fetch, say) must not trigger an upgrade whose restart handler would
-# hard-fail on a unit systemd has never seen.
+# Guarded on the UNIT, not the venv: the litellm role writes the unit only
+# after the venv, the prisma fetch/generate and the PostgreSQL setup all
+# succeeded, so a venv left by a run that aborted in any of those must not
+# trigger an upgrade whose restart handler would hard-fail on a unit
+# systemd has never seen.
 - name: Probe for the litellm unit
   ansible.builtin.stat:
     path: /etc/systemd/system/litellm.service
@@ -242,6 +242,16 @@
   changed_when: "'Installed' in updates_litellm.stderr"
   when: updates_litellm_unit.stat.exists
   notify: Restart litellm after upgrade
+
+# A new litellm usually ships a new schema.prisma: the migrations apply
+# themselves at the restart, but the generated client must be rebuilt by
+# us (offline once the engines are cached) — the shared include is
+# cmp-gated, so it is a no-op when the schema didn't move.
+- name: Regenerate the Prisma client if litellm's schema changed
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: litellm_prisma_generate
+  when: updates_litellm_unit.stat.exists
 
 # opencode (roles/opencode, OpenCode 2): its updater only notifies by
 # default, so `opencode upgrade` is the upgrade. `--method curl` pins the

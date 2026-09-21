@@ -58,8 +58,8 @@
 # file without it on load (flip-flop against a converged copy).
 # `@ai-sdk/openai-compatible` (chat completions), never `@ai-sdk/openai`
 # (Responses API): the known LiteLLM breakage (#25487) is Responses-only.
-# With no `options.apiKey` no Authorization header is sent — what the
-# keyless proxy wants (verified). V2 adds `store: false` to every request
+# `options.apiKey` is a `{file:}` reference to opencode's own virtual key
+# (see the task). V2 adds `store: false` to every request
 # and `reasoning_effort: low` to the title request; the litellm config
 # drops both for the ollama route (see roles/litellm/files/config.yaml).
 
@@ -235,6 +235,20 @@
     - opencode_layer_probe.results[0].stat.exists
     - not opencode_layer_probe.results[1].stat.exists
 
+# The proxy is keyed: opencode's virtual key, minted by the litellm role
+# into ~/.config/litellm/keys/opencode, is referenced through opencode's
+# `{file:…}` substitution (contents trimmed, ~ expanded) rather than pasted
+# — the managed file stays secret-free and the key rotates in place. A
+# MISSING {file:} target is a hard config error in opencode, so the
+# reference is emitted only when the file exists (absent on a fresh
+# --check, or when the proxy never came up; opencode then runs keyless and
+# gets a 401 until the next play).
+- name: Probe for the opencode client key
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/litellm/keys/opencode"
+  register: opencode_client_key_file
+  check_mode: false
+
 # to_nice_json sorts keys, so the render is canonical and this stays
 # converged; the app leaves a $schema-carrying file alone.
 - name: Install the repo-managed provider config (opencode.json)
@@ -243,14 +257,17 @@
     content: "{{ opencode_config | to_nice_json }}\n"
     mode: "0644"
   vars:
+    opencode_provider_options: >-
+      {{ {'baseURL': 'http://127.0.0.1:4000/v1'}
+         | combine({'apiKey': '{file:~/.config/litellm/keys/opencode}'}
+                   if opencode_client_key_file.stat.exists else {}) }}
     opencode_config:
       $schema: https://opencode.ai/config.json
       provider:
         litellm:
           npm: "@ai-sdk/openai-compatible"
           name: LiteLLM (local proxy)
-          options:
-            baseURL: http://127.0.0.1:4000/v1
+          options: "{{ opencode_provider_options }}"
           models: "{{ opencode_models | default({}) }}"
 
 # Re-probed here: the move above may just have created it.

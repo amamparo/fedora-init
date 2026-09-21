@@ -1,0 +1,103 @@
+---
+# Regenerate litellm's Prisma client when its schema changed. Shared by
+# roles/litellm (first install) and roles/updates (after `uv pip install
+# --upgrade`), via include_role (name: common, tasks_from:
+# litellm_prisma_generate).
+#
+# The proxy runs `prisma migrate deploy` itself at every start, but it
+# NEVER runs `prisma generate`: the generated python client (written into
+# site-packages/prisma by the prisma-client-py generator) is an install-time
+# artifact that must be redone whenever litellm ships a new schema.prisma —
+# a root-time write into /opt, which the DynamicUser could not do anyway.
+# The generated client keeps a byte copy of the schema it was built from,
+# so `cmp` of the two copies is the honest convergence probe: identical =
+# nothing to do (verified — a regenerate is offline once the engines are
+# cached, and the query engine is started from that packaged copy).
+#
+# The probe also prints the venv's purelib dir so the python version never
+# has to be spelled out here, and it checks the PREREQUISITES before the
+# schema: the updates role runs this include (slot 1) on a machine whose
+# venv may predate the database work — prisma not installed, CLI not
+# fetched — and a generate there would abort the play with "No module
+# named prisma" (caught in review). rc 0 = client current, 1 = schema
+# differs, 2 = no generated client yet, 3 = prisma or the CLI missing
+# (nothing to do here — roles/litellm installs them), anything else = no
+# venv at all (a fresh --check; stdout empty). partials.py is checked
+# alongside the schema because the generator copies schema.prisma in
+# FIRST and renders partials.py LAST (its DEFERRED_TEMPLATES), and its
+# failure cleanup deletes the rendered .py files but not the schema copy —
+# so a failed or interrupted generate would otherwise read as "current"
+# forever while the proxy dies with "Unable to find Prisma binaries".
+- name: Compare the generated Prisma client's schema with litellm's # noqa: command-instead-of-shell
+  ansible.builtin.shell:
+    cmd: >-
+      p="$(/opt/litellm/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+      && printf '%s' "$p"
+      && { test -d "$p"/prisma-0.11.0.dist-info
+      && test -e /opt/litellm/prisma-binaries/package-lock.json || exit 3; }
+      && { test -e "$p/prisma/partials.py" || exit 2; }
+      && cmp -s "$p/prisma/schema.prisma" "$p/litellm/proxy/schema.prisma"
+  register: litellm_prisma_schema
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# Run from litellm's proxy dir (where schema.prisma lives — the CLI looks
+# in cwd) with the venv on PATH: the generator is the venv's
+# `prisma-client-py` console script and the CLI shells out to it by name.
+# Offline once `prisma py fetch` has run: the query engines the generate
+# needs already sit in PRISMA_BINARY_CACHE_DIR (verified with an empty
+# HOME and no network route); HOME under /opt only keeps the CLI's
+# scratch caches out of /root, and they are deleted again below.
+# CHECKPOINT_DISABLE keeps the Prisma CLI's telemetry off.
+- name: Generate the Prisma client for litellm's schema
+  become: true
+  ansible.builtin.command:
+    argv:
+      - /opt/litellm/bin/python
+      - -m
+      - prisma
+      - generate
+    chdir: "{{ litellm_prisma_schema.stdout }}/litellm/proxy"
+  environment:
+    # A FIXED path, never the controller's $PATH: this is a become'd root
+    # command and the user's PATH starts with mise shims — node must be
+    # /usr/bin/node from nodejs22-bin, whatever aaron's shell does.
+    PATH: /opt/litellm/bin:/usr/bin:/bin
+    HOME: /opt/litellm
+    npm_config_cache: /opt/litellm/.cache/npm
+    PRISMA_BINARY_CACHE_DIR: /opt/litellm/prisma-binaries
+    CHECKPOINT_DISABLE: "1"
+  when: litellm_prisma_schema.rc in [1, 2] and litellm_prisma_schema.stdout | length > 0
+  changed_when: true
+  register: litellm_prisma_generated
+
+# --compile-bytecode at install time never covers files generated later,
+# and the DynamicUser can't write __pycache__ under ProtectSystem=strict —
+# without this the proxy re-parses the 900 KB client on every start.
+- name: Compile the generated Prisma client to bytecode # noqa: no-handler
+  # Inline, not a handler: it is the second half of the generate above and
+  # meaningful only right after it, in the same include that the updates
+  # role also runs — a handler would be role-scoped and fire at play end.
+  become: true
+  ansible.builtin.command:
+    argv:
+      - /opt/litellm/bin/python
+      - -m
+      - compileall
+      - -q
+      - "{{ litellm_prisma_schema.stdout }}/prisma"
+  when: litellm_prisma_generated is changed
+  changed_when: true
+
+# The CLI's download caches (~/.npm from the fetch, ~/.cache/prisma from
+# the generate — ~190 MB) are not needed for a later offline regenerate,
+# which reads the engines from PRISMA_BINARY_CACHE_DIR. Swept whenever a
+# generate ran; a converged run has nothing here.
+- name: Remove the Prisma CLI's download caches # noqa: no-handler
+  # Inline like the compile step: the third half of the generate above.
+  become: true
+  ansible.builtin.file:
+    path: /opt/litellm/.cache
+    state: absent
+  when: litellm_prisma_generated is changed
