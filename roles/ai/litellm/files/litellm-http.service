@@ -7,6 +7,10 @@
 # http://litellm.localhost/...). Socket-activated, never enabled itself;
 # exits when idle and is respawned by the socket. No TLS: browsers treat
 # *.localhost as a secure context over plain http, so the UI needs none.
+# Runs confined in SELinux's own systemd_socket_proxyd_t — which takes the
+# three rules in litellm-http.cil, because DynamicUser= implies
+# NoNewPrivileges= and stock policy neither allows that domain transition
+# under no_new_privs nor lets the domain touch ports 80 and 4000.
 [Unit]
 Description=LiteLLM port-80 forwarder (systemd-socket-proxyd to 127.0.0.1:4000)
 Requires=litellm-http.socket litellm.service

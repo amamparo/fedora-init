@@ -674,7 +674,8 @@ shows a sign-in/continue-locally screen; "continue locally" is the answer.
 **admin UI at `http://litellm.localhost/ui`** (the `.localhost` name
 resolves to loopback everywhere with no configuration; port 80 is a
 systemd socket handing connections to `systemd-socket-proxyd`, which
-forwards to :4000 — no reverse-proxy package, and no TLS because browsers
+forwards to :4000 — no reverse-proxy package, a three-line SELinux module
+so that forwarder may bind 80 and reach 4000, and no TLS because browsers
 already treat `*.localhost` as a secure context over plain http). goose and
 opencode talk only to it, so a local model and Claude are one model-name
 apart: `ollama/<tag>` for anything ollama has pulled (a wildcard route —

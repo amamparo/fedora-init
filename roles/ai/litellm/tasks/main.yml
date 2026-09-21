@@ -531,6 +531,42 @@
 # is socket-activated. Both notify the http handler, which daemon-reloads
 # and restarts the SOCKET (restarting the socket also stops a running
 # forwarder, so the service picks up its own changes on the next connect).
+#
+# SELinux first: stock policy lets systemd-socket-proxyd neither bind :80
+# nor connect to :4000, and under DynamicUser (no_new_privs) not even enter
+# its own domain — files/litellm-http.cil carries the three allow rules and
+# the AVC each one answers. It goes in BEFORE the units so the first socket
+# start already has it. `semodule -i` is guarded on the module being absent
+# from `semodule -l` or the source having changed (an install over an
+# existing module of the same name is an upgrade); the probe needs root
+# and runs under --check, the install is a plain command and does not.
+- name: Install the SELinux rules for the port-80 forwarder (source)
+  become: true
+  ansible.builtin.copy:
+    src: litellm-http.cil
+    dest: /etc/selinux/litellm-http.cil
+    owner: root
+    group: root
+    mode: "0644"
+  register: litellm_http_cil
+
+- name: Probe the installed SELinux modules
+  become: true
+  ansible.builtin.command:
+    cmd: semodule -l
+  register: litellm_semodules
+  changed_when: false
+  check_mode: false
+
+- name: Install the SELinux rules for the port-80 forwarder
+  become: true
+  ansible.builtin.command:
+    cmd: semodule -i /etc/selinux/litellm-http.cil
+  when: >-
+    'litellm-http' not in litellm_semodules.stdout_lines
+    or litellm_http_cil is changed
+  changed_when: true
+
 - name: Install the litellm port-80 units
   become: true
   ansible.builtin.copy:
