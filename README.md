@@ -735,7 +735,9 @@ A Bitwarden session you already have exported is used and left unlocked.
 If the CLI's stored sign-in has expired (the master password is accepted
 but the sync fails with `invalid_grant`), both this and `./install.sh` sign
 you in again instead of failing.
-`just` alone lists the recipes (`check` runs the safe lint gate).
+`just` alone lists the recipes: `install` runs `./install.sh` with any
+arguments passed through (`just install battery --check`), `check` runs the
+safe lint gate.
 
 ## Adding a role
 

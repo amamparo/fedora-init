@@ -1,8 +1,19 @@
 # fedora-init — `just` recipes (`just` alone lists them; the just rpm comes
-# with the cli_tools role). The playbook itself stays `./install.sh`.
+# with the cli_tools role). Recipes take their arguments verbatim
+# (positional-arguments), so quoting survives the trip into install.sh.
+
+set positional-arguments
 
 _default:
     @just --list --unsorted
+
+# `just install` = `./install.sh`; extra words pass straight through, so
+# `just install battery zsh` and `just install --check` work as documented
+# for the script.
+
+# Run the playbook (arguments go to install.sh: role substrings, --check…)
+install *args:
+    ./install.sh "$@"
 
 # Values come from SEED_AWS_ACCESS_KEY_ID / SEED_AWS_SECRET_ACCESS_KEY /
 # SEED_ANTHROPIC_API_KEY, or hidden prompts when unset; a blank skips that
