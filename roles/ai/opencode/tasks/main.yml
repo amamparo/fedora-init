@@ -304,3 +304,93 @@
       the provider block in opencode.json is managed from site.yml.
       ~/.opencode/bin joins PATH at the next login (zsh role).
   when: opencode_seed is changed and not ansible_check_mode
+
+# --- OpenSlimedit plugin (token optimization) ------
+# OpenSlimedit compresses tool descriptions, saving 11–45% of input tokens.
+# Installed as a plugin in opencode.jsonc (seeded only when absent).
+- name: Read the current opencode.jsonc
+  ansible.builtin.slurp:
+    src: "{{ lookup('env', 'HOME') }}/.config/opencode/opencode.jsonc"
+  register: opencode_jsonc_content
+  check_mode: false
+  when: opencode_user_config.stat.exists
+
+- name: Add OpenSlimedit plugin to opencode.jsonc if needed
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import json, sys
+        try:
+            with open(sys.argv[1]) as f:
+                config = json.load(f)
+            if 'openslimedit@latest' not in config.get('plugins', []):
+                config.setdefault('plugins', []).insert(0, 'openslimedit@latest')
+                with open(sys.argv[1], 'w') as f:
+                    json.dump(config, f, indent=4)
+                sys.exit(0)
+            sys.exit(1)  # already installed
+        except Exception as e:
+            sys.stderr.write(str(e))
+            sys.exit(2)
+      - "{{ lookup('env', 'HOME') }}/.config/opencode/opencode.jsonc"
+  register: openslimedit_add
+  changed_when: openslimedit_add.rc == 0
+  failed_when: openslimedit_add.rc == 2
+  check_mode: false
+  when: opencode_user_config.stat.exists
+
+# --- Caveman CLI + skill (token optimization) ------
+# Caveman reduces input & output tokens through two layers:
+# 1. CLI: proxy that compresses logs/JSON before sending to the model
+# 2. Skill: makes the agent speak tersely (8.5% output savings)
+# Install the CLI globally first (needed for the skill and for proxy setup).
+- name: Install Caveman CLI globally via npm
+  community.general.npm:
+    name: "@caveman-ai/cli"
+    global: true
+    state: present
+  environment:
+    PATH: "{{ lookup('env', 'PATH') }}"
+  register: caveman_cli_install
+  check_mode: false
+
+# Then install the Caveman skill (and its subskills) into all agents.
+- name: Install Caveman skill globally
+  ansible.builtin.shell:
+    cmd: |
+      npx skills add JuliusBrussee/caveman --agent '*' -g -y 2>&1
+  environment:
+    PATH: "{{ lookup('env', 'PATH') }}"
+  register: caveman_skill_install
+  changed_when: "'Summary' in caveman_skill_install.stdout"
+  check_mode: false
+
+# Turn off Caveman telemetry (on by default for usage insights;
+# acceptable on personal machines, disable for privacy).
+- name: Turn off Caveman telemetry
+  ansible.builtin.shell:
+    cmd: |
+      if command -v caveman >/dev/null 2>&1; then
+        caveman telemetry off
+      elif [[ -f ~/.local/opt/node/bin/caveman ]]; then
+        ~/.local/opt/node/bin/caveman telemetry off
+      fi
+  environment:
+    PATH: "{{ lookup('env', 'PATH') }}"
+  register: caveman_telemetry
+  changed_when: '"off" in caveman_telemetry.stdout'
+  failed_when: false
+  check_mode: false
+
+- name: Report token optimization setup
+  ansible.builtin.debug:
+    msg: >-
+      ✓ Caveman CLI installed (provides /caveman and proxy functionality)
+      ✓ Caveman skill installed (16 subskills in ~/.agents/skills/)
+      ✓ OpenSlimedit plugin added to opencode.jsonc
+      ✓ Caveman telemetry disabled
+
+      In opencode, use /caveman full (or lite/ultra) to enable compressed output.
+      Both compress transparently under your LiteLLM setup.
