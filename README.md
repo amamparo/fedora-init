@@ -472,9 +472,10 @@ opens straight into it inside a fullscreen Ghostty window (`ctrl+enter`
 leaves fullscreen). That window closes without Ghostty's "running process
 will be killed" warning: closing it only detaches the herdr client, while
 the herdr server keeps every agent pane running for the next `herdr` to
-re-attach. Both settings apply to that launcher's window only — other
-Ghostty windows keep the normal close warning, including one where you
-typed `herdr` yourself. Nothing else is configured — herdr
+re-attach. Both settings apply only to the Ghostty that launcher starts —
+including any tab or window you open from it, so keep other long-running
+work in a normal Ghostty. Every other Ghostty window keeps the normal close
+warning, including one where you typed `herdr` yourself. Nothing else is configured — herdr
 only watches panes, it never talks to a model API itself, so its own config
 under `~/.config/herdr` is entirely yours.
 

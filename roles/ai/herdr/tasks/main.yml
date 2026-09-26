@@ -80,11 +80,15 @@
 # disables its shell-expansion and exits the Ghostty process when the given
 # command exits, so no shell lingers behind a closed herdr session.
 #
-# Two Ghostty config flags ride the Exec line, scoped to THIS window only:
-# -e forces gtk-single-instance=false (Ghostty's own docs: "a new instance
-# is launched and the CLI args are respected"), so the launcher's Ghostty is
-# a separate process and the flags never reach the user's other Ghostty
-# windows. They MUST precede -e — everything after it becomes herdr's argv.
+# Two Ghostty config flags ride the Exec line, scoped to the launcher's own
+# Ghostty instance: -e forces gtk-single-instance=false (Ghostty's own docs:
+# "a new instance is launched and the CLI args are respected"), so the
+# launcher's Ghostty is a separate process and the flags never reach the
+# user's other Ghostty windows. They DO reach any tab or window opened FROM
+# the herdr window (same process, same config) — no close warning there,
+# and new windows open fullscreen — so other long-running work belongs in a
+# normal Ghostty. They MUST precede -e — everything after it becomes
+# herdr's argv.
 #   --confirm-close-surface=false: Ghostty's "the running process will be
 #     killed" dialog is a false alarm here — closing the window only drops
 #     the herdr CLIENT; `herdr server` runs in its own session with no
