@@ -27,17 +27,15 @@ sudo tickets, delete the drop-in.
 Run a subset of roles by substring: `./install.sh battery zsh` — or without
 a checkout, append `-s battery` after `bash` in the one-liner.
 
-If a role needs secrets (**aws** and **litellm**), the script also installs
-the Bitwarden CLI and signs into your vault right on the terminal — master
-password + TOTP, no browser — before the play starts. That only happens
-while a secret is still unseeded (`~/.aws/credentials` missing; the
-`ANTHROPIC_API_KEY=` line missing from `/etc/litellm/litellm.env`, a file
-the litellm role also keeps its generated keys in); a converged machine
-never prompts. And it's never a roadblock: no vault yet, or a failed sign-in,
-just means everything else still configures and the role prints a
-reminder — re-run `./install.sh aws` (or `litellm`) whenever you're ready.
-To put the secrets *into* the vault from this machine, `just seed-bitwarden`
-(see [Bitwarden items](#bitwarden-items)).
+If the **aws** role needs its secret, the script also installs the Bitwarden
+CLI and signs into your vault right on the terminal — master password +
+TOTP, no browser — before the play starts. That only happens while
+`~/.aws/credentials` is still missing; a converged machine never prompts.
+And it's never a roadblock: no vault yet, or a failed sign-in, just means
+everything else still configures and the role prints a reminder — re-run
+`./install.sh aws` whenever you're ready. To put the secret *into* the vault
+from this machine, `just seed-bitwarden` (see
+[Bitwarden items](#bitwarden-items)).
 
 Prove idempotency instead of trusting it:
 
@@ -69,15 +67,12 @@ is what `./install.sh <substring>` matches against.
 Everything Fedora's Software app would report, applied: all rpm updates,
 firmware via fwupd/LVFS (reboot-staged ones get called out), and flatpak
 updates (Podman Desktop, plus anything you've added). Runs first so the rest
-of the play resolves against fresh metadata. It also brings the four
-installs that live outside dnf's repos current: ollama (re-installed from
-the upstream release whenever one moved — a ~1.4 GB download), Goose (the
-upstream rpm, re-installed when a release moved — relaunch it afterwards),
-the litellm venv (`uv pip install --upgrade`, its Prisma client
-regenerated when the schema changed, then a restart) and opencode
-(`opencode upgrade`). Under `--check` the version probes run but the
-upgrades themselves are skipped; pending ollama and Goose upgrades are
-printed.
+of the play resolves against fresh metadata. It also brings herdr current —
+the one out-of-dnf install this role actively upgrades (re-downloaded from
+the latest release whenever the manifest version moved; other out-of-dnf
+tools like Claude Code and reaper either self-update or are installed once
+and left alone). Under `--check` the version probe runs and a pending herdr
+upgrade is printed; nothing is actually re-downloaded.
 
 ### snapshots
 
@@ -427,7 +422,9 @@ zshrc from the zsh role) and self-updates from then on. Run `claude` once
 to sign in. Also installs the
 [caveman](https://github.com/JuliusBrussee/caveman) plugin — compresses
 agent output (~65% fewer tokens) while keeping code, commands, and errors
-verbatim, active automatically from the first message. Switch compression
+verbatim, active automatically from the first message. Its hooks are plain
+Node scripts, so the role installs `nodejs22` (exact rpms, no npm needed)
+purely for that. Switch compression
 with `/caveman [lite|full|ultra]`, or disable with `claude plugin disable
 caveman` — the role won't re-enable a plugin you turned off. Finally, sets
 **ultracode** as the default in `~/.claude/settings.json` (xhigh reasoning
@@ -455,6 +452,25 @@ An earlier version of this role kept a per-user copy of the launcher entry in
 The vendor fixed that upstream, and the stale copy then *caused* the bug it
 once fixed (a blank icon in alt+tab, while app search still looked fine), so
 the role now deletes the override instead — the packaged entry is correct.
+
+### herdr
+
+[herdr](https://herdr.dev) — a terminal multiplexer with built-in awareness
+of AI coding agent state ([source](https://github.com/herdrdev/herdr): Rust,
+Apache-2.0). It runs several agent sessions (Claude Code, opencode,
+whatever you drive from a terminal) in one window and shows each pane's
+state — working, blocked, done, idle — in a sidebar. No Fedora rpm or COPR:
+the role downloads the release binary straight from herdr's own manifest
+(`https://herdr.dev/latest.json`, sha256-verified) to `~/.local/bin/herdr`
+(on PATH via the zsh role). herdr has its own `herdr update` for an
+in-session self-update, but this role doesn't invoke it — the **updates**
+role re-checks the manifest and re-downloads when a newer release exists
+instead, the same way it stays hands-off with every other tool here that
+manages its own updates. Run `herdr` in a terminal to start it, or launch it
+from the app grid — the role adds a **herdr** entry (icon included) that
+opens straight into it inside Ghostty. Nothing else is configured — herdr
+only watches panes, it never talks to a model API itself, so its own config
+under `~/.config/herdr` is entirely yours.
 
 ### podman
 
@@ -633,152 +649,30 @@ and pattern data, and the third-party plugin packages Fedora also carries
 (`gimp-data-extras`, `gimp-dds-plugin`, `gimpfx-foundry`…) are all left to
 `sudo dnf install` if you ever want them.
 
-### ollama
-
-[Ollama](https://ollama.com) — the local model server, as a system service
-on `127.0.0.1:11434` (loopback only; litellm sits in front). Installed from
-the upstream release, not Fedora's rpm: F44's package is frozen at 0.12.11
-(it can't load any 2026 model family) and drags 2 GiB of AMD ROCm onto an
-Intel machine. The role fetches the current release tarball, verifies it
-against the release's checksums, and unpacks `bin/ollama` + `lib/ollama`
-into `/usr/local` with the CUDA runtimes left out (97 MiB instead of
-2.1 GiB). A dedicated `ollama` user runs it with its models in
-`/var/lib/ollama/models` — a nested btrfs subvolume, so the snapshots role's
-pre/post snapshots never pin 19 GB model blobs. Ollama has no self-update
-and cuts a release every few days, so the **updates** role re-installs it
-whenever upstream moved (a ~1.4 GB download each time).
-
-The models to pull are declared in `site.yml` (`ollama_models`, default
-`qwen3-coder:30b` — a 19 GB tool-calling coding model with 3B active
-parameters, so it generates at small-model speed) and pulled once, guarded
-on what the server already has. Local context is `llm_local_context`
-(32k; agents like more, RAM permitting), the K/V cache is 8-bit, a model
-stays loaded 30 minutes after its last request, and ollama.com cloud
-features are off (`OLLAMA_NO_CLOUD=1`, which also stops a signed
-phone-home on every start). The Intel iGPU is used through Vulkan
-(`ollama_igpu: true`): measured here on the default model at ~190 tokens/s
-prompt processing and ~23 tokens/s generation, against 12 and 7 on the
-CPU's four P-cores (6 and 3 at llama.cpp's own 2-thread default) — the
-difference between an unusable and a usable local coding agent. Two things to know: a model loaded while the desktop
-is using a lot of RAM may land only partly on the GPU (`ollama ps` should
-say 100% GPU; `ollama stop <model>` and retry), and inference shares the
-GPU with games and the compositor. Set `ollama_igpu: false` for CPU-only
-(4 threads, the P-cores — 8 is slower). The first bare `ollama` you type
-shows a sign-in/continue-locally screen; "continue locally" is the answer.
-`journalctl -u ollama` logs one line per API request. There is no
-official Ollama app for Linux (the desktop app is macOS/Windows only);
-the chat front-end here is goose, and models are managed with
-`ollama pull`/`ollama list`/`ollama rm` or the `ollama_models` list.
-
-### litellm
-
-[LiteLLM](https://docs.litellm.ai) proxy — one OpenAI-compatible endpoint,
-`http://127.0.0.1:4000/v1`, in front of ollama and Anthropic, with its
-**admin UI at `http://litellm.localhost/ui`** (the `.localhost` name
-resolves to loopback everywhere with no configuration; port 80 is a
-systemd socket handing connections to `systemd-socket-proxyd`, which
-forwards to :4000 — no reverse-proxy package, a three-line SELinux module
-so that forwarder may bind 80 and reach 4000, and no TLS because browsers
-already treat `*.localhost` as a secure context over plain http). goose and
-opencode talk only to it, so a local model and Claude are one model-name
-apart: `ollama/<tag>` for anything ollama has pulled (a wildcard route —
-`ollama pull` something new and it's reachable), `anthropic/<id>`
-(`anthropic/claude-opus-5`…) for Claude. No rpm exists, so it's a python
-venv under `/opt/litellm` built with the stock `uv`, run as a hardened
-systemd service (`litellm.service`, dedicated dynamic user);
-`/etc/litellm/config.yaml` is the baseline routes and settings; whatever
-you change in the admin UI (models, settings, its own pages — the Chat page
-is off until you switch it on under Settings) is kept in the database and
-layered over that file, so a re-run never undoes it. Health:
-`curl 127.0.0.1:4000/health/liveliness`. Upgrades ride the updates role.
-
-The UI needs a **master key** and a **database**, and the role provides
-both: the key is generated once into `/etc/litellm/litellm.env` (root-only —
-`just litellm-master-key` prints it; UI login is user `admin`, password =
-that key), and the database is Fedora's own PostgreSQL rpm, reached over
-its unix socket with peer auth (no password; its localhost TCP port stays
-on ident auth, which no login can pass).
-The Prisma toolchain the database path needs — Node (`nodejs22` rpms),
-the `openssl` CLI, the Prisma CLI + engines — is staged read-only under
-`/opt/litellm`, so the service starts offline. Clients never hold the
-master key: the role mints one **virtual key per client** (goose,
-opencode — `litellm_clients` in `site.yml`) into `~/.config/litellm/keys/`
-and re-mints it if the database ever forgets it; each is its own row under
-Virtual Keys, with its own spend and logs.
-
-The Anthropic key is the one vault secret: seeded once into the same env
-file from the Bitwarden login item named `anthropic` (password = the API
-key), exactly like the aws credentials — the role prints a reminder while
-it's missing, and `anthropic/*` routes answer with an AuthenticationError
-until then. Rotate by editing that line (and `systemctl restart litellm`),
-or delete it and re-run.
-
-### goose
-
-[Goose](https://github.com/aaif-goose/goose) — Block's coding agent, as the
-**desktop app**, from upstream's per-release rpm (there is no repo, no
-Fedora package and the flatpak bundle can't see the config below; the app
-can't update itself on Linux, so the updates role installs each new
-release). It replaces Fedora's `goose` CLI rpm, which the role removes:
-the desktop bundles that very CLI as its backend
-(`/usr/lib/Goose/resources/bin/goose`, if you ever want it in a terminal).
-Pre-configured through `/etc/goose/config.yaml`, a system layer goose
-merges under your own `~/.config/goose/config.yaml` and never writes:
-provider `litellm`, `LITELLM_HOST` pointed at the proxy, the default model
-from `site.yml` (`llm_default_model`), telemetry off, secrets in
-`~/.config/goose/secrets.yaml` (where the role keeps goose's own litellm
-key current) — so the first launch skips the provider wizard and the
-consent dialog. Your own choices in
-Settings land in the user file and win. The role also generates a launcher
-shadow in `~/.local/share/applications` so the window binds to its icon
-(the app's Wayland id is `goose`, the vendor entry doesn't say so). Tools
-run without an approval step by default; `GOOSE_MODE: smart_approve` in
-the user file if you'd rather confirm shell commands. Two upstream quirks:
-inside Goose, `uvx`/`npx`/`node` are bundled shims that fetch their own
-toolchains into `~/.config/goose/mcp-hermit` (name absolute paths in
-extension configs if you want the host's), and after the updates role
-installs a new release, quit and relaunch a running Goose.
-
-### opencode
-
-[OpenCode 2](https://opencode.ai) — the terminal coding agent, installed
-from its npm platform package (the V2 line's distribution; the V1 line is
-what GitHub's releases page still shows) into `~/.opencode/bin` (the
-vendor's layout; the zsh role puts it on PATH — log out and back in the
-first time) and pre-configured for the proxy. Two files in
-`~/.config/opencode`: `opencode.json` is managed from `site.yml` (the
-`litellm` provider with every local and Anthropic model listed — opencode
-can't discover a custom provider's models — and its key as a `{file:}`
-reference to `~/.config/litellm/keys/opencode`), `opencode.jsonc` is seeded once
-with the default model and then yours (that's also where MCP servers,
-agents and keybinds go). Pick models in the TUI; V2's updater only notifies
-by default, so the updates role runs `opencode upgrade`.
-
 ## Bitwarden items
 
-Two roles seed secrets from your vault, both matched by exact item name:
+One role seeds a secret from your vault, matched by exact item name:
 
 | item | type | fields | seeds |
 |---|---|---|---|
 | `aws` | login | username = Access Key ID, password = Secret Access Key | `~/.aws/credentials` (aws) |
-| `anthropic` | login | password = the API key | `/etc/litellm/litellm.env` (litellm) |
 
-Create them in the web vault or push them from here: `just seed-bitwarden`
-upserts them from `SEED_AWS_ACCESS_KEY_ID`, `SEED_AWS_SECRET_ACCESS_KEY`
-and `SEED_ANTHROPIC_API_KEY` — or hidden prompts for whichever is unset
-(blank skips, prompted or exported). Only what you supply is written: an
-item you skip is left alone, an existing item keeps every field you didn't
-give (a new secret key keeps its key id), and nothing else in the vault is
-touched. Two refusals: *creating* `aws` needs both fields (a half item would
-seed a broken credentials file), and an existing item of another type named
-`aws` or `anthropic` must be renamed first — the roles match by name alone.
-A Bitwarden session you already have exported is used and left unlocked.
-If the CLI's stored sign-in has expired (the master password is accepted
-but the sync fails with `invalid_grant`), both this and `./install.sh` sign
-you in again instead of failing.
+Create it in the web vault or push it from here: `just seed-bitwarden`
+upserts it from `SEED_AWS_ACCESS_KEY_ID` and `SEED_AWS_SECRET_ACCESS_KEY` —
+or hidden prompts for whichever is unset (blank skips, prompted or
+exported). Only what you supply is written: an item you skip is left alone,
+an existing item keeps every field you didn't give (a new secret key keeps
+its key id), and nothing else in the vault is touched. One refusal:
+*creating* `aws` needs both fields (a half item would seed a broken
+credentials file) — and an existing item of another type named `aws` must
+be renamed first, since the role matches by name alone. A Bitwarden session
+you already have exported is used and left unlocked. If the CLI's stored
+sign-in has expired (the master password is accepted but the sync fails
+with `invalid_grant`), both this and `./install.sh` sign you in again
+instead of failing.
 `just` alone lists the recipes: `install` runs `./install.sh` with any
 arguments passed through (`just install battery --check`), `check` runs the
-safe lint gate, `litellm-master-key` prints the admin UI password.
+safe lint gate.
 
 ## Adding a role
 

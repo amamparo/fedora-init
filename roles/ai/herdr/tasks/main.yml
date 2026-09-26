@@ -1,0 +1,142 @@
+---
+# herdr (github.com/herdrdev/herdr, herdr.dev) — a terminal multiplexer with
+# built-in awareness of AI coding agent state (working/blocked/done/idle for
+# panes running Claude Code, opencode, and friends), so several agent
+# sessions are visible and scriptable from one terminal. Rust, single
+# ~25 MB binary, Apache-2.0.
+#
+# No Fedora rpm and no COPR. Upstream ships prebuilt Linux binaries with no
+# archive and no in-repo checksum file — the trust anchor is
+# https://herdr.dev/latest.json (served over TLS from the vendor's own
+# domain, the same manifest herdr's own install.sh and `herdr update` read),
+# which carries a per-platform sha256 that get_url verifies against
+# (roles/common/tasks/herdr_install.yml). Installed to ~/.local/bin/herdr —
+# already on PATH via the zsh role's zshrc — never /usr/local, since this is
+# a per-user CLI, not a system service: most tasks below take no become
+# (the launcher install and everything under $HOME); Node for the unrelated
+# claude_code caveman plugin is the one system mutation in the `ai` group,
+# and it lives in that role, not here.
+#
+# herdr has its own `herdr update` (checked only as far as `herdr --version`
+# and `herdr update --help` — the latter shows a plain `--handoff` flag and
+# no prompt text, so it reads as non-interactive, but the actual
+# download-and-swap was never run live here), meant to be run by the user
+# inside a herdr session for a sooner update. What ansible tracks instead is
+# the STATIC binary on disk: presence is the guard for a first install (the
+# reaper/claude_code class), and the updates role re-resolves the manifest
+# and re-runs the shared include when the on-disk version lags (see that
+# role) — herdr has no self-update path ansible could trigger
+# non-interactively itself, so "bring the system current" has to do it.
+#
+# herdr IS the terminal when it runs (like tmux) — launching it here would
+# hang the play, so there is nothing to start or configure beyond the
+# binary. No config seeding either: herdr's own config lives under
+# ~/.config/herdr and is entirely the user's — herdr only watches panes for
+# known agent CLIs, it never talks to a model API itself.
+
+- name: Probe for the herdr launcher (~/.local/bin/herdr)
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin/herdr"
+  register: herdr_bin
+  check_mode: false
+
+# uri has no check-mode support (verified: ansible-doc ansible.builtin.uri
+# reports check_mode support: none) and is skipped under --check, which is
+# why the include below guards on the registered content rather than
+# crashing a fresh dry run.
+- name: Fetch the herdr release manifest
+  ansible.builtin.uri:
+    url: https://herdr.dev/latest.json
+    return_content: true
+  register: herdr_latest
+  changed_when: false
+  when: not herdr_bin.stat.exists
+
+- name: Install the latest herdr release
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: herdr_install
+  vars:
+    herdr_manifest: "{{ herdr_latest.content | from_json }}"
+  when: not herdr_bin.stat.exists and herdr_latest.content is defined
+
+- name: Report the herdr setup
+  ansible.builtin.debug:
+    msg: >-
+      herdr is installed at ~/.local/bin/herdr. Run `herdr` in a terminal (or
+      launch it from the app grid) to start it; agent panes (Claude Code and
+      friends) are detected automatically. `herdr update` self-updates when
+      you want a newer release sooner than the next ./install.sh.
+  when: not herdr_bin.stat.exists and herdr_latest.content is defined and not ansible_check_mode
+
+# Desktop launcher: an app-grid/search entry that opens straight into herdr
+# running in Ghostty — herdr IS the terminal once it starts (like tmux), so
+# there's no separate "open a terminal, then run herdr" step for the user.
+# Exec calls ghostty directly with -e rather than Terminal=true + a bare
+# `herdr` Exec: Terminal=true would route through GNOME/GLib's own
+# default-terminal resolution (org.gnome.desktop.default-applications.
+# terminal), a separate and less predictable mechanism than just naming the
+# one terminal this repo actually installs. Ghostty's documented -e behavior
+# disables its shell-expansion and exits the Ghostty process when the given
+# command exits, so no shell lingers behind a closed herdr session.
+#
+# A TEMPLATE, not a static copy: a bare `herdr` Exec resolves against
+# gnome-shell's own PATH, not the user's shell PATH — verified live on this
+# machine (`tr '\0' '\n' </proc/$(pgrep -xo gnome-shell)/environ`) as
+# `/usr/local/bin:/usr/bin`, no `~/.local/bin` — so launching from the app
+# grid would open Ghostty, fail to find herdr, and the window would just
+# close with nothing visibly wrong. The rendered Exec/TryExec name the
+# absolute path instead.
+#
+# Always applied (no presence guard on herdr_bin): unlike the binary install
+# above, a rendered file is naturally idempotent, so this stays converged
+# whether this run just installed herdr or found it already there — and it
+# self-heals a machine that ran an older revision of this role without the
+# launcher. $HOME write, so NO become, same as every other user-session
+# install here.
+- name: Install the herdr desktop launcher
+  ansible.builtin.template:
+    src: herdr.desktop.j2
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/applications/herdr.desktop"
+    mode: "0644"
+  register: herdr_desktop_entry
+
+# Inline, not a handler: roles/desktop/brave already owns a handler named
+# "Refresh the desktop database", and Ansible resolves notify by name across
+# the WHOLE play, not per-role — a second handler here with the same name
+# would collide with it rather than staying scoped to this role (the
+# claude_desktop precedent, which inlines this exact command for the same
+# reason). The `is changed` gate is what a handler would have given for free.
+- name: Refresh the desktop database after installing the herdr launcher # noqa: no-handler
+  ansible.builtin.command: >-
+    update-desktop-database {{ lookup('env', 'HOME') }}/.local/share/applications
+  when: herdr_desktop_entry is changed
+  changed_when: herdr_desktop_entry is changed
+
+# Official herdr logo (a ram's head whose horn traces a `>_` prompt) —
+# vendored from https://herdr.dev/assets/logo.png (512x512, fetched once at
+# authoring time; no get_url here, since there is no upstream checksum for a
+# marketing asset the way herdr_install verifies the binary, and fetching it
+# every run would violate the offline-converged-re-run rule for zero gain).
+# Pre-scaled at authoring time with ImageMagick (Lanczos) from that 512x512
+# master — kept beside the tree as herdr-master.png, never installed — into
+# the same hicolor sizes brave's custom lion uses (16 24 32 48 64 128 256),
+# plus 512 itself copied straight from the master since it's already exactly
+# that size: the reaper/brave pre-scaled-asset precedent, no ImageMagick on
+# the target and better quality than GTK downsampling a 512px source live.
+- name: Install the herdr app icon
+  ansible.builtin.copy:
+    src: icons/hicolor/
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/icons/hicolor/"
+    mode: "0644"
+  register: herdr_icon_files
+
+# Same reasoning as the desktop-database refresh above: brave already owns a
+# handler named "Refresh the user icon cache" for its own lion icon, so this
+# stays an inline, same-role command instead of a second identically-named
+# handler.
+- name: Refresh the user icon cache after installing the herdr app icon # noqa: no-handler
+  ansible.builtin.command: >-
+    gtk-update-icon-cache -f -t {{ lookup('env', 'HOME') }}/.local/share/icons/hicolor
+  when: herdr_icon_files is changed
+  changed_when: herdr_icon_files is changed

@@ -1,0 +1,33 @@
+---
+# Install (or upgrade to) ONE herdr release from its manifest. Shared by
+# roles/ai/herdr (first install) and roles/system/updates (upgrade) via
+# include_role (name: common, tasks_from: herdr_install), the
+# ollama_install/goose_desktop_install precedent.
+#
+# Parameter: herdr_manifest — the parsed https://herdr.dev/latest.json body
+# (what herdr's own installer and `herdr update` read: .version, .assets
+# and .sha256 keyed by "<os>-<arch>"). No release-asset checksum file exists
+# upstream — the manifest itself carries the sha256 per platform, which is
+# what herdr's own install.sh trusts, so get_url's checksum param verifies
+# against that same value.
+#
+# One binary, no archive: get_url downloads straight to the destination and,
+# because a checksum is given, skips re-downloading whenever the file already
+# there already matches it — so this same task is idempotent for a first
+# install (dest absent) and a no-op for a converged re-run (dest present,
+# checksum matches), with no separate presence guard needed here (the caller
+# still probes first, the ollama/goose shape, so a converged run never even
+# evaluates this include). $HOME, NO become: herdr is a per-user CLI/TUI like
+# opencode was, not a system service.
+- name: Ensure ~/.local/bin exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Install herdr {{ herdr_manifest.version }}
+  ansible.builtin.get_url:
+    url: "{{ herdr_manifest.assets['linux-x86_64'] }}"
+    checksum: "sha256:{{ herdr_manifest.sha256['linux-x86_64'] }}"
+    dest: "{{ lookup('env', 'HOME') }}/.local/bin/herdr"
+    mode: "0755"

@@ -85,10 +85,10 @@
   check_mode: false
 
 # One-time for real: guarded on the backup NOT existing yet. The cmp gate
-# alone is not enough — every time this repo's zshrc asset changes (fzf and
-# zoxide lines, the opencode PATH line) the installed copy differs again,
-# and without this guard the backup would be overwritten with fedora-init's
-# own previous zshrc, losing the pre-fedora-init original it exists to keep.
+# alone is not enough — every time this repo's zshrc asset changes (the fzf
+# and zoxide lines, for example) the installed copy differs again, and
+# without this guard the backup would be overwritten with fedora-init's own
+# previous zshrc, losing the pre-fedora-init original it exists to keep.
 - name: Probe for an existing ~/.zshrc.pre-fedora-init backup
   ansible.builtin.stat:
     path: "{{ lookup('env', 'HOME') }}/.zshrc.pre-fedora-init"

@@ -4,15 +4,12 @@
 #
 # The roles that seed secrets fetch them from these Bitwarden login items:
 #   aws        username = AWS Access Key ID, password = Secret Access Key   (roles/dev/aws)
-#   anthropic  password = Anthropic API key                                (roles/ai/litellm)
 #
 # Values come from the environment — SEED_AWS_ACCESS_KEY_ID,
-# SEED_AWS_SECRET_ACCESS_KEY, SEED_ANTHROPIC_API_KEY — or, when a variable is
-# UNSET and stdin is a terminal, from a hidden prompt. Blank means skip, in
-# both forms: an exported-but-empty variable skips without prompting, so a
-# wrapper can pass exactly the values it has. The names are prefixed on
-# purpose: a shell that exports ANTHROPIC_API_KEY for its own reasons must
-# never push it to the vault by accident.
+# SEED_AWS_SECRET_ACCESS_KEY — or, when a variable is UNSET and stdin is a
+# terminal, from a hidden prompt. Blank means skip, in both forms: an
+# exported-but-empty variable skips without prompting, so a wrapper can pass
+# exactly the values it has.
 #
 # Only what was supplied is written: an item none of whose values were given
 # is neither created nor touched, an existing item keeps every field that was
@@ -22,7 +19,7 @@
 # aws role never revisits. Items are matched by EXACT name among items of
 # ANY type — the same set the roles' bitwarden lookup sees, which filters
 # `bw list --search` by name alone — and a same-named non-login item, or two
-# items with the name, abort rather than guess: creating a second `anthropic`
+# items with the name, abort rather than guess: creating a second `aws`
 # next to a secure note of that name would be exactly the ambiguity that
 # fails the play's result_count=1.
 #
@@ -59,9 +56,8 @@ value() {
 
 aws_id="$(value SEED_AWS_ACCESS_KEY_ID 'AWS Access Key ID')"
 aws_secret="$(value SEED_AWS_SECRET_ACCESS_KEY 'AWS Secret Access Key')"
-anthropic_key="$(value SEED_ANTHROPIC_API_KEY 'Anthropic API key')"
 
-if [[ -z $aws_id && -z $aws_secret && -z $anthropic_key ]]; then
+if [[ -z $aws_id && -z $aws_secret ]]; then
     echo "Nothing to seed (no values supplied) — the vault is untouched."
     exit 0
 fi
@@ -121,5 +117,4 @@ if [[ -n $aws_id || -n $aws_secret ]]; then
     fi
     upsert_login aws "$aws_id" "$aws_secret"
 fi
-[[ -z $anthropic_key ]] || upsert_login anthropic "" "$anthropic_key"
 echo "Done. Roles fetch these on their next run while the seed target is missing."

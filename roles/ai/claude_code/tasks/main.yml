@@ -10,8 +10,9 @@
 # via roles/dev/zsh/files/zshrc.
 #
 # Everything here runs as the desktop user — the installer writes only under
-# $HOME, and its docs warn against sudo installs — so no task in this role
-# takes become.
+# $HOME, and its docs warn against sudo installs — except the one system
+# mutation below (installing Node for the caveman plugin's hooks), become
+# is opt-in per that task.
 
 # follow: true because the launcher is a symlink into
 # ~/.local/share/claude/versions/ — the bash guard was `[[ -x ]]`, which
@@ -95,6 +96,30 @@
 # in this role because it's pure add-on: nothing about it makes sense
 # without the CLI above. Plugin state is under ~/.claude/plugins
 # (known_marketplaces.json, marketplaces/, cache/, installed_plugins.json).
+#
+# The plugin's SessionStart and UserPromptSubmit hooks are plain Node
+# scripts (`.claude-plugin/plugin.json`: `node ".../src/hooks/caveman-activate.js"`
+# etc — stdlib only, no node_modules, verified against the installed plugin
+# tree), so Node has to be on PATH for caveman to activate at all — a real
+# add-on dependency, not merely something that happened to be present
+# because the litellm role (removed 2026-09-26) used to install nodejs22 for
+# Prisma. `nodejs` is a virtual Provides (the vim-enhanced/litellm lesson),
+# so the exact rpm names are guarded here: nodejs22-bin ships `/usr/bin/node`
+# itself, nodejs22 ships the versioned `/usr/bin/node-22` plus the shared
+# libs nodejs22-bin needs to run, nodejs22-libs is nodejs22's own runtime
+# dependency. No npm/npm-bin — the hooks need nothing from the registry.
+- name: Install Node (required by the caveman plugin's hooks)
+  become: true
+  ansible.builtin.dnf5:
+    name: "{{ claude_code_node_rpms | difference(ansible_facts.packages.keys() | list) }}"
+    state: present
+    install_weak_deps: false
+  vars:
+    claude_code_node_rpms:
+      - nodejs22
+      - nodejs22-libs
+      - nodejs22-bin
+  when: claude_code_node_rpms | difference(ansible_facts.packages.keys() | list) | length > 0
 
 # failed_when: false, not a hard dependency check: on a fresh --check the
 # install above was only simulated, so the binary doesn't exist — the rc

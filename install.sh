@@ -8,10 +8,9 @@
 # Bootstraps its own toolchain (ansible-core + collections, all stock Fedora
 # rpms) and runs site.yml locally. Bare arguments select roles by substring,
 # like the old per-module filenames; dash arguments (--check, --diff, --tags,
-# -v...) pass through to ansible-playbook. When a role needs vault secrets
-# (aws, litellm) and that secret is still unseeded (~/.aws/credentials
-# absent; the ANTHROPIC_API_KEY= line absent from /etc/litellm/litellm.env),
-# it also signs into Bitwarden first — terminal prompts only, no browser.
+# -v...) pass through to ansible-playbook. When the aws role needs its vault
+# secret and it's still unseeded (~/.aws/credentials absent), it also signs
+# into Bitwarden first — terminal prompts only, no browser.
 #
 set -euo pipefail
 
@@ -135,21 +134,16 @@ for arg in "$@"; do
 done
 
 # ---- Bitwarden-backed secrets ----------------------------------------
-# The aws role seeds ~/.aws/credentials and the litellm role seeds
-# /etc/litellm/litellm.env through the community.general bitwarden lookup,
-# which shells out to the bw CLI *on the controller* — the vault has to be
-# unlocked before ansible-playbook starts, and the sign-in prompts (email,
-# master password, TOTP) need the terminal, which tasks don't have. So the
-# sign-in lives here, gated against needless prompts: only for roles whose
-# seed target is still missing (a converged machine never prompts), never
-# under --check/-C (the roles check-gate their seed tasks to match), and
-# only when the tag selection reaches such a role. The litellm env file
-# holds more than the vault secret (the generated master key shares it),
-# so the probe is for the LINE, as root (0600; sudo is already primed —
-# -n so it can never prompt here).
+# The aws role seeds ~/.aws/credentials through the community.general
+# bitwarden lookup, which shells out to the bw CLI *on the controller* — the
+# vault has to be unlocked before ansible-playbook starts, and the sign-in
+# prompts (email, master password, TOTP) need the terminal, which tasks
+# don't have. So the sign-in lives here, gated against needless prompts:
+# only while the seed target is still missing (a converged machine never
+# prompts), never under --check/-C (the role check-gates its seed task to
+# match), and only when the tag selection reaches the aws role.
 secret_roles=()
 [[ -f "$HOME/.aws/credentials" ]] || secret_roles+=(aws)
-sudo -n grep -qs '^ANTHROPIC_API_KEY=' /etc/litellm/litellm.env || secret_roles+=(litellm)
 secrets_due=0
 for r in "${secret_roles[@]}"; do
     if ((${#tags[@]})); then

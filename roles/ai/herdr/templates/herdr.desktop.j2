@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=herdr
+Comment=Terminal multiplexer with AI agent state awareness
+Exec=ghostty -e {{ lookup('env', 'HOME') }}/.local/bin/herdr
+TryExec={{ lookup('env', 'HOME') }}/.local/bin/herdr
+Icon=herdr
+Terminal=false
+Categories=Development;Utility;
+Keywords=agent;claude;opencode;terminal;multiplexer;

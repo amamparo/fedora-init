@@ -15,23 +15,14 @@ _default:
 install *args:
     ./install.sh "$@"
 
-# Values come from SEED_AWS_ACCESS_KEY_ID / SEED_AWS_SECRET_ACCESS_KEY /
-# SEED_ANTHROPIC_API_KEY, or hidden prompts when unset; a blank skips that
-# value. Only supplied values are written — existing items keep their other
-# fields, and nothing else in the vault is touched. scripts/seed-bitwarden.sh
-# has the details.
+# Values come from SEED_AWS_ACCESS_KEY_ID / SEED_AWS_SECRET_ACCESS_KEY, or
+# hidden prompts when unset; a blank skips that value. Only supplied values
+# are written — existing items keep their other fields, and nothing else in
+# the vault is touched. scripts/seed-bitwarden.sh has the details.
 
-# Upsert the Bitwarden items the roles read (aws, anthropic)
+# Upsert the Bitwarden items the roles read (aws)
 seed-bitwarden:
     scripts/seed-bitwarden.sh
-
-# The litellm admin UI (http://litellm.localhost/ui) logs in as
-# `admin` with the master key, which lives root-only in
-# /etc/litellm/litellm.env.
-
-# Print the LiteLLM master key (the admin UI password)
-litellm-master-key:
-    sudo grep '^LITELLM_MASTER_KEY=' /etc/litellm/litellm.env | cut -d= -f2-
 
 # ansible-lint is not a stock rpm; uvx (cli_tools) fetches it when it isn't
 # on PATH.
