@@ -80,6 +80,27 @@
 # disables its shell-expansion and exits the Ghostty process when the given
 # command exits, so no shell lingers behind a closed herdr session.
 #
+# Two Ghostty config flags ride the Exec line, scoped to THIS window only:
+# -e forces gtk-single-instance=false (Ghostty's own docs: "a new instance
+# is launched and the CLI args are respected"), so the launcher's Ghostty is
+# a separate process and the flags never reach the user's other Ghostty
+# windows. They MUST precede -e — everything after it becomes herdr's argv.
+#   --confirm-close-surface=false: Ghostty's "the running process will be
+#     killed" dialog is a false alarm here — closing the window only drops
+#     the herdr CLIENT; `herdr server` runs in its own session with no
+#     controlling tty (verified: separate SID, survived many window closes),
+#     so every agent pane keeps running and `herdr` re-attaches. Ghostty
+#     1.3.1 has no per-command confirm rule (confirm-close-surface is the
+#     only confirm key), so a plain `herdr` typed into an ordinary Ghostty
+#     tab still warns; the global switch would belong in the ghostty role's
+#     files/config, and is deliberately NOT set — the dialog is a real guard
+#     for every other process.
+#   --fullscreen=true: native fullscreen at launch. The exit is Ghostty's
+#     ctrl+enter (toggle_fullscreen) — GNOME's own toggle-fullscreen is
+#     unbound (window_snapping resets it to its empty default), and herdr's
+#     defaults bind no ctrl+enter.
+#     `--maximize=true` is the swap if the top bar should stay visible.
+#
 # A TEMPLATE, not a static copy: a bare `herdr` Exec resolves against
 # gnome-shell's own PATH, not the user's shell PATH — verified live on this
 # machine (`tr '\0' '\n' </proc/$(pgrep -xo gnome-shell)/environ`) as

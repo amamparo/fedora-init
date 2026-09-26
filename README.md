@@ -468,7 +468,13 @@ role re-checks the manifest and re-downloads when a newer release exists
 instead, the same way it stays hands-off with every other tool here that
 manages its own updates. Run `herdr` in a terminal to start it, or launch it
 from the app grid — the role adds a **herdr** entry (icon included) that
-opens straight into it inside Ghostty. Nothing else is configured — herdr
+opens straight into it inside a fullscreen Ghostty window (`ctrl+enter`
+leaves fullscreen). That window closes without Ghostty's "running process
+will be killed" warning: closing it only detaches the herdr client, while
+the herdr server keeps every agent pane running for the next `herdr` to
+re-attach. Both settings apply to that launcher's window only — other
+Ghostty windows keep the normal close warning, including one where you
+typed `herdr` yourself. Nothing else is configured — herdr
 only watches panes, it never talks to a model API itself, so its own config
 under `~/.config/herdr` is entirely yours.
 
@@ -682,7 +688,7 @@ use the bare role name. Those five groups are the ones `roles_path` in
 `ansible.cfg` lists, so a new group needs an entry there too. Drop
 `roles/<group>/<name>/` with a `tasks/main.yml` and add it to `site.yml` —
 roles run in the order listed there, tagged with the role name
-(underscores become hyphens). Conventions, in brief (CLAUDE.md has the full
+(underscores become hyphens). Conventions, in brief (AGENTS.md has the full
 contributor rules):
 
 - one concern per role, and add-ons live in their host's role (the caveman

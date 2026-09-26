@@ -27,7 +27,7 @@ seed-bitwarden:
 # ansible-lint is not a stock rpm; uvx (cli_tools) fetches it when it isn't
 # on PATH.
 
-# The safe checks from CLAUDE.md — never runs the playbook
+# The safe checks from AGENTS.md — never runs the playbook
 check:
     ansible-playbook site.yml --syntax-check
     if command -v ansible-lint >/dev/null; then ansible-lint --offline; else uvx ansible-lint --offline; fi
