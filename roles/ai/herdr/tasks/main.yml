@@ -86,7 +86,7 @@
 # launcher's Ghostty is a separate process and the flags never reach the
 # user's other Ghostty windows. They DO reach any tab or window opened FROM
 # the herdr window (same process, same config) — no close warning there,
-# and new windows open fullscreen — so other long-running work belongs in a
+# and new windows open maximized — so other long-running work belongs in a
 # normal Ghostty. They MUST precede -e — everything after it becomes
 # herdr's argv.
 #   --confirm-close-surface=false: Ghostty's "the running process will be
@@ -99,11 +99,25 @@
 #     tab still warns; the global switch would belong in the ghostty role's
 #     files/config, and is deliberately NOT set — the dialog is a real guard
 #     for every other process.
-#   --fullscreen=true: native fullscreen at launch. The exit is Ghostty's
-#     ctrl+enter (toggle_fullscreen) — GNOME's own toggle-fullscreen is
-#     unbound (window_snapping resets it to its empty default), and herdr's
-#     defaults bind no ctrl+enter.
-#     `--maximize=true` is the swap if the top bar should stay visible.
+#     Source-verified against v1.3.1: every close path (titlebar X, Alt+F4,
+#     win.close, last-tab close, ctrl+shift+q) funnels into
+#     Surface.needsConfirmQuit(), which honours the flag. Two ways it can
+#     come back: read-only mode (palette-only toggle_readonly) always
+#     prompts, and a `config-file =` include in the ghostty role's config
+#     loads AFTER CLI flags and would override both flags — keep these keys
+#     out of any include.
+#   --maximize=true: maximized at launch, so GNOME's top bar and Ghostty's
+#     own header bar (with its X) stay visible. A compositor REQUEST, never
+#     a size (window.zig: `if (config.maximize) ...maximize();`): mutter
+#     fits it to the work area of whichever display it opens on, and nothing
+#     sets window-width/window-height — keep those out of the ghostty
+#     role's config. NOT --fullscreen=true, which
+#     was tried and rejected: it hides both, which is not what's wanted.
+#     Verified live on GTK 4.22.5: 26x79 -> 46x167 cells (fullscreen gave
+#     49x167). GNOME Wayland reports of startup fullscreen/maximize being
+#     ignored (#8579, #10385) were all on GTK 4.14/4.16, where the window's
+#     construct-property defaults undid the request. Super+Alt+F
+#     (toggle-maximized) restores the window.
 #
 # A TEMPLATE, not a static copy: a bare `herdr` Exec resolves against
 # gnome-shell's own PATH, not the user's shell PATH — verified live on this

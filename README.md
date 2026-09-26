@@ -468,9 +468,9 @@ role re-checks the manifest and re-downloads when a newer release exists
 instead, the same way it stays hands-off with every other tool here that
 manages its own updates. Run `herdr` in a terminal to start it, or launch it
 from the app grid — the role adds a **herdr** entry (icon included) that
-opens straight into it inside a fullscreen Ghostty window (`ctrl+enter`
-leaves fullscreen). That window closes without Ghostty's "running process
-will be killed" warning: closing it only detaches the herdr client, while
+opens straight into it inside a maximized Ghostty window — sized by GNOME
+to whichever display it opens on, with the top bar still visible. That
+window closes without Ghostty's "running process will be killed" warning: closing it only detaches the herdr client, while
 the herdr server keeps every agent pane running for the next `herdr` to
 re-attach. Both settings apply only to the Ghostty that launcher starts —
 including any tab or window you open from it, so keep other long-running
