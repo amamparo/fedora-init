@@ -20,3 +20,14 @@ command -v zoxide >/dev/null && eval "$(zoxide init zsh)"
 # mise: runtime versions (node/python/java) — hooks cd to apply per-project
 # pins. Guarded so the shell works before the mise role has run.
 command -v mise >/dev/null && eval "$(mise activate zsh)"
+
+# neovim: the editor (neovim role). EDITOR/VISUAL reach git commit, crontab
+# -e, Ctrl-X Ctrl-E and Claude Code's editor key; this overrides Fedora's
+# nano default (/etc/profile.d/nano-default-editor.sh runs before this
+# file). alias vim=nvim also catches `vi`, because vim-enhanced's
+# /etc/profile.d/vim.sh already aliases vi=vim and zsh expands aliases
+# recursively; `\vim` still reaches real Vim (cli_tools keeps it installed).
+if command -v nvim >/dev/null; then
+  export EDITOR=nvim VISUAL=nvim
+  alias vim=nvim
+fi

@@ -64,8 +64,12 @@
       tags: zsh
     - role: cli_tools
       tags: cli-tools
+    - role: neovim
+      tags: neovim
     - role: git_workspace
       tags: git-workspace
+    - role: lazygit
+      tags: lazygit
     - role: github_cli
       tags: github-cli
     - role: aws

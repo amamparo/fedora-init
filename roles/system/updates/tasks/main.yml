@@ -1,6 +1,8 @@
 ---
 # Bring the system current — everything Fedora's Software app would report:
-# rpm updates (dnf), firmware (fwupd/LVFS), and flatpaks when present.
+# rpm updates (dnf), firmware (fwupd/LVFS), and flatpaks when present — plus
+# the out-of-dnf installs this repo owns that never update themselves:
+# herdr, lazygit, and Neovim's plugins/parsers/language servers.
 #
 # This role is the repo's DELIBERATE exception to the zero-network
 # converged-re-run rule: its concern is drift from upstream, which is
@@ -133,3 +135,84 @@
     - >-
       (updates_herdr_version.stdout | regex_search('[0-9][0-9.]*'))
       != (updates_herdr_manifest.content | from_json).version
+
+# lazygit (roles/dev/lazygit): the official release binary, which never
+# updates itself — the herdr shape above. The installed version comes from
+# `lazygit --version` ("commit=…, build date=…, version=0.65.1, os=…"), the
+# latest from GitHub's /releases/latest redirect (no API rate limit). Both
+# probes are read-only and forced under --check so a dry run can report a
+# pending upgrade; the upgrade itself is skipped there (tempfile has no
+# check-mode support — see the include).
+- name: Probe for lazygit
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin/lazygit"
+  register: updates_lazygit_bin
+  check_mode: false
+
+- name: Read the installed lazygit version
+  ansible.builtin.command:
+    argv:
+      - "{{ lookup('env', 'HOME') }}/.local/bin/lazygit"
+      - --version
+  register: updates_lazygit_version
+  changed_when: false
+  check_mode: false
+  when: updates_lazygit_bin.stat.exists
+
+- name: Resolve the latest lazygit release
+  ansible.builtin.uri:
+    url: https://github.com/jesseduffield/lazygit/releases/latest
+    follow_redirects: none
+    status_code: 302
+  register: updates_lazygit_latest
+  changed_when: false
+  check_mode: false
+  when: updates_lazygit_bin.stat.exists
+
+- name: Report a pending lazygit upgrade under --check
+  ansible.builtin.debug:
+    msg: >-
+      lazygit {{ updates_lazygit_installed }} is installed and
+      {{ updates_lazygit_wanted }} is the latest release — a real run
+      re-downloads the binary.
+  vars:
+    updates_lazygit_installed: "{{ updates_lazygit_version.stdout | regex_search('version=([0-9][0-9.]*)', '\\1') | first }}"
+    updates_lazygit_wanted: "{{ updates_lazygit_latest.location | regex_search('/tag/v([0-9][0-9.]*)$', '\\1') | first }}"
+  when:
+    - ansible_check_mode
+    - updates_lazygit_bin.stat.exists
+    - updates_lazygit_installed != updates_lazygit_wanted
+
+- name: Upgrade lazygit to the latest release
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: lazygit_install
+  vars:
+    lazygit_version: "{{ updates_lazygit_latest.location | regex_search('/tag/v([0-9][0-9.]*)$', '\\1') | first }}"
+    updates_lazygit_installed: "{{ updates_lazygit_version.stdout | regex_search('version=([0-9][0-9.]*)', '\\1') | first }}"
+  when:
+    - updates_lazygit_bin.stat.exists
+    - updates_lazygit_installed != lazygit_version
+
+# Neovim (roles/dev/neovim): plugins, treesitter parsers and Mason packages
+# live outside dnf and never update on their own (the config turns lazy.nvim's
+# update checker off — this is its replacement). Presence-guarded on the
+# sentinel the neovim role's first clean sync writes, so a machine that never
+# ran that role skips. The shared include runs a headless `:Lazy sync` in one
+# process, then the parser + Mason upgrade pass in a fresh one (see
+# roles/common/files/neovim_sync.lua). Mason upgrades matter beyond
+# freshness: kotlin-lsp builds carry a time-limited licence and stop working
+# when it expires. `command` has no check-mode support, so --check skips it.
+- name: Probe for the Neovim sync sentinel
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/state/nvim/fedora-init-bootstrap"
+  register: updates_neovim_sentinel
+  check_mode: false
+
+- name: Update Neovim plugins, parsers and language servers
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: neovim_sync
+  vars:
+    neovim_sync_update: true
+  when: updates_neovim_sentinel.stat.exists

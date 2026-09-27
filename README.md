@@ -67,12 +67,15 @@ is what `./install.sh <substring>` matches against.
 Everything Fedora's Software app would report, applied: all rpm updates,
 firmware via fwupd/LVFS (reboot-staged ones get called out), and flatpak
 updates (Podman Desktop, plus anything you've added). Runs first so the rest
-of the play resolves against fresh metadata. It also brings herdr current —
-the one out-of-dnf install this role actively upgrades (re-downloaded from
-the latest release whenever the manifest version moved; other out-of-dnf
-tools like Claude Code and reaper either self-update or are installed once
-and left alone). Under `--check` the version probe runs and a pending herdr
-upgrade is printed; nothing is actually re-downloaded.
+of the play resolves against fresh metadata. It also brings the out-of-dnf
+installs this repo owns current: herdr and lazygit (each re-downloaded from
+its latest release whenever the version moved), and Neovim — every plugin
+(`:Lazy sync`), treesitter parser and Mason language server/tool, updated
+headlessly, which is also what keeps JetBrains' kotlin-lsp alive (its builds
+expire). Other out-of-dnf tools like Claude Code and reaper either
+self-update or are installed once and left alone. Under `--check` the herdr
+and lazygit version probes run and a pending upgrade is printed; nothing is
+actually re-downloaded, and the Neovim update is skipped.
 
 ### snapshots
 
@@ -194,6 +197,9 @@ Installs zsh + [oh-my-zsh](https://ohmyz.sh) (shallow git clone, never
 auto-updated afterwards), drops in `roles/dev/zsh/files/zshrc` (robbyrussell
 theme, `plugins=(git)` only), and makes zsh the login shell. A pre-existing
 `~/.zshrc` that differs is backed up once to `~/.zshrc.pre-fedora-init`.
+Once Neovim is installed the zshrc makes it the editor: `EDITOR`/`VISUAL`
+are `nvim` (git commit messages, `crontab -e`, Ctrl-X Ctrl-E), and `vim`
+— and with it `vi` — opens `nvim`. `\vim` still runs real Vim.
 
 ### cli-tools
 
@@ -206,12 +212,59 @@ which many MCP-server configs expect on PATH — mise still owns runtime
 pins), [`just`](https://just.systems) (a command runner: `just
 <recipe>` runs recipes from a project's `justfile`, with tab-completion
 out of the box — it has no build graph, so it complements a Makefile
-rather than replacing one), and `vim` — the real editor, which a stock
-Fedora install does *not* give you: the base group ships only `vi`, a
-tiny build with no syntax highlighting and no scripting, so the rpm here
-is `vim-enhanced`. It aliases `vi` to `vim` in interactive shells on its
-own, so there is nothing to learn. `./install.sh tools` targets only this
-role (`cli` also sweeps github-cli).
+rather than replacing one), and real Vim (`vim-enhanced`) — a stock Fedora
+install ships only `vi`, a tiny build with no syntax highlighting or
+scripting. Neovim (below) is the day-to-day editor and takes over `vim`/`vi`
+in the shell; Vim stays installed as the fallback, reachable as `\vim`.
+`./install.sh tools` targets only this role (`cli` also sweeps github-cli).
+
+### neovim
+
+[Neovim](https://neovim.io) as the editor, set up as
+[LazyVim](https://www.lazyvim.org) — the community's go-to batteries-included
+config: completion (blink.cmp), fuzzy finding (`<space><space>` files,
+`<space>/` grep), a file explorer (`<space>e`), format-on-save, linting,
+git signs, and `<space>` which-key menus for everything else. The config is
+repo-owned in `roles/dev/neovim/files/nvim/` and mirrored into
+`~/.config/nvim` — edit it in the repo; a re-run puts `~/.config/nvim` back
+(an existing config there is backed up once to `~/.config/nvim.pre-fedora-init`).
+
+Full LSP ("intellisense": completion, go-to-definition, references, rename,
+hover docs, diagnostics, code actions) for the languages in `~/git`, each a
+LazyVim language extra with its formatter and linter:
+
+| Language | Language server | Format / lint |
+| --- | --- | --- |
+| Go | gopls | goimports + gofumpt, golangci-lint |
+| Python | basedpyright, ruff | ruff |
+| TypeScript/JavaScript | vtsls | biome where `biome.json` exists, eslint + prettier where their configs exist |
+| Rust | rust-analyzer (from the project's toolchain) | rustfmt, via rustaceanvim |
+| Kotlin | JetBrains kotlin-lsp (alpha) | ktlint |
+| Ansible / YAML / JSON / TOML | ansiblels / yamlls / jsonls / taplo | ansible-lint; SchemaStore schemas |
+| Bash, Dockerfile, Markdown, Lua, justfiles | bashls, dockerls, marksman, lua_ls, just-lsp | shellcheck/shfmt, hadolint, markdownlint, stylua |
+
+Everything (plugins, treesitter parsers, language servers) is installed
+headlessly by the role on the first run and kept current by the **updates**
+role, so the first `nvim` opens ready. Run `:LazyHealth` once after it. The
+colorscheme is Moonfly, matching Ghostty.
+
+Claude Code integration ([claudecode.nvim](https://github.com/coder/claudecode.nvim),
+the same protocol as Claude's VS Code extension): run `/ide` in a Claude
+session started in the same project — e.g. in a herdr pane — to connect it
+to the open nvim, and Claude sees your current file and selection and
+proposes edits as diffs you accept with `:w` (or `<space>aa`) and reject with
+`:q` (`<space>ad`). `<space>ac` opens Claude in a split instead.
+
+Two caveats. **Rust** needs the `rust-analyzer` and `rust-src` components in
+each project's toolchain (`components = ["rust-analyzer", "rust-src"]` in its
+`mise.toml`, or `rustup component add rust-analyzer rust-src`) — LazyVim's
+Rust support deliberately reads rust-analyzer from the toolchain, never
+installs its own. **Kotlin**'s kotlin-lsp is JetBrains' official server but
+still alpha (Android Gradle support is experimental), and it uses 2.5–4.5 GB
+of RAM while a Kotlin project is open.
+
+`./install.sh neovim` (or `neo`/`vim`) targets only this role; `nvim`
+matches nothing, since the role is named `neovim`.
 
 ### git-workspace
 
@@ -236,6 +289,17 @@ only — scripts and tools see plain git output. The pager settings are
 repo-declared (same class as the aws region defaults): edit them in
 `roles/dev/git_workspace/tasks/main.yml`, not with `git config`, which a later
 run would revert.
+
+### lazygit
+
+[lazygit](https://github.com/jesseduffield/lazygit), a terminal UI for git —
+stage hunks or single lines, interactive rebase, branches, stashes and
+conflicts from one screen. Run `lazygit`, or `<space>gg` in Neovim. Fedora
+has no rpm and the COPRs lag months behind, so the role installs the official
+release binary to `~/.local/bin/lazygit`, verified against the release's own
+checksums, and the **updates** role re-downloads it when a new release is
+out. `./install.sh lazy` targets only this role (`git` also sweeps
+git-workspace and github-cli).
 
 ### github-cli
 

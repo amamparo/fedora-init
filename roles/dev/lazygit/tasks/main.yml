@@ -1,0 +1,47 @@
+---
+# lazygit (github.com/jesseduffield/lazygit) — a terminal UI for git:
+# staging hunks/lines, interactive rebase, branches, stashes and conflicts
+# from one screen. Run it as `lazygit`, or from Neovim with <leader>gg
+# (LazyVim opens it through snacks.lazygit, which is why it arrived with the
+# neovim role — but it is its own role, not a neovim add-on: lazygit is a
+# complete git client without Neovim, so the dependency-direction merge
+# test fails, the github_cli call).
+#
+# No Fedora rpm. The COPR LazyVim's own install docs name for Fedora,
+# dejan/lazygit, was checked and found stale (last build 0.58.1 in January
+# 2026 vs upstream 0.65.1 in September); the long-standing atim/lazygit is
+# older still. So this installs the official release binary instead,
+# verified against upstream's checksums.txt (roles/common/tasks/
+# lazygit_install.yml) — the herdr pattern: presence is the install guard,
+# and the updates role re-resolves the latest release and re-runs the same
+# include when the installed version lags (lazygit never updates itself).
+#
+# No config: ~/.config/lazygit is the user's. Substring: `./install.sh
+# lazygit` or `lazy` hits only this role; `git` also sweeps git-workspace
+# and github-cli.
+- name: Probe for lazygit (~/.local/bin/lazygit)
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin/lazygit"
+  register: lazygit_bin
+  check_mode: false
+
+# GitHub answers /releases/latest with a 302 to /releases/tag/v<version> —
+# the version without the unauthenticated API's rate limit. uri has no
+# check-mode support, so under --check this is skipped and the include
+# below guards on the registered location.
+- name: Resolve the latest lazygit release
+  ansible.builtin.uri:
+    url: https://github.com/jesseduffield/lazygit/releases/latest
+    follow_redirects: none
+    status_code: 302
+  register: lazygit_latest
+  changed_when: false
+  when: not lazygit_bin.stat.exists
+
+- name: Install the latest lazygit release
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: lazygit_install
+  vars:
+    lazygit_version: "{{ lazygit_latest.location | regex_search('/tag/v([0-9][0-9.]*)$', '\\1') | first }}"
+  when: not lazygit_bin.stat.exists and lazygit_latest.location is defined

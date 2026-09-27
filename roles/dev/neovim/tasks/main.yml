@@ -1,0 +1,173 @@
+---
+# Neovim as the editor, configured as LazyVim (lazyvim.org) — the community's
+# batteries-included distro: blink.cmp completion, snacks picker/explorer,
+# conform formatting, nvim-lint, Mason-managed language servers, and one
+# "extra" per language that wires LSP + formatter + linter + treesitter.
+# kickstart.nvim (now on the still-experimental vim.pack) and hand-rolled
+# native configs were the alternatives; they suit people who want to own
+# every line. The config is the LazyVim starter layout in files/nvim/,
+# repo-owned and MIRRORED into ~/.config/nvim; its README section lists the
+# extras and every override, with the reasons in the Lua files themselves.
+#
+# The rpms, exact names (package_facts keys on real names only — the
+# vim-enhanced lesson), claude_code's install-only-the-missing guard:
+#   neovim           0.12.x from Fedora updates: LuaJIT build, which LazyVim
+#                    requires, and >= 0.12, which nvim-treesitter's main
+#                    branch requires
+#   tree-sitter-cli  nvim-treesitter main compiles every parser with it
+#                    (>= 0.26.1, "via your package manager, not npm"); on
+#                    PATH, LazyVim never falls back to a Mason copy
+#   gcc              the C compiler those parser builds use (/usr/bin/cc)
+#   unzip            Mason unpacks release zips with it
+#   wl-clipboard     clipboard=unnamedplus on Wayland (LazyVim's default)
+#   inotify-tools    Neovim's LSP file-watching backend on Linux (inotifywait)
+#   nodejs22-npm, nodejs22-npm-bin
+#                    npm for Mason's npm-sourced servers (vtsls, eslint,
+#                    json/yaml/bash/docker/ansible servers, prettier, biome,
+#                    markdownlint). BOTH are needed: nodejs22-npm ships only
+#                    /usr/bin/npm-22, the unversioned /usr/bin/npm is in
+#                    -bin (the nodejs22-bin trap again). mise's npm shim is
+#                    no substitute: only go is pinned globally in mise, so
+#                    the shim errors ("No version is set for shim: npm")
+#                    everywhere outside a node-pinned project.
+#   java-25-openjdk-headless
+#                    the host `java` ktlint (Kotlin lint/format) runs on.
+#                    On a stock Workstation it is already present as a
+#                    LibreOffice dependency (install reason Dependency);
+#                    naming it here only matters on a machine without
+#                    LibreOffice — the guard below skips installed rpms, so
+#                    it never flips that install reason.
+# install_weak_deps: false because the neovim rpm Recommends xsel, an X11
+# clipboard tool that does nothing on Wayland (its other Recommends —
+# tree-sitter-cli, wl-clipboard, ripgrep, inotify-tools — are named here or
+# come from cli_tools). git, curl, tar, gzip, python3 (venv, for Mason's
+# PyPI packages) are base-system; ripgrep/fd/fzf come from cli_tools, which
+# runs first. `go` for gopls/goimports/gofumpt is NOT installed here: it
+# comes from mise (Fedora's golang is older and pinned GOTOOLCHAIN=local),
+# and Mason packages whose toolchain is missing are skipped, not failed —
+# LazyVim installs them on the next interactive start once `go` exists.
+#
+# Substring: `./install.sh neovim`, `neo` or `vim` hit only this role (vim
+# does NOT reach vim-enhanced, which is cli-tools); `nvim` matches nothing
+# (neovim doesn't contain it — the github-cli/"gh" trap); `vi` also sweeps
+# no-overview.
+- name: Install Neovim and the tools LazyVim and Mason shell out to
+  become: true
+  ansible.builtin.dnf5:
+    name: "{{ neovim_rpms | difference(ansible_facts.packages.keys() | list) }}"
+    state: present
+    install_weak_deps: false
+  vars:
+    neovim_rpms:
+      - neovim
+      - tree-sitter-cli
+      - gcc
+      - unzip
+      - wl-clipboard
+      - inotify-tools
+      - nodejs22-npm
+      - nodejs22-npm-bin
+      - java-25-openjdk-headless
+  when: neovim_rpms | difference(ansible_facts.packages.keys() | list) | length > 0
+
+# Written by roles/common/files/neovim_sync.lua only after a fully clean
+# install pass — the first-install gate below, and the updates role's
+# "is this machine's Neovim ours" presence guard.
+- name: Probe for the Neovim sync sentinel
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/state/nvim/fedora-init-bootstrap"
+  register: neovim_sentinel
+  check_mode: false
+
+# The mirror below DELETES whatever the repo doesn't have, so a config that
+# predates fedora-init is copied aside once first (the zsh role's
+# ~/.zshrc.pre-fedora-init precedent, for a directory). One-time for real:
+# never once the backup exists, and never once the sentinel says the config
+# in place is already this repo's.
+- name: Probe for an existing ~/.config/nvim
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/nvim"
+  register: neovim_config_dir
+  check_mode: false
+
+- name: Probe for an existing ~/.config/nvim.pre-fedora-init backup
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.config/nvim.pre-fedora-init"
+  register: neovim_config_backup
+  check_mode: false
+
+- name: Back up the existing ~/.config/nvim to ~/.config/nvim.pre-fedora-init
+  ansible.builtin.copy:
+    src: "{{ lookup('env', 'HOME') }}/.config/nvim/"
+    dest: "{{ lookup('env', 'HOME') }}/.config/nvim.pre-fedora-init/"
+    remote_src: true
+    mode: preserve
+  when:
+    - neovim_config_dir.stat.exists
+    - not neovim_config_backup.stat.exists
+    - not neovim_sentinel.stat.exists
+
+- name: Ensure ~/.config/nvim exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.config/nvim"
+    state: directory
+    mode: "0755"
+
+# A true MIRROR, not an additive copy: lazy.nvim imports every
+# lua/plugins/*.lua it finds, so a spec deleted from the repo but left on
+# disk would keep its plugin installed and configured. Same synchronize shape
+# and load-bearing rsync_opts as roles/common/tasks/gnome_extension.yml:
+#   --exclude=/lazy-lock.json  lazy.nvim rewrites it after every install,
+#   --exclude=/lazyvim.json    update and clean; LazyVim writes the news
+#                              hash and extras state to lazyvim.json on the
+#                              first interactive start. Both are runtime-
+#                              owned (the settings.json/reaper.ini class) —
+#                              excluded, rsync's delete leaves them alone.
+#                              Anchored with / so only the top-level files
+#                              match.
+#   --checksum                 compare content, not mtime (repo checkouts
+#                              and curl|bash tarballs differ in mtimes)
+#   --omit-dir-times           dir mtimes would otherwise re-report changed
+- name: Mirror the Neovim config into ~/.config/nvim
+  ansible.posix.synchronize:
+    src: "{{ role_path }}/files/nvim/"
+    dest: "{{ lookup('env', 'HOME') }}/.config/nvim/"
+    delete: true
+    recursive: true
+    rsync_opts:
+      - "--exclude=/lazy-lock.json"
+      - "--exclude=/lazyvim.json"
+      - "--checksum"
+      - "--omit-dir-times"
+  register: neovim_config
+
+# Plugins, treesitter parsers, blink.cmp's fuzzy library and every Mason tool
+# and language server, installed headlessly now rather than on the first
+# interactive start (network, several minutes, ~0.5 GB with kotlin-lsp).
+# Runs on the first install (no sentinel) and again whenever the mirrored
+# config changed — a new extra's servers arrive with the ./install.sh that
+# brings the extra. That pass installs, it never cleans: plugins of a removed
+# extra stay on disk (unloaded) until the next `./install.sh updates` or
+# `:Lazy clean`. A converged re-run (sentinel present, mirror unchanged)
+# skips it and stays offline.
+- name: Install Neovim plugins, parsers and language servers
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: neovim_sync
+  vars:
+    neovim_sync_update: false
+  when: not neovim_sentinel.stat.exists or neovim_config is changed
+
+- name: Report the Neovim setup
+  ansible.builtin.debug:
+    msg: >-
+      Neovim (LazyVim) is installed and is now $EDITOR — open a new shell for
+      the zshrc change. First launch: run :LazyHealth once. Claude Code: from
+      a Claude session in the same project run /ide to connect it to this
+      nvim (or <leader>ac to open Claude in a split). Rust needs the
+      rust-analyzer and rust-src components in each project's toolchain
+      (mise.toml components, or rustup component add) — rustaceanvim reads
+      rust-analyzer from PATH, never Mason. Kotlin uses JetBrains' alpha
+      kotlin-lsp, which takes 2.5-4.5 GB of RAM while a Kotlin project is
+      open.
+  when: not neovim_sentinel.stat.exists and not ansible_check_mode

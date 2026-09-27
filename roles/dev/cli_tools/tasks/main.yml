@@ -29,11 +29,13 @@
 #            completions auto-load (the fzf-completion case, not the
 #            zoxide one).
 #   vim-enhanced
-#            the editor — the one deliberate classic in an otherwise
-#            modern-picks list, and the only entry needing no zshrc wiring:
-#            the rpm ships its own /etc/profile.d/vim.sh, which aliases
-#            vi=vim for interactive shells. The rpm NAME is load-bearing
-#            twice over. There is no package called plain `vim` (verified:
+#            real Vim — the one deliberate classic in an otherwise
+#            modern-picks list. Since the neovim role it is the FALLBACK
+#            editor: the zsh role's zshrc aliases vim=nvim, and because the
+#            rpm's own /etc/profile.d/vim.sh aliases vi=vim (zsh expands
+#            aliases recursively) `vi` lands on nvim too; `\vim` reaches this
+#            one. Keep it: without vim.sh, `vi` falls back to vim-minimal.
+#            The rpm NAME is load-bearing twice over. There is no package called plain `vim` (verified:
 #            `dnf5 repoquery --whatprovides vim` -> vim-enhanced, a virtual
 #            Provides), and package_facts only ever keys on REAL package
 #            names — so a bare `vim` here would resolve fine for dnf5 but

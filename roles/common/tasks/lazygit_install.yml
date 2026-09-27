@@ -1,0 +1,57 @@
+---
+# Install (or upgrade to) ONE lazygit release. Shared by roles/dev/lazygit
+# (first install) and roles/system/updates (upgrade) via include_role (name:
+# common, tasks_from: lazygit_install), the herdr_install precedent.
+#
+# Parameter: lazygit_version — a release version WITHOUT the leading "v"
+# (e.g. "0.65.1"), resolved by the caller from GitHub's /releases/latest
+# redirect.
+#
+# Trust anchor: upstream's own checksums.txt on the same release. get_url
+# accepts a checksum-file URL and looks the tarball's filename up in it,
+# failing on a mismatch. The tarball holds the one static binary plus
+# LICENSE/README; unarchive's `include` extracts just the binary straight
+# into ~/.local/bin (on PATH via the zsh role's zshrc, and appended by the
+# neovim config for GUI launches). x86_64 hardcoded — single-machine repo,
+# the reaper/herdr precedent.
+#
+# tempfile has no check-mode support: under --check it is skipped and the
+# tasks after it guard on `.path is defined` (the claude_code/reaper shape).
+# $HOME, NO become: a per-user CLI.
+- name: Ensure ~/.local/bin exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Install lazygit {{ lazygit_version }}
+  block:
+    - name: Create a scratch dir for the lazygit tarball
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: lazygit
+      register: lazygit_tmp
+
+    - name: Download the checksum-verified lazygit tarball {{ lazygit_version }}
+      ansible.builtin.get_url:
+        url: "https://github.com/jesseduffield/lazygit/releases/download/v{{ lazygit_version }}/lazygit_{{ lazygit_version }}_linux_x86_64.tar.gz"
+        checksum: "sha256:https://github.com/jesseduffield/lazygit/releases/download/v{{ lazygit_version }}/checksums.txt"
+        dest: "{{ lazygit_tmp.path }}/lazygit.tar.gz"
+        mode: "0644"
+      when: lazygit_tmp.path is defined
+
+    - name: Extract the lazygit binary into ~/.local/bin
+      ansible.builtin.unarchive:
+        src: "{{ lazygit_tmp.path }}/lazygit.tar.gz"
+        dest: "{{ lookup('env', 'HOME') }}/.local/bin"
+        remote_src: true
+        include:
+          - lazygit
+        mode: "0755"
+      when: lazygit_tmp.path is defined
+  always:
+    - name: Remove the lazygit scratch dir
+      ansible.builtin.file:
+        path: "{{ lazygit_tmp.path }}"
+        state: absent
+      when: lazygit_tmp.path is defined

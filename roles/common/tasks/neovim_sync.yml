@@ -1,0 +1,66 @@
+---
+# Headless Neovim sync. Shared by roles/dev/neovim (first install, and again
+# whenever the repo config changes) and roles/system/updates (upgrade) via
+# include_role (name: common, tasks_from: neovim_sync), the herdr_install
+# precedent. The work is roles/common/files/neovim_sync.lua — see its header
+# for why `nvim --headless "+Lazy! sync" +qa` alone can't do this.
+#
+# Parameter: neovim_sync_update — false: install whatever the config asks
+# for that isn't on disk yet (parsers, blink's fuzzy library, Mason tools and
+# language servers); true: first `:Lazy sync` every plugin in its own
+# process, then the same pass plus parser and Mason upgrades.
+#
+# role_path here is roles/common (include_role runs these tasks inside
+# common), which is what lets both callers find the script.
+#
+# All of it lives under $HOME — NO become (root's ~/.local/share/nvim
+# otherwise). coreutils `timeout` bounds each run: lazy.nvim's startup
+# install-missing runs before the script and has no timeout of its own, and a
+# stalled clone or the ~370 MB kotlin-lsp download would otherwise hang the
+# play with no output. A timeout exits 124 and fails the task; on a first
+# install the sentinel is then still absent, so the next ./install.sh
+# retries. `command` has no check-mode support, so under --check these are
+# skipped.
+- name: Update Neovim plugins (lazy.nvim sync)
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - 30m
+      - nvim
+      - --headless
+      - -u
+      - "{{ lookup('env', 'HOME') }}/.config/nvim/init.lua"
+      - -l
+      - "{{ role_path }}/files/neovim_sync.lua"
+      - plugins
+  environment:
+    PATH: "{{ lookup('env', 'HOME') }}/.local/bin:{{ lookup('env', 'PATH') }}"
+  register: neovim_sync_plugins
+  changed_when: "'fedora-init: changed' in neovim_sync_plugins.stdout"
+  when: neovim_sync_update | bool
+
+- name: Sync Neovim parsers, Mason tools and language servers
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - 45m
+      - nvim
+      - --headless
+      - -u
+      - "{{ lookup('env', 'HOME') }}/.config/nvim/init.lua"
+      - -l
+      - "{{ role_path }}/files/neovim_sync.lua"
+      - "{{ 'update' if neovim_sync_update | bool else 'install' }}"
+  environment:
+    PATH: "{{ lookup('env', 'HOME') }}/.local/bin:{{ lookup('env', 'PATH') }}"
+  register: neovim_sync_tools
+  changed_when: "'fedora-init: changed' in neovim_sync_tools.stdout"
+
+# The script prints what it skipped for a missing toolchain (e.g. gopls when
+# no `go` is on PATH yet); surface it rather than bury it in -v output.
+- name: Report Neovim tools skipped for a missing toolchain
+  ansible.builtin.debug:
+    msg: "{{ neovim_sync_tools.stdout_lines | select('search', 'skipped') | list }}"
+  when:
+    - neovim_sync_tools.stdout_lines is defined
+    - neovim_sync_tools.stdout_lines | select('search', 'skipped') | list | length > 0
