@@ -209,10 +209,41 @@
   register: updates_neovim_sentinel
   check_mode: false
 
+# Never under a live editor: `:Lazy sync` replaces plugin trees beneath
+# modules a running nvim has already loaded (the rest would load from the
+# new version — a mixed install until restart), and a Mason upgrade
+# uninstalls then reinstalls a server that session may be running. So a
+# running nvim (this user's, e.g. left open in a herdr pane) skips the update
+# with a note instead; the next ./install.sh updates with nvim closed does it.
+- name: Check for a running Neovim
+  ansible.builtin.command:
+    argv:
+      - pgrep
+      - -x
+      - -u
+      - "{{ lookup('env', 'USER') }}"
+      - nvim
+  register: updates_neovim_running
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: updates_neovim_sentinel.stat.exists
+
+- name: Report the Neovim update skipped for a running nvim
+  ansible.builtin.debug:
+    msg: >-
+      Neovim is running, so its plugins, parsers and language servers were
+      NOT updated — close every nvim and re-run ./install.sh updates.
+  when:
+    - updates_neovim_sentinel.stat.exists
+    - updates_neovim_running.rc == 0
+
 - name: Update Neovim plugins, parsers and language servers
   ansible.builtin.include_role:
     name: common
     tasks_from: neovim_sync
   vars:
     neovim_sync_update: true
-  when: updates_neovim_sentinel.stat.exists
+  when:
+    - updates_neovim_sentinel.stat.exists
+    - updates_neovim_running.rc != 0

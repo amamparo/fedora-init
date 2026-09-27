@@ -72,8 +72,9 @@ installs this repo owns current: herdr and lazygit (each re-downloaded from
 its latest release whenever the version moved), and Neovim — every plugin
 (`:Lazy sync`), treesitter parser and Mason language server/tool, updated
 headlessly, which is also what keeps JetBrains' kotlin-lsp alive (its builds
-expire). Other out-of-dnf tools like Claude Code and reaper either
-self-update or are installed once and left alone. Under `--check` the herdr
+expire) — skipped, with a note, while any `nvim` is open, so close Neovim
+before running updates. Other out-of-dnf tools like Claude Code and reaper
+either self-update or are installed once and left alone. Under `--check` the herdr
 and lazygit version probes run and a pending upgrade is printed; nothing is
 actually re-downloaded, and the Neovim update is skipped.
 
