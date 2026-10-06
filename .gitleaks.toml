@@ -1,0 +1,15 @@
+# fedora-init secret-scan base config. The default gitleaks ruleset (API
+# keys, tokens, private-key headers, cloud credentials…) and nothing else:
+# this is what the .githooks/pre-commit hook runs on EVERY commit — hand,
+# agent or `just save` — so it must not flag ordinary prose in AGENTS.md or
+# README.md. The PII rules (home paths, tailnet names, emails…) live in
+# .gitleaks-pii.toml and run only against the files `just save` is about to
+# publish, where such a value is never legitimate.
+#
+# A false positive is silenced with a fingerprint line in .gitleaksignore
+# (gitleaks prints the fingerprint) or an inline `gitleaks:allow` comment —
+# not by loosening a rule here.
+title = "fedora-init"
+
+[extend]
+useDefault = true

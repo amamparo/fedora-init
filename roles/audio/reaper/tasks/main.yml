@@ -670,6 +670,16 @@
       body: |-
         [MM_CTX_ARRANGE_MMOUSE]
         mm_0=2 m
+    # Not from the guide: captured from a live machine's reaper-mouse.ini (the
+    # one section it held that this role did not declare) — a click on a MIDI
+    # note, plus Alt+click. The ids are per-context indices REAPER only names
+    # in its own Preferences, so they stay opaque here on purpose.
+    - context: MM_CTX_MIDI_NOTE_CLK
+      what: MIDI note click behaviour (captured, not derived)
+      body: |-
+        [MM_CTX_MIDI_NOTE_CLK]
+        mm_0=1 m
+        mm_4=2 m
   loop_control:
     label: "{{ item.context }}"
 
@@ -757,3 +767,16 @@
   when:
     - not ansible_check_mode
     - reaper_seeded is changed or reaper_ini_backfill is changed
+
+# Licence and registration files (REAPER's reaper-license.rk and
+# reaper-reginfo2.ini, TDR Limiter's .tdr and its .conf with the registration)
+# live in Bitwarden, never git — `just save` vaults them, this restores them
+# when absent. Needs a vault session (install.sh opens one when one of these
+# is missing) outside --check; see roles/common/tasks/dotfiles.yml. Last, so
+# REAPER's own resource directory exists and nothing above races it.
+- name: Restore the saved REAPER and plugin licence files
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles
+  vars:
+    dotfiles_role: reaper

@@ -1,0 +1,106 @@
+# Restore the saved dotfiles of ONE role — the apply half of `just save`
+# (the capture half is scripts/dotfiles.py; both read dotfiles/manifest.yml
+# and share module_utils/dotfiles_common.py). Callers include this with:
+#   dotfiles_role: the owning role's name, as in the manifest's `role:` field
+# `repo:` paths in the manifest are relative to the repo root, which is
+# playbook_dir — so unlike gnome_extension.yml no caller set_fact of an
+# absolute source dir is needed.
+#
+# Handles every manifest item of that role EXCEPT the ones the role applies
+# itself (`apply: role` — see dotfiles_guard.yml / dotfiles_record.yml):
+# seed-once files and dirs, seed-keys JSON, add-lines files, VS Code
+# extensions, and vault-seeded secret files. All of it runs as the user
+# (library/dotfile_sync.py), none of it under become.
+#
+# A fresh machine before the first `just save` has manifest items whose repo
+# copy does not exist yet; the module reports that and moves on rather than
+# failing the play.
+- name: "Load the dotfiles manifest items of {{ dotfiles_role }}"
+  ansible.builtin.set_fact:
+    dotfiles_role_items: >-
+      {{ (lookup('ansible.builtin.file', playbook_dir ~ '/dotfiles/manifest.yml') | from_yaml)['items']
+         | selectattr('role', 'equalto', dotfiles_role) | list }}
+
+- name: "Restore saved files (seed-once, never overwriting) of {{ dotfiles_role }}"
+  dotfile_sync:
+    op: apply
+    item: "{{ item | combine({'src': playbook_dir ~ '/' ~ (item.repo | default(''))}) }}"
+  loop: >-
+    {{ dotfiles_role_items | rejectattr('apply', 'equalto', 'role')
+       | rejectattr('kind', 'equalto', 'secret-file') | list }}
+  loop_control:
+    label: "{{ item.id }}"
+
+# ---- vault-seeded secret files (licence keys) --------------------------
+# The aws role's gate, per file: seeded only while the target is absent, and
+# only with a Bitwarden session (install.sh opens one when the seed target
+# is missing) outside --check — so a converged run neither prompts nor
+# touches the network. The note content only ever lives in these facts and
+# the module argument, both no_log; the module reports a path and a mode,
+# never a diff. errors=ignore: a vault without the note yet (nobody has run
+# `just save` since the file was created) skips quietly instead of aborting
+# the whole play over a licence file.
+- name: "Probe the vault-seeded files of {{ dotfiles_role }}"
+  ansible.builtin.stat:
+    path: "{{ item.live | expanduser }}"
+  loop: "{{ dotfiles_role_items | selectattr('kind', 'equalto', 'secret-file') | list }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: dotfiles_secret_probe
+  check_mode: false
+
+- name: "Fetch the vault notes of absent secret files, for {{ dotfiles_role }}"
+  ansible.builtin.set_fact:
+    dotfiles_vault: >-
+      {{ dotfiles_vault | default({})
+         | combine({item.item.id: (lookup('community.general.bitwarden', item.item.vault,
+                                          search='name', result_count=1, field='notes',
+                                          errors='ignore') or ['']) | first}) }}
+  loop: "{{ dotfiles_secret_probe.results }}"
+  loop_control:
+    label: "{{ item.item.id }}"
+  no_log: true
+  when:
+    - not item.stat.exists
+    - lookup('env', 'BW_SESSION') | length > 0
+    - not ansible_check_mode
+
+- name: "Restore secret files from the vault for {{ dotfiles_role }}"
+  dotfile_sync:
+    op: apply
+    item: "{{ item.item | combine({'src': ''}) }}"
+    secret_payload: "{{ (dotfiles_vault | default({}))[item.item.id] | default('') }}"
+  loop: "{{ dotfiles_secret_probe.results }}"
+  loop_control:
+    label: "{{ item.item.id }}"
+  no_log: true
+  when: not item.stat.exists and ((dotfiles_vault | default({})).get(item.item.id, '') | length > 0)
+  register: dotfiles_secret_restore
+
+# Still absent after the restore pass: no session, or the vault has no note for
+# them yet. Says which, so a missing note is not mistaken for a missing login.
+- name: "Note secret files still missing for {{ dotfiles_role }}"
+  ansible.builtin.debug:
+    msg: >-
+      {{ dotfiles_unrestored | join(', ') }} not restored (no vault session or no vault note)
+      — run ./install.sh {{ dotfiles_role | replace('_', '-') }} to sign into Bitwarden, or
+      `just save` on a machine that has the file to vault it.
+  vars:
+    dotfiles_restored_ids: >-
+      {{ (dotfiles_vault | default({})) | dict2items | rejectattr('value', 'equalto', '')
+         | map(attribute='key') | list }}
+    dotfiles_unrestored: >-
+      {{ dotfiles_secret_probe.results | rejectattr('stat.exists') | map(attribute='item.id') | list
+         | difference(dotfiles_restored_ids) }}
+  when:
+    - not ansible_check_mode
+    - dotfiles_secret_probe.results | rejectattr('stat.exists') | map(attribute='item.id') | list
+      | difference((dotfiles_vault | default({})) | dict2items | rejectattr('value', 'equalto', '')
+                   | map(attribute='key') | list) | length > 0
+
+# The notes are licence keys: do not leave the plaintext payloads sitting in a
+# host fact for the rest of the play.
+- name: Forget the fetched vault notes
+  ansible.builtin.set_fact:
+    dotfiles_vault: {}
+  no_log: true

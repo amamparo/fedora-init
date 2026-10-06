@@ -95,19 +95,44 @@
   register: zshrc_backup
   check_mode: false
 
+# The ~/.zshrc written below is the one `just save` captures back into
+# files/zshrc. If it was edited AFTER the last install and never saved, this
+# run keeps the live file instead of overwriting it (dotfiles_drift, set by
+# the guard) and says so; `just save` then makes the edit the repo's copy. A
+# machine with no record yet (first run, or one that predates the dotfiles
+# round trip) behaves exactly as before: back up, overwrite, start recording.
+- name: Check ~/.zshrc for edits that were never saved
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles_guard
+  vars:
+    dotfiles_role: zsh
+
 - name: Back up the existing ~/.zshrc to ~/.zshrc.pre-fedora-init
   ansible.builtin.copy:
     src: "{{ lookup('env', 'HOME') }}/.zshrc"
     dest: "{{ lookup('env', 'HOME') }}/.zshrc.pre-fedora-init"
     remote_src: true
     mode: preserve
-  when: zshrc_stat.stat.exists and zshrc_cmp.rc != 0 and not zshrc_backup.stat.exists
+  when:
+    - zshrc_stat.stat.exists
+    - zshrc_cmp.rc != 0
+    - not zshrc_backup.stat.exists
+    - not (dotfiles_drift['zsh-zshrc'] | default(false))
 
 - name: Install ~/.zshrc
   ansible.builtin.copy:
     src: zshrc
     dest: "{{ lookup('env', 'HOME') }}/.zshrc"
     mode: "0644"
+  when: not (dotfiles_drift['zsh-zshrc'] | default(false))
+
+- name: Record the installed ~/.zshrc
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles_record
+  vars:
+    dotfiles_role: zsh
 
 # Declarative replacement for the old getent-guard + usermod: the user module
 # compares the current passwd entry and only rewrites it on drift, so a

@@ -55,6 +55,8 @@
     - { key: /org/gnome/desktop/background/picture-uri, value: "'file://{{ lookup('env', 'HOME') }}/.local/share/backgrounds/amber-d.jxl'" }
     - { key: /org/gnome/desktop/background/picture-uri-dark, value: "'file://{{ lookup('env', 'HOME') }}/.local/share/backgrounds/amber-d.jxl'" }
     - { key: /org/gnome/desktop/background/picture-options, value: "'zoom'" }
+    # the lock screen shows the same picture
+    - { key: /org/gnome/desktop/screensaver/picture-uri, value: "'file://{{ lookup('env', 'HOME') }}/.local/share/backgrounds/amber-d.jxl'" }
   loop_control:
     label: "{{ item.key }}"
 
@@ -95,3 +97,49 @@
   ansible.builtin.debug:
     msg: "{{ display_config.msg }}"
   when: not display_config.applied
+
+# ---- settings captured by `just save` ----------------------------------------
+# files/saved/dconf.yml is WRITTEN by `just save` (scripts/dotfiles.py): the
+# individual dconf keys listed in dotfiles/manifest.yml whose live value
+# differs from the schema default and that no task above declares (the
+# manifest linter rejects a key a role already owns — edit the task for
+# those). The repo applies them, the same community.general.dconf way as
+# everything above, with one addition: a key whose live value was changed in
+# Settings since the last save is KEPT and warned about, not reverted — run
+# `just save` to adopt the change. Values are GVariant text with the home
+# directory as a placeholder. Absent until the first `just save`.
+- name: Probe for saved dconf values
+  ansible.builtin.stat:
+    path: "{{ role_path }}/files/saved/dconf.yml"
+  register: gnome_saved_dconf_file
+  check_mode: false
+
+- name: Load the saved dconf values
+  ansible.builtin.set_fact:
+    gnome_saved_dconf: "{{ (lookup('ansible.builtin.file', role_path ~ '/files/saved/dconf.yml') | from_yaml).saved_dconf | default([]) }}"
+  when: gnome_saved_dconf_file.stat.exists
+
+- name: Check the saved dconf keys for live changes that were never saved
+  dotfile_sync:
+    op: guard
+    dconf: "{{ gnome_saved_dconf }}"
+  register: gnome_dconf_guard
+  when: gnome_saved_dconf | default([]) | length > 0
+
+- name: Apply the saved dconf values
+  community.general.dconf:
+    key: "{{ item.key }}"
+    value: "{{ item.value | replace('__FEDORA_INIT_HOME__', lookup('env', 'HOME')) }}"
+    state: present
+  loop: "{{ gnome_saved_dconf | default([]) | selectattr('key', 'in', gnome_dconf_guard.safe | default([])) | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+# Only the keys the guard let through: recording a drifted key would store the
+# user's unsaved value as "last applied", and the next run would then read the
+# edit as a repo change and overwrite it.
+- name: Record the applied dconf values
+  dotfile_sync:
+    op: record
+    dconf: "{{ gnome_saved_dconf | default([]) | selectattr('key', 'in', gnome_dconf_guard.safe | default([])) | list }}"
+  when: gnome_dconf_guard.safe | default([]) | length > 0

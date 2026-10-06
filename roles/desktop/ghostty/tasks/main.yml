@@ -38,11 +38,29 @@
 # Repo-owned config (theme = Moonfly — bundled with ghostty, verified in
 # the rpm at /usr/share/ghostty/themes/Moonfly). Edits belong in
 # roles/desktop/ghostty/files/config; re-runs overwrite the installed copy.
+# `just save` captures this file back into files/config; an edit made since
+# the last install and never saved is kept (see roles/common/tasks/
+# dotfiles_guard.yml) rather than overwritten.
+- name: Check the ghostty config for edits that were never saved
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles_guard
+  vars:
+    dotfiles_role: ghostty
+
 - name: Install the ghostty config
   ansible.builtin.copy:
     src: config
     dest: "{{ lookup('env', 'HOME') }}/.config/ghostty/config"
     mode: "0644"
+  when: not (dotfiles_drift['ghostty-config'] | default(false))
+
+- name: Record the installed ghostty config
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles_record
+  vars:
+    dotfiles_role: ghostty
 
 # Ptyxis goes only AFTER ghostty is in place — never leave the machine
 # terminal-less (the brave role's ordering rule, applied to terminals).

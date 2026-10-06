@@ -31,3 +31,11 @@
   when:
     - "'mise' not in ansible_facts.packages"
     - not (ansible_check_mode and mise_repo is changed)
+
+# The user's global toolset (~/.config/mise/config.toml), seeded once when absent.
+- name: Restore the saved mise config
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles
+  vars:
+    dotfiles_role: mise

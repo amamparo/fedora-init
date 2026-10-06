@@ -27,10 +27,13 @@ sudo tickets, delete the drop-in.
 Run a subset of roles by substring: `./install.sh battery zsh` — or without
 a checkout, append `-s battery` after `bash` in the one-liner.
 
-If the **aws** role needs its secret, the script also installs the Bitwarden
+If the **aws** role needs its secret — or a licence file `just save` vaulted
+(REAPER, TDR Limiter; see [Saving your configs](#saving-your-configs-just-save))
+is missing — the script also installs the Bitwarden
 CLI and signs into your vault right on the terminal — master password +
 TOTP, no browser — before the play starts. That only happens while
-`~/.aws/credentials` is still missing; a converged machine never prompts.
+`~/.aws/credentials` (or the licence file) is still missing; a converged
+machine never prompts.
 And it's never a roadblock: no vault yet, or a failed sign-in, just means
 everything else still configures and the role prints a reminder — re-run
 `./install.sh aws` whenever you're ready. To put the secret *into* the vault
@@ -542,7 +545,8 @@ including any tab or window you open from it, so keep other long-running
 work in a normal Ghostty. Every other Ghostty window keeps the normal close
 warning, including one where you typed `herdr` yourself. Nothing else is configured — herdr
 only watches panes, it never talks to a model API itself, so its own config
-under `~/.config/herdr` is entirely yours.
+under `~/.config/herdr` is yours: `just save` captures `config.toml`, and a
+fresh machine gets it seeded once — never managed afterwards.
 
 ### podman
 
@@ -721,13 +725,87 @@ and pattern data, and the third-party plugin packages Fedora also carries
 (`gimp-data-extras`, `gimp-dds-plugin`, `gimpfx-foundry`…) are all left to
 `sudo dnf install` if you ever want them.
 
+### extra-packages
+
+Packages you installed by hand that no other role owns — `just save` finds
+them (from `dnf` history, plus Flathub flatpaks) and writes them to
+`roles/system/extra_packages/files/saved/packages.yml`; this role installs
+what is listed and **never uninstalls anything**. Delete a line to stop
+installing it, and add the name under `ignore:` on the `extra-packages` item in
+`dotfiles/manifest.yml` so a later save does not find it again. The list does
+not exist until your first `just save`.
+
+## Saving your configs (`just save`)
+
+`./install.sh` pushes the repo onto the machine; `just save` goes the other
+way: it captures configs you tuned in an app — herdr, mise, VS Code, Claude
+Code preferences, the zshrc, the Ghostty and Neovim configs, a few GNOME
+settings, licence keys — back into the repo, so a fresh install brings them
+along. **The repo is public**, so it is built to refuse to leak:
+
+```sh
+just save --dry-run   # show exactly what would change; writes nothing
+just save             # scan, show the diff, ask, commit, push
+just save --yes       # same, without the question (automation)
+```
+
+- **Only listed things are read.** `dotfiles/manifest.yml` is an allowlist —
+  paths, and for JSON files the exact keys — and an engine-side never-save
+  list (ssh/gpg keys, `~/.aws`, Bitwarden state, keyrings, browser profiles,
+  histories, tokens) rejects a bad manifest edit rather than publishing it.
+  Credentials are per-device by design: sign in again on a new machine.
+- **Scanned before anything is written.** The captured files are rendered
+  into a scratch dir and checked with [gitleaks](https://github.com/gitleaks/gitleaks)
+  (secrets *and* PII: home paths, tailnet names, LAN addresses, emails — plus
+  your own private patterns in `~/.config/fedora-init/pii-patterns.txt`,
+  which never enters the repo). A finding aborts with the file, line and
+  rule — never the value — and nothing is written. No gitleaks, no save
+  (`./install.sh cli-tools` installs it). The same scan runs as a
+  pre-commit hook on every commit in this checkout.
+- **You see it before it ships.** The diff is shown and you confirm the
+  commit and push (a push to a public repo cannot be taken back). It commits
+  only the files it wrote and refuses to run over uncommitted edits to them.
+- **Secrets go to Bitwarden, never git** — not even encrypted. REAPER's
+  `reaper-license.rk` and registration file and the TDR Limiter licence are
+  stored as secure notes `fedora-init/<name>`; `./install.sh` signs into the
+  vault and restores them (mode 0600) when they are missing. Remove an item
+  from the manifest if you do not own that licence.
+- **Installing never clobbers an edit you have not saved.** Seed-once files
+  (herdr, mise, VS Code settings, Claude Code preferences…) are written only
+  when absent and left to the app afterwards. For files a role overwrites
+  (zshrc, Ghostty config, the Neovim mirror, saved GNOME settings) the
+  install keeps your live version and warns when you changed it since the
+  last install or save — run `just save` to adopt the change. The reverse
+  is guarded too: if the repo moved ahead of the machine (you pulled), `just
+  save` leaves that file alone rather than reverting it, and when both sides
+  changed it refuses and tells you how to settle it (`--force-live <id>`).
+
+What is saved (the manifest is the source of truth): the zshrc, Ghostty and
+Neovim configs; herdr and mise config; VS Code settings (minus machine-specific
+keys) and its extension list; a handful of Claude Code preferences and the
+caveman opt-out; `~/.config/git/ignore` lines; GNOME settings that differ from
+the default and no role declares; hand-installed packages (above); and the
+licence files. **Not saved**: browser profiles (use Brave Sync), Wi-Fi
+passwords, user data and projects, and anything that reveals where you live.
+VS Code snippets are left out because they reference an internal-looking
+module path — uncomment the item in the manifest to opt in after reading the
+dry-run diff.
+
+Two things only you can do: run your first `just save` (it publishes), and
+turn on GitHub push protection for the repo (Settings → Code security).
+Adding something new is one manifest entry plus `just save --dry-run`.
+
 ## Bitwarden items
 
-One role seeds a secret from your vault, matched by exact item name:
+Roles seed secrets from your vault, matched by exact item name:
 
 | item | type | fields | seeds |
 |---|---|---|---|
 | `aws` | login | username = Access Key ID, password = Secret Access Key | `~/.aws/credentials` (aws) |
+| `fedora-init/reaper-license.rk`, `…/reaper-reginfo2.ini`, `…/tdr-limiter-6-ge.tdr`, `…/tdr-limiter-6-ge.conf` | secure note | notes = a small header + the file as base64(gzip) | REAPER and TDR Limiter licence files (reaper) |
+
+The `fedora-init/…` notes are written by `just save` (never by hand) — see
+[Saving your configs](#saving-your-configs-just-save).
 
 Create it in the web vault or push it from here: `just seed-bitwarden`
 upserts it from `SEED_AWS_ACCESS_KEY_ID` and `SEED_AWS_SECRET_ACCESS_KEY` —
@@ -743,8 +821,9 @@ sign-in has expired (the master password is accepted but the sync fails
 with `invalid_grant`), both this and `./install.sh` sign you in again
 instead of failing.
 `just` alone lists the recipes: `install` runs `./install.sh` with any
-arguments passed through (`just install battery --check`), `check` runs the
-safe lint gate.
+arguments passed through (`just install battery --check`), `save` captures
+live configs into the repo (see [Saving your configs](#saving-your-configs-just-save)),
+`check` runs the safe lint gate plus the dotfiles unit tests.
 
 ## Adding a role
 

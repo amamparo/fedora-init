@@ -38,3 +38,16 @@
   when:
     - "'code' not in ansible_facts.packages"
     - not (ansible_check_mode and vscode_repo is changed)
+
+# Settings and the extension list, saved by `just save`. VS Code Settings Sync
+# is on, so both only SEED a fresh machine: settings are written only when the
+# file is absent, extensions only while VS Code has none (afterwards Sync and
+# the Extensions view own the set — an extension uninstalled on purpose must
+# stay gone). Runs after the package install; under a fresh --check `code`
+# does not exist yet and the module says so rather than failing.
+- name: Restore the saved VS Code settings and extensions
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles
+  vars:
+    dotfiles_role: vscode

@@ -1,0 +1,55 @@
+# PII rules for `just save`'s staging scan (scripts/dotfiles.py builds a temp
+# config that extends this file and adds the private literals from
+# ~/.config/fedora-init/pii-patterns.txt, which never enter the repo). Go/RE2
+# syntax: no lookahead.
+#
+# Deliberately STANDALONE — it does not extend .gitleaks.toml. Verified with
+# gitleaks 8.30.0: inheriting the default ruleset also inherits its global
+# allowlist, which silently suppresses /home/<user>/ matches (the rule fires
+# alone and goes quiet under `useDefault = true`). `just save` therefore runs
+# two scans over the staged files — .gitleaks.toml for secrets, this file for
+# PII — and a nested `extend` chain would also lose `useDefault` past depth 2.
+#
+# The repo is PUBLIC. Saved configs get the home directory replaced by a
+# placeholder, so any raw /home/<user>/ left over is a leak. Values already
+# public in this repo (the commit email, hostname) are deliberately NOT
+# listed anywhere — they would fail every save.
+title = "fedora-init save scan"
+
+[[rules]]
+id = "home-directory"
+description = "an absolute home directory path (saved files use the home placeholder)"
+regex = '''/home/[a-z_][a-z0-9_-]*/'''
+keywords = ["/home/"]
+
+[[rules]]
+id = "tailnet-hostname"
+description = "a Tailscale MagicDNS name"
+regex = '''[a-z0-9-]+(?:\.[a-z0-9-]+)*\.ts\.net'''
+keywords = [".ts.net"]
+
+[[rules]]
+id = "tailscale-cgnat-address"
+description = "a Tailscale (CGNAT 100.64/10) address"
+regex = '''\b100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b'''
+keywords = ["100."]
+
+[[rules]]
+id = "private-network-address"
+description = "an RFC 1918 LAN address"
+regex = '''\b(?:10\.[0-9]{1,3}|192\.168|172\.(?:1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b'''
+keywords = ["10.", "192.168", "172."]
+
+[[rules]]
+id = "email-address"
+description = "an email address"
+regex = '''[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}'''
+keywords = ["@"]
+
+# GNOME extension ids look like emails (name@host.tld) but are public.
+[[rules.allowlists]]
+regexes = [
+  '''appindicatorsupport@rgcjonas\.gmail\.com''',
+  '''@example\.(?:com|org|net)''',
+  '''noreply@anthropic\.com''',
+]

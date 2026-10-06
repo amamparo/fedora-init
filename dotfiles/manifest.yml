@@ -1,0 +1,221 @@
+# The dotfiles allowlist — the ONLY thing `just save` ever reads from $HOME
+# (scripts/dotfiles.py) and the only thing the roles ever restore
+# (library/dotfile_sync.py, via roles/common/tasks/dotfiles*.yml). Nothing is
+# captured by globbing a directory: an unlisted path cannot leak.
+#
+# Item fields
+#   id          unique slug; also the key of the last-written record in
+#               ~/.local/state/fedora-init/dotfiles.json
+#   role        the role that owns the concern; the saved copy lives inside
+#               that role's directory (repo: roles/<group>/<role>/...) and
+#               that role applies it — so `./install.sh vscode` restores
+#               VS Code's saved config
+#   live        where it sits on the machine (~/ or absolute); the engine
+#               refuses anything on the never-save list (module_utils/
+#               dotfiles_common.py: ssh keys, tokens, keyrings, browser
+#               profiles, histories…) even if it is listed here
+#   repo        repo-relative path of the saved copy (none for secret-file)
+#   kind / apply
+#     file              seed        write only when absent (the bookmark rule:
+#                                   the app or the user owns it afterwards)
+#                       role        the role's own task applies it; `save`
+#                                   reverse-syncs it and the role guards it
+#     dir               seed | role (as above; `seed` is per file)
+#     json-keys         seed-keys   add allowlisted keys that are MISSING;
+#                                   never overwrite (the app rewrites the file)
+#     lines             add-lines   append lines that are missing
+#     secret-file       vault-seed  restore from a Bitwarden secure note when
+#                                   absent; save pushes it to the vault, never
+#                                   to git (the repo is PUBLIC)
+#     vscode-extensions seed      install the saved list only on a machine whose
+#                                 VS Code has NO extensions yet; afterwards
+#                                 VS Code (Settings Sync) owns the set
+#     dconf-keys        role        individual non-default keys, applied by the
+#                                   owner role's dconf tasks behind a guard
+#     packages          role        hand-installed rpms/flatpaks no role owns
+#   drop_keys   (file+seed, JSON/JSONC) key paths removed before saving
+#   keys        (json-keys) key paths kept; paths are /-separated, so flat
+#               keys with dots (VS Code's "editor.fontSize") stay one segment
+#   home_template  replace the home directory with a placeholder when saving
+#               and restore it on apply
+#   excludes    (dir) rsync-style: /x anchored at the root, x any component
+#
+# Adding something: list it here, run `just save --dry-run`, read the diff.
+# Credentials do not belong here (per-device by design); licence keys do, as
+# secret-file items.
+version: 1
+items:
+  # ---- role-applied: `save` reverse-syncs, the role guards its overwrite ----
+  - id: zsh-zshrc
+    role: zsh
+    kind: file
+    apply: role
+    live: ~/.zshrc
+    repo: roles/dev/zsh/files/zshrc
+
+  - id: ghostty-config
+    role: ghostty
+    kind: file
+    apply: role
+    live: ~/.config/ghostty/config
+    repo: roles/desktop/ghostty/files/config
+
+  - id: neovim-config
+    role: neovim
+    kind: dir
+    apply: role
+    live: ~/.config/nvim
+    repo: roles/dev/neovim/files/nvim
+    excludes: [/lazy-lock.json, /lazyvim.json] # runtime-owned, same as the role's mirror
+
+  # ---- seeded once, owned by the app/user afterwards ----
+  - id: herdr-config
+    role: herdr
+    kind: file
+    apply: seed
+    live: ~/.config/herdr/config.toml
+    repo: roles/ai/herdr/files/saved/config.toml
+
+  - id: mise-config
+    role: mise
+    kind: file
+    apply: seed
+    live: ~/.config/mise/config.toml
+    repo: roles/dev/mise/files/saved/config.toml
+
+  # VS Code Settings Sync is on, so these only seed a fresh machine; Sync and
+  # the Settings UI own the files afterwards. keybindings.json is skipped on
+  # purpose (Claude Code's /terminal-setup writes it, and Sync carries it).
+  - id: vscode-settings
+    role: vscode
+    kind: file
+    apply: seed
+    live: ~/.config/Code/User/settings.json
+    repo: roles/dev/vscode/files/saved/settings.json
+    home_template: true
+    drop_keys: # other machines' temp paths synced in, and app state
+      - chat.instructionsFilesLocations
+      - azureTerraform.survey
+      - claudeCode.selectedModel
+
+  # NOT saved by default: the live snippets reference an internal-looking
+  # module path (not a secret, but not obviously public either). To opt in,
+  # uncomment — the diff `just save --dry-run` prints is what would publish.
+  # - id: vscode-snippets
+  #   role: vscode
+  #   kind: dir
+  #   apply: seed
+  #   live: ~/.config/Code/User/snippets
+  #   repo: roles/dev/vscode/files/saved/snippets
+
+  - id: vscode-extensions
+    role: vscode
+    kind: vscode-extensions
+    apply: seed
+    repo: roles/dev/vscode/files/saved/extensions.txt
+
+  # settings.json is rewritten by Claude Code at runtime and carries prose
+  # that names people, repos and how credentials are wired (autoMode), plus
+  # per-session state (modelSettings) — so keys are allowlisted one by one.
+  - id: claude-settings
+    role: claude_code
+    kind: json-keys
+    apply: seed-keys
+    live: ~/.claude/settings.json
+    repo: roles/ai/claude_code/files/saved/settings-keys.json
+    keys: [model, advisorModel, tui, theme, skipWorkflowUsageWarning, agentPushNotifEnabled]
+
+  - id: claude-keybindings
+    role: claude_code
+    kind: file
+    apply: seed
+    live: ~/.claude/keybindings.json
+    repo: roles/ai/claude_code/files/saved/keybindings.json
+
+  - id: caveman-config
+    role: claude_code
+    kind: json-keys
+    apply: seed-keys
+    live: ~/.caveman-cloud/config.json
+    repo: roles/ai/claude_code/files/saved/caveman-config.json
+    keys: [telemetry/enabled, telemetry/promptVersion] # decidedAt is state
+
+  # Claude Code also appends to this file, hence lines, not a file copy.
+  - id: git-ignore
+    role: git_workspace
+    kind: lines
+    apply: add-lines
+    live: ~/.config/git/ignore
+    repo: roles/dev/git_workspace/files/saved/ignore
+
+  # ---- GNOME settings no role declares (role-declared keys are rejected) ----
+  # Only values that differ from the schema default are saved. Single keys,
+  # never paths: whole-path dumps would drag in weather/clock locations,
+  # night-light coordinates and last-used folders.
+  - id: gnome-dconf
+    role: gnome_prefs
+    kind: dconf-keys
+    apply: role
+    repo: roles/desktop/gnome_prefs/files/saved/dconf.yml
+    keys:
+      - /org/gnome/system/location/enabled
+      - /org/gnome/desktop/input-sources/sources
+      - /org/gnome/desktop/interface/accent-color
+      - /org/gnome/desktop/privacy/report-technical-problems
+      - /org/gnome/desktop/peripherals/mouse/speed
+      - /org/gnome/desktop/peripherals/pointingstick/speed
+      - /org/gnome/desktop/peripherals/pointingstick/accel-profile
+      - /org/gnome/desktop/peripherals/touchpad/two-finger-scrolling-enabled
+      - /org/gnome/desktop/screensaver/primary-color
+      - /org/gnome/desktop/screensaver/secondary-color
+      - /org/gnome/nautilus/preferences/default-folder-viewer
+      - /org/gnome/settings-daemon/plugins/color/night-light-enabled
+      - /org/gnome/settings-daemon/plugins/color/night-light-temperature
+      - key: /org/gtk/gtk4/settings/file-chooser/sort-directories-first
+        schema: org.gtk.gtk4.Settings.FileChooser
+      - key: /org/gtk/gtk4/settings/file-chooser/show-hidden
+        schema: org.gtk.gtk4.Settings.FileChooser
+
+  # ---- packages no other role installs ----
+  - id: extra-packages
+    role: extra_packages
+    kind: packages
+    apply: role
+    repo: roles/system/extra_packages/files/saved/packages.yml
+    ignore: [restic] # left over from a reverted role, not wanted
+
+  # ---- licence/registration files: Bitwarden only, never git ----
+  # Restored (mode 0600) when absent, needing a vault session; install.sh
+  # signs in when one of these is missing. Each fits a secure note (the file
+  # is gzip+base64'd first).
+  - id: reaper-license
+    role: reaper
+    kind: secret-file
+    apply: vault-seed
+    live: ~/.config/REAPER/reaper-license.rk
+    vault: fedora-init/reaper-license.rk
+    mode: "0600"
+
+  - id: reaper-reginfo
+    role: reaper
+    kind: secret-file
+    apply: vault-seed
+    live: ~/.config/REAPER/reaper-reginfo2.ini
+    vault: fedora-init/reaper-reginfo2.ini
+    mode: "0600"
+
+  - id: tdr-limiter-license
+    role: reaper
+    kind: secret-file
+    apply: vault-seed
+    live: ~/.config/Tokyo Dawn Labs/TDR Limiter 6 GE.tdr
+    vault: fedora-init/tdr-limiter-6-ge.tdr
+    mode: "0600"
+
+  - id: tdr-limiter-config # carries the <registration> element, so vault, not repo
+    role: reaper
+    kind: secret-file
+    apply: vault-seed
+    live: ~/.config/Tokyo Dawn Labs/TDR Limiter 6 GE.conf
+    vault: fedora-init/tdr-limiter-6-ge.conf
+    mode: "0600"

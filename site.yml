@@ -114,3 +114,5 @@
       tags: reaper
     - role: gimp
       tags: gimp
+    - role: extra_packages
+      tags: extra-packages

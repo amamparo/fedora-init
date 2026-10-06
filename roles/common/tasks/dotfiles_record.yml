@@ -1,0 +1,20 @@
+# Remember what is live, AFTER the role wrote it — the hash dotfiles_guard.yml
+# compares the next run against. Include it after the role's own copy/sync
+# task, with the same dotfiles_role. Items that drifted (the role skipped
+# them) keep their old record, so the edit stays flagged until it is saved.
+# A no-op under --check.
+- name: "Load the dotfiles manifest items of {{ dotfiles_role }}"
+  ansible.builtin.set_fact:
+    dotfiles_role_items: >-
+      {{ (lookup('ansible.builtin.file', playbook_dir ~ '/dotfiles/manifest.yml') | from_yaml)['items']
+         | selectattr('role', 'equalto', dotfiles_role) | selectattr('apply', 'equalto', 'role')
+         | selectattr('kind', 'in', ['file', 'dir']) | list }}
+
+- name: "Record the state of role-applied files of {{ dotfiles_role }}"
+  dotfile_sync:
+    op: record
+    item: "{{ item | combine({'src': playbook_dir ~ '/' ~ item.repo}) }}"
+  loop: "{{ dotfiles_role_items }}"
+  loop_control:
+    label: "{{ item.id }}"
+  when: not (dotfiles_drift | default({})).get(item.id, false)

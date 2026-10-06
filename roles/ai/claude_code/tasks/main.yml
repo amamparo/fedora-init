@@ -211,3 +211,16 @@
     content: "{{ claude_settings | combine({'ultracode': true}) | to_nice_json }}\n"
     mode: "0644"
   when: not (claude_settings.ultracode | default(false) | bool)
+
+# Saved preferences (~/.claude/settings.json keys, keybindings, the caveman
+# opt-out). MUST stay below the ultracode merge: that task renders the whole
+# file from the slurp above, so a seed-keys write placed earlier would be
+# overwritten by it on the same run. Keys are added only where MISSING —
+# Claude Code rewrites settings.json at runtime and model/theme are changed
+# interactively, so nothing here may fight the app.
+- name: Restore the saved Claude Code preferences
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles
+  vars:
+    dotfiles_role: claude_code

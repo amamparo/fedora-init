@@ -113,6 +113,19 @@
     state: directory
     mode: "0755"
 
+# The mirror deletes what the repo lacks — exactly what an UNSAVED live edit
+# (a new lua/plugins/*.lua you just wrote) looks like. `just save` captures
+# those edits into files/nvim; until then the guard keeps them: when the live
+# tree changed after the last mirror and was never saved, the mirror is
+# skipped and the run says so (roles/common/tasks/dotfiles_guard.yml). With
+# no record yet the mirror runs as it always did, behind the backup above.
+- name: Check ~/.config/nvim for edits that were never saved
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles_guard
+  vars:
+    dotfiles_role: neovim
+
 # A true MIRROR, not an additive copy: lazy.nvim imports every
 # lua/plugins/*.lua it finds, so a spec deleted from the repo but left on
 # disk would keep its plugin installed and configured. Same synchronize shape
@@ -140,6 +153,14 @@
       - "--checksum"
       - "--omit-dir-times"
   register: neovim_config
+  when: not (dotfiles_drift['neovim-config'] | default(false))
+
+- name: Record the mirrored Neovim config
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles_record
+  vars:
+    dotfiles_role: neovim
 
 # Plugins, treesitter parsers, blink.cmp's fuzzy library and every Mason tool
 # and language server, installed headlessly now rather than on the first

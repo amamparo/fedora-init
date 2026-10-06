@@ -45,6 +45,7 @@
       - x-scheme-handler/https
       - x-scheme-handler/about
       - x-scheme-handler/unknown
+      - x-scheme-handler/mailto # set by hand in Settings > Default Apps; web mail opens in the browser
       - text/html
 
 # Since the Anaconda WebUI installer (F42+ Workstation), fresh installs

@@ -8,9 +8,10 @@
 # Bootstraps its own toolchain (ansible-core + collections, all stock Fedora
 # rpms) and runs site.yml locally. Bare arguments select roles by substring,
 # like the old per-module filenames; dash arguments (--check, --diff, --tags,
-# -v...) pass through to ansible-playbook. When the aws role needs its vault
-# secret and it's still unseeded (~/.aws/credentials absent), it also signs
-# into Bitwarden first — terminal prompts only, no browser.
+# -v...) pass through to ansible-playbook. When a role needs a vault secret
+# and it's still unseeded (the aws role's ~/.aws/credentials, or a licence
+# file the dotfiles manifest vaults — see `just save`), it also signs into
+# Bitwarden first — terminal prompts only, no browser.
 #
 set -euo pipefail
 
@@ -141,9 +142,16 @@ done
 # don't have. So the sign-in lives here, gated against needless prompts:
 # only while the seed target is still missing (a converged machine never
 # prompts), never under --check/-C (the role check-gates its seed task to
-# match), and only when the tag selection reaches the aws role.
+# match), and only when the tag selection reaches that role.
 secret_roles=()
 [[ -f "$HOME/.aws/credentials" ]] || secret_roles+=(aws)
+# Licence/registration files `just save` vaulted (dotfiles/manifest.yml
+# secret-file items): each one whose target is absent names its owning role,
+# so a converged machine still never prompts. Runs after the toolchain
+# bootstrap above — the manifest reader needs PyYAML, an ansible dependency.
+while IFS= read -r r; do
+    [[ -n $r ]] && secret_roles+=("$r")
+done < <(python3 scripts/dotfiles.py pending-secrets 2>/dev/null || true)
 secrets_due=0
 for r in "${secret_roles[@]}"; do
     if ((${#tags[@]})); then

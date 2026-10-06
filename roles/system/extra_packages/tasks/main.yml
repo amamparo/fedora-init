@@ -1,0 +1,50 @@
+---
+# extra_packages: the packages a person installed by hand that no other role
+# owns — the leftovers a fresh install would otherwise lose. The list is
+# files/saved/packages.yml, WRITTEN by `just save` (scripts/dotfiles.py): it
+# reads dnf's transaction history for hand-run installs (not the image build,
+# not ansible's own transactions), drops everything a role already names, and
+# adds flathub flatpaks the same way. Additive only — save never removes an
+# entry, and neither does this role: it installs what is listed and never
+# uninstalls anything. Delete a line to stop installing it (and put it under
+# `ignore:` in dotfiles/manifest.yml so save does not find it again).
+#
+# Its own role by the one-concern rule: these packages have no host role to
+# merge into — which is exactly what makes them "extra". The list is absent
+# until the first `just save`.
+#
+# become stays here, in Ansible, where system mutations belong; the engine
+# only ever writes the data file. Flatpaks mirror the podman role's
+# Podman Desktop task (system scope, Fedora's stock flathub remote, guarded on
+# the flatpak rpm); rpms use the cli_tools difference-filter guard so a
+# converged re-run never reaches dnf5 — the module refreshes repo metadata
+# over the network even for a no-op transaction. Both are stock Fedora/Flathub
+# sources, so there is no vendor repo and no fresh-`--check` repo gate.
+- name: Probe for the saved package list
+  ansible.builtin.stat:
+    path: "{{ role_path }}/files/saved/packages.yml"
+  register: extra_packages_file
+  check_mode: false
+
+- name: Load the saved package list
+  ansible.builtin.set_fact:
+    extra_packages_saved: "{{ lookup('ansible.builtin.file', role_path ~ '/files/saved/packages.yml') | from_yaml }}"
+  when: extra_packages_file.stat.exists
+
+- name: Install the saved rpms
+  become: true
+  ansible.builtin.dnf5:
+    name: "{{ extra_packages_saved.rpms | default([]) }}"
+    state: present
+  when:
+    - extra_packages_saved is defined
+    - (extra_packages_saved.rpms | default([])) | difference(ansible_facts.packages.keys() | list) | length > 0
+
+- name: Install the saved flatpaks (Flathub)
+  become: true
+  community.general.flatpak:
+    name: "{{ item }}"
+    remote: flathub
+    state: present
+  loop: "{{ (extra_packages_saved | default({})).flatpaks | default([]) }}"
+  when: "'flatpak' in ansible_facts.packages"

@@ -1,0 +1,33 @@
+# The unsaved-edit guard for files a ROLE applies itself (manifest
+# `apply: role`: zshrc, ghostty's config, the nvim mirror). Include this
+# BEFORE the role's own copy/sync task, with:
+#   dotfiles_role: the owning role's name
+# It sets `dotfiles_drift` ({item id: true/false}). The role skips its write
+# for a drifted id — `when: not (dotfiles_drift['<id>'] | default(false))` —
+# and the module has already warned that the live file carries edits that
+# were never saved. Drift means: a last-written record exists, and the live
+# file matches neither it nor the repo copy. No record (first run, or a
+# machine that predates this) is never drift, so the role behaves exactly as
+# it always has and dotfiles_record.yml starts the record afterwards.
+# Read-only, so it runs under --check too.
+- name: "Load the dotfiles manifest items of {{ dotfiles_role }}"
+  ansible.builtin.set_fact:
+    dotfiles_role_items: >-
+      {{ (lookup('ansible.builtin.file', playbook_dir ~ '/dotfiles/manifest.yml') | from_yaml)['items']
+         | selectattr('role', 'equalto', dotfiles_role) | selectattr('apply', 'equalto', 'role')
+         | selectattr('kind', 'in', ['file', 'dir']) | list }}
+
+- name: "Check role-applied files for unsaved live edits of {{ dotfiles_role }}"
+  dotfile_sync:
+    op: guard
+    item: "{{ item | combine({'src': playbook_dir ~ '/' ~ item.repo}) }}"
+  loop: "{{ dotfiles_role_items }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: dotfiles_guard_results
+
+- name: Record which items drifted
+  ansible.builtin.set_fact:
+    dotfiles_drift: >-
+      {{ dict(dotfiles_guard_results.results | map(attribute='item.id')
+              | zip(dotfiles_guard_results.results | map(attribute='drift'))) }}

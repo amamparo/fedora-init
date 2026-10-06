@@ -30,9 +30,11 @@
 #
 # herdr IS the terminal when it runs (like tmux) — launching it here would
 # hang the play, so there is nothing to start or configure beyond the
-# binary. No config seeding either: herdr's own config lives under
-# ~/.config/herdr and is entirely the user's — herdr only watches panes for
-# known agent CLIs, it never talks to a model API itself.
+# binary. Its config (~/.config/herdr/config.toml) is the user's: `just save`
+# captures it into files/saved/ and a fresh machine gets it SEEDED once, only
+# when absent (the dotfiles round trip — see dotfiles/manifest.yml), never
+# managed afterwards. herdr only watches panes for known agent CLIs, it never
+# talks to a model API itself.
 
 - name: Probe for the herdr launcher (~/.local/bin/herdr)
   ansible.builtin.stat:
@@ -179,3 +181,11 @@
     gtk-update-icon-cache -f -t {{ lookup('env', 'HOME') }}/.local/share/icons/hicolor
   when: herdr_icon_files is changed
   changed_when: herdr_icon_files is changed
+
+# The saved config.toml, seeded when ~/.config/herdr/config.toml is absent.
+- name: Restore the saved herdr config
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles
+  vars:
+    dotfiles_role: herdr

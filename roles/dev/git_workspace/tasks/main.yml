@@ -58,6 +58,7 @@
   loop:
     - { name: user.name, value: Aaron Mamparo }
     - { name: user.email, value: aaronmamparo@gmail.com }
+    - { name: init.defaultBranch, value: main }
 
 - name: Configure SSH-backed commit and tag signing
   community.general.git_config:
@@ -162,3 +163,31 @@
     - { name: interactive.diffFilter, value: delta --color-only }
     - { name: delta.navigate, value: "true" }
     - { name: merge.conflictStyle, value: zdiff3 }
+
+# --- repo hooks + the saved global ignore ----------------------------------
+# This checkout's pre-commit hook scans every commit for secrets (the repo is
+# PUBLIC — see .githooks/pre-commit). core.hooksPath is LOCAL config: a
+# global one with a relative path would also silence every other repo's own
+# .git/hooks. A curl|bash tarball has no .git, so there is nothing to wire.
+- name: Probe for a git checkout of this repo
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/.git"
+  register: git_workspace_checkout
+  check_mode: false
+
+- name: Enable this checkout's pre-commit secret scan
+  community.general.git_config:
+    name: core.hooksPath
+    value: .githooks
+    scope: local
+    repo: "{{ playbook_dir }}"
+  when: git_workspace_checkout.stat.exists
+
+# ~/.config/git/ignore, added to by Claude Code too, so lines are appended
+# when missing rather than the file being owned.
+- name: Restore the saved global git ignore lines
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: dotfiles
+  vars:
+    dotfiles_role: git_workspace

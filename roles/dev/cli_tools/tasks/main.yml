@@ -48,6 +48,12 @@
 #            Base editor only: system-clipboard yank (`"+y`) lives in the
 #            separate vim-X11 rpm (GVim) — an X11 GUI build is weight for a
 #            terminal editor, and this session is Wayland anyway.
+#   gitleaks secret scanner (stock rpm, 8.30). This repo is PUBLIC, so
+#            `just save` refuses to publish a captured config it has not
+#            scanned (scripts/dotfiles.py fails closed without it) and
+#            .githooks/pre-commit runs it on every commit. A host tool, not a
+#            git add-on: the dependency runs from the save recipe, not from
+#            git itself.
 #
 # One role for the set, deliberately: a baseline toolkit is one concern,
 # and eight one-package roles would be noise. Substring note:
@@ -74,6 +80,7 @@
       - uv
       - just
       - vim-enhanced
+      - gitleaks
   ansible.builtin.dnf5:
     name: "{{ cli_tools_packages }}"
     state: present

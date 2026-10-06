@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#
+# fedora-init pre-commit: scan the staged diff for secrets with gitleaks
+# (.gitleaks.toml = the default ruleset). Covers every commit — hand, agent,
+# or `just save` — because this repo is PUBLIC and a pushed secret can only be
+# revoked, never recalled. Enabled per checkout by `core.hooksPath` (the
+# git_workspace role and `just save` set it; a curl|bash tarball has no .git,
+# so there is nothing to enable there).
+#
+# A missing gitleaks only warns (a fresh machine can still commit before
+# ./install.sh cli-tools has run); `just save` is the strict one and refuses
+# to publish unscanned.
+cd "$(git rev-parse --show-toplevel)"
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks is not installed — NOT scanning this commit (sudo dnf install gitleaks)" >&2
+    exit 0
+fi
+exec gitleaks git --pre-commit --staged --redact --no-banner -c .gitleaks.toml
