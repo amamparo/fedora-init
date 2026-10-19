@@ -1,0 +1,33 @@
+---
+# Extension Manager — a GUI to browse, install, enable and configure GNOME
+# Shell extensions (GTK4/libadwaita; Flathub id com.mattjakeman.ExtensionManager).
+# It is how the extensions this repo installs (Blur my Shell, AppIndicator) get
+# tuned and how new ones are found, without a trip to the browser.
+#
+# Its own role, not an add-on of blur_my_shell: it is useful with any
+# extension and blur_my_shell is useful without it, so the dependency-direction
+# merge test fails both ways.
+#
+# No Fedora rpm: checked 2026-10-19 on F45, where the repos carry only
+# gnome-extensions-app (Fedora's stock "Extensions" app, which toggles and
+# configures what is already installed but cannot browse or install). So this
+# is the Flathub flatpak, installed the way the podman role installs Podman
+# Desktop: Fedora's stock flathub remote is already configured with a filter
+# file that has read `# Unfiltered` since F38, so no remote-add and no
+# unfiltering. System scope + become like every flatpak under /var/lib/flatpak;
+# guarded on the flatpak rpm (Workstation ships it, a minimal install may not).
+# The module runs `flatpak list --system` first, so a converged re-run stays
+# offline, and the updates role's `flatpak update` keeps it current.
+#
+# First install pulls the org.gnome.Platform//50 runtime (~420 MB download,
+# ~1.1 GB installed — nothing else on this machine uses it yet; Extension
+# Manager itself is 1.4 MB). It talks to GNOME Shell over D-Bus, so it also
+# lists rpm-owned system extensions; those it can toggle and configure, but
+# their updates still come from dnf.
+- name: Install Extension Manager (Flathub)
+  become: true
+  community.general.flatpak:
+    name: com.mattjakeman.ExtensionManager
+    remote: flathub
+    state: present
+  when: "'flatpak' in ansible_facts.packages"

@@ -94,6 +94,10 @@
       tags: no-overview
     - role: appindicator
       tags: appindicator
+    - role: blur_my_shell
+      tags: blur-my-shell
+    - role: extension_manager
+      tags: extension-manager
     - role: fingerprint
       tags: fingerprint
     - role: login_keyring

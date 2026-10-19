@@ -422,6 +422,38 @@ the top bar. Fedora already ships the AppIndicator extension (usually as a
 dependency) but leaves it off; this role installs it if missing and enables
 it, so those tray icons appear. Takes effect at your next login.
 
+### blur-my-shell
+
+Frosted-glass blur behind the top bar and the Activities overview, so the
+wallpaper's colours show through both. GNOME has no setting for this (checked
+on GNOME 51: Mutter's new native blur only lets *apps* blur their own windows,
+and leaves the shell's look alone), so this installs the
+[Blur my Shell](https://github.com/aunetx/blur-my-shell) extension from
+Fedora's repos and enables it. The role switches on the two blurs that make up
+the look (`panel` and `overview`, both already the extension's defaults) and
+nothing else: blur strength, brightness and colour are yours to tune in
+Extension Manager or the extension's preferences, and a re-run never resets
+them. Takes effect at your next login. Fedora 45's regular build (v73) can
+stall login for up to about a minute; the fixed v75 sits in Fedora's
+`updates-testing` channel until the pre-release freeze lifts, so this role
+installs it from there, for this one package only, and the `updates` role keeps
+it current afterwards.
+
+`./install.sh blur` runs only this role (`shell` and `my` hit it too).
+
+### extension-manager
+
+[Extension Manager](https://github.com/mjakeman/extension-manager), a GUI for
+browsing, installing, enabling and configuring GNOME Shell extensions, from
+Flathub (Fedora has no rpm of it). It should list the extensions installed
+here, rpm-owned ones like Blur my Shell included (not yet checked on this
+machine); for those, dnf, not Extension Manager, does the updating. The first
+install also downloads the GNOME 50 flatpak runtime, about 420 MB, because
+nothing else on the machine uses it yet.
+
+`./install.sh extension` or `manager` runs only this role; `ext` also runs
+extra-packages.
+
 ### fingerprint
 
 Keeps the fingerprint reader working across suspend. `fprintd` is a
@@ -792,9 +824,11 @@ After the reboot:
 - Log in by **fingerprint**, not password, then run `./install.sh` (it includes
   [login-keyring](#login-keyring)). A gdm update can restore the pam lines that
   role strips, and a password login at the greeter would re-key the keyring.
-- Fedora's own repo package may ship `updates-testing` enabled until GA (not
-  verified), in which case the `updates` role will pull testing packages. Check
-  with `dnf5 repo list --all | grep testing`.
+- Fedora's `updates-testing` repo is disabled on this machine (checked
+  2026-10-19 with `dnf5 repo list --all | grep testing`), so the `updates` role
+  pulls no testing packages. The one exception is the
+  [blur-my-shell](#blur-my-shell) install, which takes its own package from
+  there.
 - The Ghostty COPR's Fedora 45 build may be older than its Fedora 44 one
   (web-sourced).
 - Untested on GNOME 51: this repo's two extensions declare 51 in their

@@ -1,0 +1,112 @@
+---
+# Blur my Shell — a frosted-glass blur behind the top bar and the Activities
+# overview, so the wallpaper's colours bleed through both.
+#
+# There is NO native GNOME setting for this, on 50 or 51 (checked against the
+# F45 / GNOME 51 host 2026-10-19): `gsettings list-recursively` has no blur,
+# transparency or translucency key for the shell, and the GNOME 51 release
+# notes say nothing about the bar or the overview. Mutter 51's "native blur" is
+# the `ext-background-effect-v1` Wayland protocol, which lets a CLIENT ask for
+# blur behind its own window; Shell's own look is deliberately unchanged. So an
+# extension is the only way, and Blur my Shell (UUID blur-my-shell@aunetx) is
+# the one that does both surfaces.
+#
+# Installed from Fedora's rpm rather than extensions.gnome.org, the appindicator
+# role's shape: dnf is the update channel (the updates role's `dnf upgrade`
+# keeps it current), nothing is fetched per user, and the unit stays rpm-owned
+# under /usr/share/gnome-shell/extensions. Deliberately does NOT use the shared
+# roles/common/gnome_extension.yml: that rsyncs a bundled source tree and
+# compiles schemas, and the rpm already ships the compiled schema.
+#
+# Versions, and why the install pulls from updates-testing (2026-10-19): F45's
+# regular `updates` carries v73, which can stall login for up to a minute
+# (12-56 s reported upstream, issue #1047). PR #1077 traces it to panel.js
+# re-queueing its own size update from inside the idle callback while the
+# panel's geometry is unavailable, which it is at login; the loop is in the v73
+# rpm. v75 removes it (verified by unpacking both rpms: update_size() no longer
+# calls queue_update_size()), its rpm needs only gnome-shell >= 46, declares
+# shell 46-51 and keeps the same schema keys. Bodhi FEDORA-2026-3e9986aa3b has
+# 75-1.fc45 in updates-testing with stable already requested; the pre-release
+# freeze holds it back from `updates` until after GA. So this role takes the
+# package from updates-testing — THIS ONE PACKAGE: `enablerepo` enables the repo
+# for the single transaction and persists nothing.
+#
+# REMOVE WHEN `dnf5 repoquery gnome-shell-extension-blur-my-shell` lists 75 from
+# `updates`: drop `enablerepo`, `update_cache` and the version gate, and go back
+# to `state: present` — the updates role's `dnf upgrade` then keeps it current.
+# That cleanup is required, not optional: while `enablerepo` stays, a fresh
+# machine installs whatever is newest in updates-testing (v76 or later), not
+# the stable build.
+#
+# The task is gated on the installed version (absent, or older than 75) so a
+# converged re-run never reaches dnf and stays offline. Failure mode:
+# updates-testing has skip_if_unavailable=false (like `updates`), so on a run
+# that reaches the task an unreachable testing mirror fails it and aborts the
+# play at this role; it does NOT fall back to v73. install_weak_deps is off
+# because the rpm Recommends gnome-extensions-app, which duplicates Extension
+# Manager (the extension_manager role installs that). update_cache because
+# stale metadata is a known trap in this repo (see the updates role); it costs
+# anything only on the run that installs.
+#
+# Wayland can't hot-reload GNOME Shell — a newly installed system extension
+# takes effect at the next login.
+- name: Install Blur my Shell (v75+ from updates-testing) # noqa: package-latest
+  become: true
+  ansible.builtin.dnf5:
+    name: gnome-shell-extension-blur-my-shell
+    state: latest
+    enablerepo: updates-testing
+    update_cache: true
+    install_weak_deps: false
+  vars:
+    blur_my_shell_min_version: "75"
+  when: >-
+    'gnome-shell-extension-blur-my-shell' not in ansible_facts.packages
+    or ansible_facts.packages['gnome-shell-extension-blur-my-shell'][0].version
+    is version(blur_my_shell_min_version, '<')
+
+# Enablement is ADDITIVE (same rule as gnome_extension.yml and appindicator):
+# read the EFFECTIVE enabled list via gsettings — NOT `dconf read`; vendor
+# defaults like background-logo live in gschema overrides, invisible in the
+# user db until first written — union the UUID in, write back. A bare set would
+# drop Fedora's defaults and the repo's own extensions. User dconf, session
+# bus — NEVER become.
+- name: Read the effective enabled-extensions list
+  ansible.builtin.command:
+    cmd: gsettings get org.gnome.shell enabled-extensions
+  register: blur_my_shell_enabled_probe
+  changed_when: false
+  check_mode: false
+
+- name: Enable the Blur my Shell extension
+  community.general.dconf:
+    key: /org/gnome/shell/enabled-extensions
+    value: >-
+      {{ (blur_my_shell_enabled_probe.stdout | regex_findall("'([^']+)'")
+          + ['blur-my-shell@aunetx']) | unique | list | string }}
+    state: present
+
+# The two switches that ARE the requested look. Both already default to true
+# (schema org.gnome.shell.extensions.blur-my-shell, verified in the rpm), so
+# these state intent and keep the look if upstream ever flips a default. Each
+# key is a literal `key:` line on purpose: dotfiles_common.declared_dconf_keys
+# finds repo-owned keys with a per-line regex, so a looped `key: "{{ item }}"`
+# would be invisible to it and `just save` could then capture the same key.
+#
+# NOTHING ELSE is managed — sigma, brightness, colour, noise, the `pipelines`
+# dict and the panel/overview style enums. Those are taste, tuned live in
+# Extension Manager or the extension's own preferences, and a converged value
+# here would revert the tuning on every run (from v73 on, blur radius and
+# brightness live in `pipelines`, a dict no scalar key could pin anyway).
+# GVariant text: a bare `true`.
+- name: Blur the top bar
+  community.general.dconf:
+    key: /org/gnome/shell/extensions/blur-my-shell/panel/blur
+    value: "true"
+    state: present
+
+- name: Blur the Activities overview
+  community.general.dconf:
+    key: /org/gnome/shell/extensions/blur-my-shell/overview/blur
+    value: "true"
+    state: present
