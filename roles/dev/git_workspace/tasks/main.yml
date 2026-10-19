@@ -10,9 +10,9 @@
     mode: "0700"
 
 # ed25519 is GitHub's recommended key type. No passphrase, deliberately —
-# the same trade-off as the blanked login keyring: under LUKS full-disk
-# encryption, offline access is already gated by the disk password, and a
-# passphrase would reintroduce per-use prompts. creates: makes this
+# the LUKS trade-off: under full-disk encryption, offline access is
+# already gated by the disk password, and a passphrase would reintroduce
+# per-use prompts. creates: makes this
 # presence-guarded: NEVER regenerate an existing key (it may be enrolled
 # with GitHub; a silent replacement would break every remote).
 - name: Generate a GitHub-ready ed25519 SSH key

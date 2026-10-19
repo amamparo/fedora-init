@@ -279,8 +279,9 @@ matches nothing, since the role is named `neovim`.
 
 ### git-workspace
 
-GitHub-ready ed25519 SSH key (no passphrase — same LUKS trade-off as
-login-keyring; never regenerates an existing key, and prints the public
+GitHub-ready ed25519 SSH key (no passphrase — under LUKS full-disk
+encryption offline access is already gated by the disk password; never
+regenerates an existing key, and prints the public
 key + [github.com/settings/keys](https://github.com/settings/keys) when it
 makes one), a `~/git` checkout dir, and a Files sidebar bookmark for it
 (label yours however you like — the role won't rename it back).
@@ -476,12 +477,12 @@ extra-packages.
 ### fingerprint
 
 Keeps the fingerprint reader working across suspend. `fprintd` is a
-transient daemon — the login screen starts it on demand and it exits ~30
-seconds after the last check — and if the machine sleeps inside that window
-it rides through the suspend holding a USB handle that resume invalidates.
-From then on every fingerprint check fails silently, so GDM stops offering
-fingerprint and asks for your password instead, until the stuck daemon
-finally times out. That is the whole "the sensor sometimes goes offline"
+transient daemon — the lock screen, `sudo` and polkit start it on demand and
+it exits ~30 seconds after the last check — and if the machine sleeps inside
+that window it rides through the suspend holding a USB handle that resume
+invalidates. From then on every fingerprint check fails silently, so the lock
+screen stops offering fingerprint and asks for your password instead, until
+the stuck daemon finally times out. That is the whole "the sensor sometimes goes offline"
 symptom: whether it works depends only on whether you happened to shut the
 lid within half a minute of the last fingerprint prompt.
 
@@ -498,41 +499,26 @@ problem: USB autosuspend on the reader is stock Fedora behaviour (systemd's
 hwdb marks the device autosuspend-safe) and works correctly — turning it
 off changes nothing.
 
-### login-keyring
+**No fingerprint at the login screen on Fedora 45.** GNOME 51 removed it on
+purpose: fingerprint now only unlocks a session that is already running (lock
+screen, `sudo`, polkit), so the password you type at boot is the only way in.
+gdm 51's release notes state it ("the user can no longer log into their
+system with a fingerprint sensor alone", partly because the keyring can't be
+unlocked that way), upstream closed the bug reports and the patch that
+reverted it as intended behaviour, and no setting brings it back. If a boot
+shows no fingerprint prompt, that is this change, not a wedged sensor and
+not something this repo did.
 
-Kills the "login keyring did not get unlocked" prompt that appears after a
-fingerprint login — while keeping fingerprint login. The keyring is
-encrypted with your *password*, and a fingerprint match can't stand in for
-it (the sensor yields a yes/no, not key material), so the prompt fires as
-soon as anything needs a secret (Brave, Google accounts). The role
-therefore removes the login keyring's password — it asks for your login
-password once, and only when the keyring actually needs blanking: the
-keyring then auto-unlocks on every login and never prompts again.
-
-The trade-off, made deliberately: keyring contents (Brave's cookie/password
-key, account tokens) are stored unencrypted in `~/.local/share/keyrings`.
-With LUKS full-disk encryption that changes little in practice — offline
-access is already gated by the disk password, and anything running as you
-could read the secrets through the unlocked keyring anyway.
-
-Blanking alone doesn't hold, so the role also stops GNOME from undoing it.
-Logging in at the greeter with your **password** used to silently re-encrypt
-the keyring: `pam_gnome_keyring` hands the typed password to gnome-keyring,
-which notices the keyring has no password and "fixes" that by re-keying it to
-your login password — after which every fingerprint login prompts again. (It
-usually bites right after a system update, because the reboot is when you're
-most likely to type a password at the greeter — the update itself is
-innocent.) The role removes the two lines that pass the password along, in
-`/etc/pam.d/gdm-password` and `gdm-switchable-auth`, and keeps the
-`session … auto_start` line that actually starts the keyring daemon. Those
-files belong to the `gdm` package and can be reset by a gdm update, so the
-fix is re-applied on every `./install.sh` run.
-
-The role also removes the greeter password-only config an earlier revision
-installed, restoring fingerprint at the login screen. If it reports your
-password doesn't match the keyring, the account password was changed
-outside PAM at some point — re-run with the old password, or reset the
-keyring in Seahorse (`sudo dnf install seahorse`).
+**Leftover from Fedora 44: the old login keyring.** Fedora 45's Secret
+Service is `oo7`, which keeps its own encrypted keyring in
+`~/.local/share/keyrings/v1/`. The plaintext gnome-keyring file
+`~/.local/share/keyrings/login.keyring` from before the upgrade is still
+there and nothing uses it. The repo leaves it alone: whether `oo7` imported
+everything from it has not been verified. Once Brave and your Google
+accounts have behaved for a while, delete that one file by hand. (The
+`login-keyring` role that used to blank that keyring so fingerprint login
+wouldn't prompt is retired, along with its module. Its two
+`/etc/pam.d/*.rpmsave` leftovers are inert.)
 
 ### vscode
 
@@ -840,9 +826,9 @@ one run only; the next full run re-applies `site.yml`'s value.)
 
 After the reboot:
 
-- Log in by **fingerprint**, not password, then run `./install.sh` (it includes
-  [login-keyring](#login-keyring)). A gdm update can restore the pam lines that
-  role strips, and a password login at the greeter would re-key the keyring.
+- Type your **password** at the login screen: GNOME 51 no longer offers
+  fingerprint there (see [fingerprint](#fingerprint); the lock screen, `sudo` and
+  polkit still take it). Then run `./install.sh` to re-converge.
 - Fedora's `updates-testing` repo is disabled on this machine (checked
   2026-10-19 with `dnf5 repo list --all | grep testing`), so the `updates` role
   pulls no testing packages. The one exception is the

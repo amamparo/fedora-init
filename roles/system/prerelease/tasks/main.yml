@@ -72,8 +72,7 @@
       - "       sudo dnf5 system-upgrade download --releasever=45"
       - "     If dnf stops on a conflict, --allowerasing lets it erase packages: read what it lists first."
       - "  5. Reboot as a separate step: Restart & Upgrade in Software, or sudo dnf5 offline reboot."
-      - "After the reboot log in by FINGERPRINT, not password: a gdm update can restore the pam files"
-      - "the login-keyring role strips, and a password login would re-key the login keyring."
-      - "Then run ./install.sh (it includes login-keyring)."
+      - "After the reboot type your password at the login screen: GNOME 51 no longer offers fingerprint"
+      - "there (lock screen, sudo and polkit still do). Then run ./install.sh to re-converge."
       - "After GA set prerelease_upgrades to false in site.yml and re-run ./install.sh prerelease."
   when: prerelease_flag is changed and not ansible_check_mode and prerelease_enabled | bool

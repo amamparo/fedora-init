@@ -34,8 +34,7 @@ cd "$(dirname "$script")"
 source scripts/bw-lib.sh
 
 # Under curl|bash stdin is the exhausted pipe; the sudo prompt below and the
-# login-keyring password prompt (an ansible pause task) both need the
-# terminal, so reattach.
+# Bitwarden sign-in both need the terminal, so reattach.
 [[ -t 0 ]] || exec </dev/tty
 
 # Authenticate sudo once, interactively — password or fingerprint both work

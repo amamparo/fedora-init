@@ -25,8 +25,8 @@
 # entry and fix it upstream instead.
 #
 # Substring-matcher note: `./install.sh gimp` reaches only this role, but
-# `./install.sh gi` also sweeps git-workspace, github-cli and login-keyring
-# (lo*gi*n) — verified against the matcher, not guessed.
+# `./install.sh gi` also sweeps git-workspace, github-cli and lazygit —
+# verified against the matcher, not guessed.
 - name: Install GIMP
   become: true
   ansible.builtin.dnf5:

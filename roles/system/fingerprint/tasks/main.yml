@@ -1,14 +1,16 @@
 ---
 # Fingerprint: keep the sensor usable across suspend.
 #
-# fprintd is a transient, D-Bus-activated daemon — the greeter's pam_fprintd
-# activates it, and it exits ~30s after the last operation. If the machine
+# fprintd is a transient, D-Bus-activated daemon — the lock screen's,
+# sudo's or polkit's pam_fprintd activates it (not the login screen: GNOME 51
+# stopped offering fingerprint there, see AGENTS.md), and it exits ~30s after
+# the last operation. If the machine
 # suspends inside that window the daemon rides through the sleep still
 # holding an open USB handle, and on resume that handle is a zombie: every
 # transfer returns "endpoint stalled or request not supported", the stale
 # claim is never released ("Device was already claimed"), and pam_fprintd
-# fails with no grantor at all — so GDM/the lock screen silently drop the
-# fingerprint option and offer only a password. Nothing surfaces an error;
+# fails with no grantor at all — so the lock screen silently drops the
+# fingerprint option and offers only a password. Nothing surfaces an error;
 # the reader simply stops being offered.
 #
 # The state clears itself once the wedged instance idles out, which is

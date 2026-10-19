@@ -100,8 +100,6 @@
       tags: extension-manager
     - role: fingerprint
       tags: fingerprint
-    - role: login_keyring
-      tags: login-keyring
     - role: vscode
       tags: vscode
     - role: claude_code

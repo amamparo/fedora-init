@@ -34,7 +34,7 @@ bw_ensure_installed() {
 # must lock only when that flag is set, so a session the user exported for
 # their own bw work survives a run that merely borrowed it. Sign-in state
 # persists in ~/.config/Bitwarden CLI (vault items stay encrypted there;
-# treat the auth tokens like the blanked login keyring — LUKS is the
+# treat the auth tokens as plain at-rest files — LUKS is the
 # at-rest story), so a fresh session is email + master password + TOTP the
 # first time, master password alone after. The Bitwarden cloud can
 # additionally demand the personal API key client_secret (its bot check —
