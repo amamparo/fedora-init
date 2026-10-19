@@ -19,7 +19,8 @@
 # compiles schemas, and the rpm already ships the compiled schema.
 #
 # Versions, and why the install pulls from updates-testing (2026-10-19): F45's
-# regular `updates` carries v73, which can stall login for up to a minute
+# stable build is v73 (it sits in the `fedora` repo, `updates` has none), which
+# can stall login for up to a minute
 # (12-56 s reported upstream, issue #1047). PR #1077 traces it to panel.js
 # re-queueing its own size update from inside the idle callback while the
 # panel's geometry is unavailable, which it is at login; the loop is in the v73
@@ -31,13 +32,16 @@
 # package from updates-testing — THIS ONE PACKAGE: `enablerepo` enables the repo
 # for the single transaction and persists nothing.
 #
-# REMOVE WHEN `dnf5 repoquery gnome-shell-extension-blur-my-shell` lists 75 from
-# `updates`: drop `enablerepo`, `update_cache` and the version gate (keep the
-# `>= 75` floor — it costs nothing and keeps v73 out for good); the updates
-# role's `dnf upgrade` then keeps it current.
-# That cleanup is required, not optional: while `enablerepo` stays, a fresh
-# machine installs whatever is newest in updates-testing (v76 or later), not
-# the stable build.
+# REMOVE WHEN a stable repo (`fedora` or `updates`) lists 75 or newer: drop
+# `enablerepo` and `update_cache`; keep the `>= 75` floor (it costs nothing and
+# keeps v73 out for good) and keep the `when:` gate, which is what keeps a
+# converged re-run offline; the updates role's `dnf upgrade` then keeps the
+# package current. That cleanup is required, not optional: while `enablerepo`
+# stays, a fresh machine installs whatever is newest in updates-testing (v76 or
+# later), not the stable build. It is ENFORCED, not remembered: the three
+# tripwire tasks directly below fail the play with these instructions the first
+# time a stable repo lists a build that new, and are themselves deleted as part
+# of the cleanup.
 #
 # v73 is NEVER installed by this role (the user's hard rule). The package spec
 # is `>= 75`, not the bare name with `state: latest`, because a bare name
@@ -60,6 +64,70 @@
 # stale metadata is a known trap in this repo (see the updates role); it costs
 # anything only on the run that installs.
 #
+# The tripwire. It asks dnf's own cache what a STABLE repo (updates-testing
+# excluded) offers, offline: `-C` is cache-only, and the updates role, which
+# runs first in the same play, has just refreshed that cache, so a converged
+# re-run stays zero-network. Checked 2026-10-19: with testing excluded it
+# prints only `73`, and v73 comes from `fedora`, so the probe has to look at
+# every stable repo, not just `updates`. `./install.sh blur` alone checks the
+# cache as the last full run left it. Read-only, so it also runs under --check
+# (and a dry run fails the same way, which is honest: the cleanup is pending).
+- name: Look for a stable Blur my Shell build in dnf's cache
+  ansible.builtin.command:
+    cmd: >-
+      dnf5 -C repoquery --disablerepo=updates-testing --latest-limit=1
+      --qf '%{version}\n' gnome-shell-extension-blur-my-shell
+  register: blur_my_shell_stable_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# A probe that cannot answer (no cache for a repo, dnf5 changed its CLI) is
+# reported, never silently read as "no stable build yet": that would disarm the
+# tripwire without anyone noticing.
+- name: Warn that the stable-build check could not run
+  ansible.builtin.debug:
+    msg: >-
+      Could not check whether a stable Fedora repo now carries Blur my Shell
+      {{ blur_my_shell_min_version }} or newer (`dnf5 -C repoquery` exited
+      {{ blur_my_shell_stable_probe.rc }}: {{ blur_my_shell_stable_probe.stderr }}).
+      The updates-testing workaround below stays in place; run
+      `dnf5 repoquery --refresh gnome-shell-extension-blur-my-shell` by hand.
+  when: blur_my_shell_stable_probe.rc != 0
+
+- name: Fail once a stable repo carries Blur my Shell >= the minimum version
+  ansible.builtin.fail:
+    msg: |-
+      Blur my Shell {{ blur_my_shell_stable_version }} is now in a stable Fedora repo (this role's
+      minimum is {{ blur_my_shell_min_version }}), so its updates-testing workaround is obsolete and has to
+      come out. This failure is deliberate and repeats on every run until the role is changed.
+
+      WHY: the install task enables updates-testing for its dnf transaction. Left alone, a fresh
+      machine would install whatever is newest in testing (v76 or later, unreviewed), not the
+      stable build.
+
+      FIX, in roles/desktop/blur_my_shell/tasks/main.yml:
+        1. In the "Install Blur my Shell" task, delete `enablerepo: updates-testing` and
+           `update_cache: true`. KEEP the `>= {{ blur_my_shell_min_version }}` floor and the `when:` gate (the gate
+           is what keeps a converged re-run offline). Rename the task to drop "from updates-testing".
+        2. Delete the three tripwire tasks, from "Look for a stable Blur my Shell build in dnf's
+           cache" through this one, the "REMOVE WHEN" comment, and the README/AGENTS.md sentences
+           that describe the updates-testing install.
+        3. Leave the stylesheet shim ("Install the stylesheets the Blur my Shell rpm omits") alone:
+           it has its own removal condition, `rpm -ql gnome-shell-extension-blur-my-shell`
+           listing styles/.
+        4. Run `just check`, then `./install.sh blur`.
+
+      Check by hand:
+        dnf5 -C repoquery --disablerepo=updates-testing gnome-shell-extension-blur-my-shell
+  vars:
+    blur_my_shell_stable_version: >-
+      {{ blur_my_shell_stable_probe.stdout_lines | select('match', '^[0-9][0-9.]*$')
+         | list | last | default('0') }}
+  when:
+    - blur_my_shell_stable_probe.rc == 0
+    - blur_my_shell_stable_version is version(blur_my_shell_min_version, '>=')
+
 # Wayland can't hot-reload GNOME Shell — a newly installed system extension
 # takes effect at the next login.
 - name: Install Blur my Shell (v75+ from updates-testing)
@@ -70,8 +138,6 @@
     enablerepo: updates-testing
     update_cache: true
     install_weak_deps: false
-  vars:
-    blur_my_shell_min_version: "75"
   when: >-
     'gnome-shell-extension-blur-my-shell' not in ansible_facts.packages
     or ansible_facts.packages['gnome-shell-extension-blur-my-shell'][0].version

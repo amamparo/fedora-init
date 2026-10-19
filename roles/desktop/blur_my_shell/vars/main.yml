@@ -1,0 +1,6 @@
+---
+# The oldest Blur my Shell build this role will install. v73 stalls login (see
+# the header of tasks/main.yml), and "v73 is never installed" is the user's
+# hard rule. Read by the install task AND the tripwire that fails the play once
+# a build this new reaches a stable repo; one value, so they cannot drift.
+blur_my_shell_min_version: "75"

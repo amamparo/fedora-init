@@ -450,6 +450,14 @@ and the `updates` role keeps it current afterwards. The role will not install
 v73: it asks for "v75 or newer", so if no such build is reachable it fails
 instead of settling for the stable one.
 
+That `updates-testing` detour is temporary, and the role enforces it: once one
+of Fedora's stable repos lists v75 or newer, `./install.sh` fails at this role
+with a message saying why and what to change (drop `enablerepo` and
+`update_cache` from the install task, delete the check). The check reads dnf's
+local cache, so it needs no network, and it only sees what the last full run
+left in that cache; a check that cannot run prints a warning instead of
+passing silently.
+
 `./install.sh blur` runs only this role (`shell` and `my` hit it too).
 
 ### extension-manager
