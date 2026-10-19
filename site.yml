@@ -39,6 +39,12 @@
     # frames/rate. 128 = 2.7 ms, verified xrun-free on the mini; 256 is the
     # next step if a session ever crackles.
     pipewire_jack_latency: 128/48000
+    # Offer pre-release Fedora upgrades (roles/system/prerelease): true shows the
+    # next Fedora in GNOME Software while it is still "Under Development". Set
+    # false once that release is final and re-run `./install.sh prerelease` — the
+    # setting is reset. One-off: `./install.sh prerelease -e prerelease_upgrades=false`
+    # (the next full run re-applies this value).
+    prerelease_upgrades: true
   pre_tasks:
     # The rpm -q guard layer: dnf5 hits the network for metadata even when a
     # transaction is a no-op, so every package task guards on these facts to
@@ -116,3 +122,5 @@
       tags: gimp
     - role: extra_packages
       tags: extra-packages
+    - role: prerelease
+      tags: prerelease

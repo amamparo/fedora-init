@@ -1,0 +1,79 @@
+---
+# Pre-release Fedora upgrades: make GNOME Software OFFER the next Fedora
+# (45 / GNOME 51) while it is still "Under Development". The upgrade itself is
+# NOT automated — it is a reboot-driven offline transaction, not a convergent
+# state — so the closing debug lists the manual steps.
+#
+# There is no dnf "beta switch": `dnf5 system-upgrade download
+# --releasever=45` already works on stock config. The one gate is GNOME
+# Software's gsetting org.gnome.software show-upgrade-prerelease (default
+# false): its fedora-pkgdb-collections plugin hides every collection whose
+# pkgdb status is "Under Development" until the key is true. It is also NOT
+# the frozen Beta compose — --releasever=45 follows the rolling development/45
+# tree (web-sourced, not checked from this machine), so what lands is whatever
+# F45 looks like that day. After GA the switch is moot, and left on it would
+# offer the NEXT Beta (F46): set prerelease_upgrades to false in site.yml and
+# re-run — the key is then reset to its default.
+#
+# RPM Fusion's missing F45 -updates repos need no handling here: Fedora's
+# 20-fedora-defaults.conf sets skip_if_unavailable=True for every repo that
+# does not say otherwise, and the rpmfusion -updates repo files do not (see
+# AGENTS.md before adding a repos.override.d file for it — it would be a no-op).
+#
+# The dconf write is user-session state, so NO become anywhere in this role
+# (root's dconf otherwise). It is check-mode truthful: the dconf module
+# compares with a plain `dconf read`, which needs no session bus.
+#
+# Substring: `./install.sh prerelease` or `release` hits only this role;
+# `pre` also sweeps gnome-prefs.
+
+# One normalised boolean for every consumer below. `| bool` is load-bearing:
+# `./install.sh prerelease -e prerelease_upgrades=false` arrives as the STRING
+# "false", which a bare `when` would reject under strict conditionals. The
+# default keeps the role inert if the site.yml var is ever deleted.
+- name: Resolve the prerelease switch
+  ansible.builtin.set_fact:
+    prerelease_enabled: "{{ prerelease_upgrades | default(false) | bool }}"
+
+# state: absent is `dconf reset`: it drops the user's key so the schema
+# default (false) applies again — today's state — instead of pinning an
+# explicit false, and it reports changed only when a user value exists. The
+# literal `key:` line is deliberate: the dotfiles validator scans roles/ for
+# it, so this key can never also be listed in dotfiles/manifest.yml.
+- name: Show pre-release Fedora upgrades in GNOME Software (reset when off)
+  community.general.dconf:
+    key: /org/gnome/software/show-upgrade-prerelease
+    value: "true"
+    state: "{{ 'present' if prerelease_enabled | bool else 'absent' }}"
+  register: prerelease_flag
+
+# What no role can do: start the upgrade (a reboot-driven offline
+# transaction). The tailscale-`up` pattern: printed once, when the switch
+# actually flips on, never under --check. The `and`/`not` in the when is what
+# keeps ansible-lint's no-handler rule from matching, so no noqa is needed
+# (github_cli and pipewire carry none either). Order matters in the text: the
+# checks come BEFORE the download, and the reboot is its own step rather than
+# an `&&` chain, so nobody reboots straight out of the download prompt.
+- name: Show how to start the Fedora upgrade (printed once, when the switch flips on)
+  ansible.builtin.debug:
+    msg:
+      - "GNOME Software now offers pre-release Fedora upgrades once it re-reads the switch."
+      - "Before you start (none of this can be converged):"
+      - "  1. sudo dnf5 --refresh upgrade   (dnf5-system-upgrade(8) wants the current release fully"
+      - "     up to date first; reboot if the kernel changed)"
+      - "  2. sudo dnf5 offline status   -- GNOME Software stages downloaded updates in the background;"
+      - "     if one for 44 is staged, clear it with: sudo dnf5 offline clean"
+      - "  3. sudo snapper -c root create -c number -u important=yes -d pre-f45-upgrade"
+      - "     (the offline transaction may not fire the snapper hook, and /boot is ext4, outside"
+      - "     btrfs, so a snapshot does not fully undo a release upgrade)"
+      - "Upgrade:"
+      - "  4. gnome-software --quit, reopen Software > Updates, check the banner says Fedora Linux 45"
+      - "     (the pkgdb list also carries rawhide), then download. Without a banner:"
+      - "       sudo dnf5 system-upgrade download --releasever=45"
+      - "     If dnf stops on a conflict, --allowerasing lets it erase packages: read what it lists first."
+      - "  5. Reboot as a separate step: Restart & Upgrade in Software, or sudo dnf5 offline reboot."
+      - "After the reboot log in by FINGERPRINT, not password: a gdm update can restore the pam files"
+      - "the login-keyring role strips, and a password login would re-key the login keyring."
+      - "Then run ./install.sh (it includes login-keyring)."
+      - "After GA set prerelease_upgrades to false in site.yml and re-run ./install.sh prerelease."
+  when: prerelease_flag is changed and not ansible_check_mode and prerelease_enabled | bool

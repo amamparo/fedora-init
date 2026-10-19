@@ -2,7 +2,8 @@
 
 Idempotent setup for a fresh Fedora Workstation (GNOME) install, as a local
 Ansible playbook. Tested against Fedora 44 / GNOME 50; the bundled shell
-extensions also work back to GNOME 48.
+extensions also work back to GNOME 48. Fedora 45 / GNOME 51 is untested — the
+[prerelease](#prerelease) role only makes the upgrade available.
 
 ## Run it
 
@@ -734,6 +735,68 @@ what is listed and **never uninstalls anything**. Delete a line to stop
 installing it, and add the name under `ignore:` on the `extra-packages` item in
 `dotfiles/manifest.yml` so a later save does not find it again. The list does
 not exist until your first `just save`.
+
+### prerelease
+
+Lets you move to the next Fedora while it is still a pre-release (Fedora 45 /
+GNOME 51 at the time of writing). It switches on GNOME Software's hidden
+**"Offer upgrades for pre-releases"** setting
+(`org.gnome.software show-upgrade-prerelease`), so Software lists a Fedora that
+is still marked "Under Development". Fedora's command-line upgrade needs no
+equivalent: `dnf5 system-upgrade` never gated on it. The `prerelease_upgrades`
+variable in `site.yml` controls it, and nothing else is touched.
+
+It does **not** run the upgrade: that is a reboot-driven offline transaction.
+After `./install.sh prerelease`:
+
+Before you start:
+
+1. `sudo dnf5 --refresh upgrade` — the dnf5 manual wants the current release
+   fully up to date first — and reboot if the kernel changed.
+   (`./install.sh updates` does that and more.)
+2. `sudo dnf5 offline status`. GNOME Software stages downloaded updates in the
+   background; if one for 44 is staged, `sudo dnf5 offline clean` clears it.
+3. Take a snapshot:
+   `sudo snapper -c root create -c number -u important=yes -d pre-f45-upgrade`.
+   `important=yes` keeps it out of the normal rotation. It does not fully undo
+   a release upgrade, because `/boot` is a separate ext4 partition outside
+   btrfs.
+
+Upgrade:
+
+4. `gnome-software --quit`, reopen Software, check that the banner says
+   **Fedora Linux 45** (Fedora's list also carries rawhide), then download.
+   Without a banner, use `sudo dnf5 system-upgrade download --releasever=45`.
+   If dnf stops on a conflict, `--allowerasing` lets it erase packages, so read
+   what it lists before you agree.
+5. Reboot as a separate step: Restart & Upgrade in Software, or
+   `sudo dnf5 offline reboot`.
+
+What you get is the rolling `development/45` tree rather than the frozen Beta
+compose, so it moves toward Final day by day. Final was targeted for
+2026-10-27 with a fallback of 2026-11-03. Both are web-sourced (Fedora's mirror
+listings and secondary news reports), not checked from this machine. After GA
+the setting is not needed and, left on, Software would offer Fedora 46's Beta:
+set `prerelease_upgrades: false` in `site.yml` and re-run
+`./install.sh prerelease` to reset it. (`-e prerelease_upgrades=false` works for
+one run only; the next full run re-applies `site.yml`'s value.)
+
+After the reboot:
+
+- Log in by **fingerprint**, not password, then run `./install.sh` (it includes
+  [login-keyring](#login-keyring)). A gdm update can restore the pam lines that
+  role strips, and a password login at the greeter would re-key the keyring.
+- Fedora's own repo package may ship `updates-testing` enabled until GA (not
+  verified), in which case the `updates` role will pull testing packages. Check
+  with `dnf5 repo list --all | grep testing`.
+- The Ghostty COPR's Fedora 45 build may be older than its Fedora 44 one
+  (web-sourced).
+- Untested on GNOME 51: this repo's two extensions declare 51 in their
+  metadata but have not run there, and `mutter_display_config` has not been
+  tried against it.
+
+`./install.sh prerelease` or `release` runs only this role; `pre` also runs
+gnome-prefs.
 
 ## Saving your configs (`just save`)
 
