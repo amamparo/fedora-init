@@ -270,19 +270,25 @@
           + ['blur-my-shell@aunetx']) | unique | list | string }}
     state: present
 
-# The two switches that ARE the requested look. Both already default to true
-# (schema org.gnome.shell.extensions.blur-my-shell, verified in the rpm), so
-# these state intent and keep the look if upstream ever flips a default. Each
-# key is a literal `key:` line on purpose: dotfiles_common.declared_dconf_keys
-# finds repo-owned keys with a per-line regex, so a looped `key: "{{ item }}"`
-# would be invisible to it and `just save` could then capture the same key.
+# The three switches that ARE the requested look. panel/blur and overview/blur
+# already default to true (schema org.gnome.shell.extensions.blur-my-shell,
+# verified in the rpm), so those two state intent and keep the look if upstream
+# ever flips a default. popup/blur is the odd one out: it defaults to TRUE and
+# this role sets it FALSE, so it is a converged repo value like the aws region
+# (edit the task, not the extension's preferences, which the next run would
+# revert). Each key is a literal `key:` line on purpose:
+# dotfiles_common.declared_dconf_keys finds repo-owned keys with a per-line
+# regex, so a looped `key: "{{ item }}"` would be invisible to it and
+# `just save` could then capture the same key.
 #
 # NOTHING ELSE is managed — sigma, brightness, colour, noise, the `pipelines`
 # dict and the panel/overview style enums. Those are taste, tuned live in
 # Extension Manager or the extension's own preferences, and a converged value
 # here would revert the tuning on every run (from v73 on, blur radius and
-# brightness live in `pipelines`, a dict no scalar key could pin anyway).
-# GVariant text: a bare `true`.
+# brightness live in `pipelines`, a dict no scalar key could pin anyway). The
+# other popup/* keys (static-blur, pipeline, corner radii, style-popup…) are
+# inert while popup blur is off, so they are left alone too.
+# GVariant text: a bare `true` / `false`.
 - name: Blur the top bar
   community.general.dconf:
     key: /org/gnome/shell/extensions/blur-my-shell/panel/blur
@@ -293,4 +299,43 @@
   community.general.dconf:
     key: /org/gnome/shell/extensions/blur-my-shell/overview/blur
     value: "true"
+    state: present
+
+# Blur my Shell's popup blur (menus, Quick Settings, notifications, OSD,
+# dialogs; new in v73, ON by default) is turned OFF, because on stock GNOME 51
+# it draws a darkened SQUARE box behind every rounded popup (reported on this
+# machine 2026-10-19; upstream issues #1034, #1052, #1107). Dynamic mode, the
+# default, paints the blur as a plain rectangle (components/popup/blur_surface.js
+# create_actor) and only rounds it when Shell.BlurEffect has a `corner-radius`
+# property (effects/native_dynamic_gaussian_blur.js SUPPORTS_CORNER_RADIUS).
+# GNOME 51's has only brightness/mode/radius (read from Shell-51.typelib) and
+# the third-party GNOME Rounded Blur library that adds the property
+# (`gi://Blur`) is not installed, which the extension records itself as
+# `rounded-blur-found=false`. The menu is rounded by CSS, the blur behind it is
+# not, so the darker corners poke out. The vendored styles/ are not the cause:
+# they only make the menu body translucent, which makes the box easier to see.
+#
+# Alternatives, rejected (the user chose "off", 2026-10-19):
+# - popup/static-blur=true rounds the blur with a corner shader, but a static
+#   blur is the WALLPAPER only, so a menu opened over a window shows blurred
+#   wallpaper instead of the window, and upstream reports a GPU memory leak in
+#   that path (#1099).
+# - The GNOME Rounded Blur library is compiled against mutter and upstream's
+#   v76 deprecates it.
+# Off is also the only v75 setting free of both GPU leaks (#1099 static,
+# #1116 on window close, where one GNOME 51 user saw 14 GiB fall to 1.4 GiB).
+#
+# Upstream's v76 (tagged 2026-10-18, not in Fedora yet) rounds dynamic blur
+# itself (PR #976) but still defaults popup blur to ON, so this task stays until
+# someone wants menu blur back: then delete it. Nothing enforces that; it is a
+# preference, not a workaround with an expiry.
+#
+# It takes effect live: the extension watches popup/blur and calls
+# PopupBlur.disable(), which removes the bms-popup-* style classes and destroys
+# every live surface, restoring each menu's own inline style. No logout, and
+# the styles/ shim above stays (the top bar still needs styles/panel.css).
+- name: Keep menus and popups unblurred
+  community.general.dconf:
+    key: /org/gnome/shell/extensions/blur-my-shell/popup/blur
+    value: "false"
     state: present

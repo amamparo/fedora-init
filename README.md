@@ -432,9 +432,14 @@ and leaves the shell's look alone), so this installs the
 [Blur my Shell](https://github.com/aunetx/blur-my-shell) extension from
 Fedora's repos and enables it. The role switches on the two blurs that make up
 the look (`panel` and `overview`, both already the extension's defaults) and
-nothing else: blur strength, brightness and colour are yours to tune in
-Extension Manager or the extension's preferences, and a re-run never resets
-them. Takes effect at your next login.
+switches the extension's menu and popup blur *off*: on stock GNOME 51 it can't
+round its corners, so it draws a darkened square box behind Quick Settings and
+every other rounded popup. That setting is the role's (re-applied each run, so
+a toggle in the extension's preferences is reverted); it takes effect at once
+on `./install.sh blur`. Nothing else is managed: blur strength, brightness and
+colour are yours to tune in Extension Manager or the extension's preferences,
+and a re-run never resets them. The bar and overview blur take effect at your
+next login.
 
 Fedora's rpm leaves out the extension's `styles/` directory (its
 `stylesheet.css` only `@import`s it), and without those stylesheets the top bar
