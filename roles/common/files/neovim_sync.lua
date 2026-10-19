@@ -22,7 +22,17 @@
 -- already compiling is waited on for at most 60 s, and a failed one can read
 -- as success); and lazy.nvim exits 0 on failure. So everything here is
 -- polled against what is actually on disk, and any failure exits 1 — `-l`
--- turns a Lua error or os.exit(1) into the process status Ansible sees.
+-- turns a Lua error or os.exit(1) into the process status Ansible sees. The
+-- one exception is a failed UPGRADE of a Mason package that is already
+-- installed: Mason downloads and unpacks into a staging dir and only then
+-- replaces the old tree, so a failed download leaves the old build in place,
+-- and one broken vendor URL must not abort a whole ./install.sh (this runs
+-- from the first role). That case prints a WARNING line and exits 0 — the
+-- Ansible side reports it — but only while the old receipt still names the
+-- old version; a failed first INSTALL, or an upgrade that lost the old build,
+-- stays fatal, so the sentinel is never written over a half-set-up editor.
+-- Other downloads (registry refresh, blink's library, parsers) stay fatal.
+-- The marked blocks below are what scripts/test_neovim_sync.py runs.
 --
 -- By the time this runs, init.lua has already done lazy.nvim's startup
 -- install-missing (synchronous) — that part has no timeout of its own, which
@@ -37,8 +47,9 @@ if mode ~= "plugins" and mode ~= "install" and mode ~= "update" then
   os.exit(2)
 end
 
-local failures, skipped, changed = {}, {}, false
+local failures, warnings, skipped, changed = {}, {}, {}, false
 
+-- BEGIN helpers
 local function say(msg)
   io.stdout:write("fedora-init: " .. msg .. "\n")
   io.stdout:flush()
@@ -48,6 +59,18 @@ local function fail(msg)
   failures[#failures + 1] = msg
   say("FAILED " .. msg)
 end
+
+local function warn(msg)
+  warnings[#warnings + 1] = msg
+  say("WARNING " .. msg)
+end
+
+--- Mason errors can span lines; keep each "fedora-init:" record on one line
+--- so the Ansible side can pick it out by prefix.
+local function oneline(s)
+  return (tostring(s):gsub("%s*\n%s*", " "))
+end
+-- END helpers
 
 local function read(path)
   local f = io.open(path, "rb")
@@ -64,12 +87,16 @@ local function wait(seconds, cond)
   return vim.wait(seconds * 1000, cond, 250)
 end
 
+-- BEGIN finish
 local function finish()
   if #skipped > 0 then
     say(
       "skipped (toolchain missing — installs on the next interactive start once present): "
         .. table.concat(skipped, ", ")
     )
+  end
+  if #warnings > 0 then
+    say(#warnings .. " upgrade(s) failed, installed versions kept (see WARNING above)")
   end
   if #failures > 0 then
     say(#failures .. " failure(s): " .. table.concat(failures, "; "))
@@ -91,6 +118,7 @@ local function finish()
   end
   os.exit(0)
 end
+-- END finish
 
 local Config = require("lazy.core.config")
 
@@ -259,8 +287,11 @@ local toolchains = {
   opam = "opam",
 }
 
+-- BEGIN install
 local jobs = {}
-local function install(pkg, why)
+--- `from` is the installed version when this is an upgrade, nil for a fresh
+--- install; it is what lets the result loop below tell the two apart.
+local function install(pkg, why, from)
   local kind = pkg.spec.source.id:match("^pkg:(%w+)/")
   local tool = toolchains[kind]
   if tool and vim.fn.executable(tool) == 0 then
@@ -273,12 +304,13 @@ local function install(pkg, why)
     return
   end
   say(why .. " " .. pkg.name)
-  local job = { pkg = pkg, done = false }
+  local job = { pkg = pkg, done = false, from = from }
   jobs[#jobs + 1] = job
   pkg:install({}, function(ok, err)
     job.done, job.ok, job.err = true, ok, err
   end)
 end
+-- END install
 
 for _, name in ipairs(wanted) do
   local ok, pkg = pcall(registry.get_package, name)
@@ -287,7 +319,11 @@ for _, name in ipairs(wanted) do
   elseif not pkg:is_installed() then
     install(pkg, "installing")
   elseif mode == "update" and pkg:get_installed_version() ~= pkg:get_latest_version() then
-    install(pkg, "upgrading (" .. tostring(pkg:get_installed_version()) .. " -> " .. pkg:get_latest_version() .. ")")
+    install(
+      pkg,
+      "upgrading (" .. tostring(pkg:get_installed_version()) .. " -> " .. pkg:get_latest_version() .. ")",
+      pkg:get_installed_version()
+    )
   end
 end
 
@@ -300,13 +336,27 @@ wait(30 * 60, function()
   return true
 end)
 
+-- BEGIN job-result
+--- True while the package's receipt still names `version`: the strongest
+--- "the old build is intact" signal Mason gives (is_installed() alone is only
+--- a directory stat, and the receipt is written last and removed with the tree).
+local function still_on(pkg, version)
+  local ok, current = pcall(pkg.get_installed_version, pkg)
+  return ok and current == version
+end
+
 for _, job in ipairs(jobs) do
   if job.ok == false then
-    fail("Mason " .. job.pkg.name .. ": " .. tostring(job.err))
+    if job.from ~= nil and job.pkg:is_installed() and still_on(job.pkg, job.from) then
+      warn("Mason " .. job.pkg.name .. " upgrade failed, kept " .. tostring(job.from) .. ": " .. oneline(job.err))
+    else
+      fail("Mason " .. job.pkg.name .. ": " .. oneline(job.err))
+    end
   elseif not job.pkg:is_installed() then
     fail("Mason " .. job.pkg.name .. " did not install")
   end
 end
+-- END job-result
 
 if not vim.deep_equal(mason_before, fs_state(mason_dir, "mason-receipt.json")) then
   changed = true

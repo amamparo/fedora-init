@@ -64,3 +64,19 @@
   when:
     - neovim_sync_tools.stdout_lines is defined
     - neovim_sync_tools.stdout_lines | select('search', 'skipped') | list | length > 0
+
+# A failed UPGRADE of an already-installed Mason package is a warning, not a
+# task failure (see the header of neovim_sync.lua): the old build is still
+# installed and working, and this runs from the first role of the play, so one
+# broken vendor URL must not stop the rest of ./install.sh. Other failures in
+# the sync (first installs, the registry refresh, parsers) are still fatal.
+# The warning repeats on every run until the registry or the vendor is fixed —
+# and kotlin-lsp builds are time-limited, so do not ignore it for long.
+# Anchored on the record prefix: the script's summary line also contains the
+# word, and unrelated tool output must not be picked up.
+- name: Report Neovim tool upgrades that failed (installed versions kept)
+  ansible.builtin.debug:
+    msg: "{{ neovim_sync_tools.stdout_lines | select('match', 'fedora-init:[ ]WARNING ') | list }}"
+  when:
+    - neovim_sync_tools.stdout_lines is defined
+    - neovim_sync_tools.stdout_lines | select('match', 'fedora-init:[ ]WARNING ') | list | length > 0

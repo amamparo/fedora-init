@@ -77,7 +77,9 @@ its latest release whenever the version moved), and Neovim — every plugin
 (`:Lazy sync`), treesitter parser and Mason language server/tool, updated
 headlessly, which is also what keeps JetBrains' kotlin-lsp alive (its builds
 expire) — skipped, with a note, while any `nvim` is open, so close Neovim
-before running updates. Other out-of-dnf tools like Claude Code and reaper
+before running updates. A language server or tool whose upgrade fails (a
+vendor download that 404s, say) is reported as a warning and the installed
+version stays, instead of stopping the whole run. Other out-of-dnf tools like Claude Code and reaper
 either self-update or are installed once and left alone. Under `--check` the herdr
 and lazygit version probes run and a pending upgrade is printed; nothing is
 actually re-downloaded, and the Neovim update is skipped.
@@ -266,7 +268,11 @@ each project's toolchain (`components = ["rust-analyzer", "rust-src"]` in its
 Rust support deliberately reads rust-analyzer from the toolchain, never
 installs its own. **Kotlin**'s kotlin-lsp is JetBrains' official server but
 still alpha (Android Gradle support is experimental), and it uses 2.5–4.5 GB
-of RAM while a Kotlin project is open.
+of RAM while a Kotlin project is open. Its builds expire, so a repeated
+"upgrade failed" warning for it during `./install.sh updates` is worth
+looking at. One cause seen so far was Mason's package definition pointing at a
+download host that stopped serving the builds; the fix then lives upstream, in
+Mason's registry or at JetBrains.
 
 `./install.sh neovim` (or `neo`/`vim`) targets only this role; `nvim`
 matches nothing, since the role is named `neovim`.

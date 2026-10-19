@@ -36,7 +36,8 @@ save *args:
 
 # ansible-lint is not a stock rpm; uvx (cli_tools) fetches it when it isn't
 # on PATH. The unit tests need no network; the gitleaks ones skip themselves
-# when the binary is absent (cli_tools installs it).
+# when the binary is absent (cli_tools installs it), and the Neovim sync ones
+# when nvim is.
 
 # The safe checks from AGENTS.md — never runs the playbook
 check:
