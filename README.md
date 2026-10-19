@@ -437,7 +437,9 @@ them. Takes effect at your next login. Fedora 45's regular build (v73) can
 stall login for up to about a minute; the fixed v75 sits in Fedora's
 `updates-testing` channel until the pre-release freeze lifts, so this role
 installs it from there, for this one package only, and the `updates` role keeps
-it current afterwards.
+it current afterwards. The role will not install v73: it asks for "v75 or
+newer", so if no such build is reachable it fails instead of settling for the
+stable one.
 
 `./install.sh blur` runs only this role (`shell` and `my` hit it too).
 

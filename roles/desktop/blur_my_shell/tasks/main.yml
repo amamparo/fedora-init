@@ -32,11 +32,23 @@
 # for the single transaction and persists nothing.
 #
 # REMOVE WHEN `dnf5 repoquery gnome-shell-extension-blur-my-shell` lists 75 from
-# `updates`: drop `enablerepo`, `update_cache` and the version gate, and go back
-# to `state: present` — the updates role's `dnf upgrade` then keeps it current.
+# `updates`: drop `enablerepo`, `update_cache` and the version gate (keep the
+# `>= 75` floor — it costs nothing and keeps v73 out for good); the updates
+# role's `dnf upgrade` then keeps it current.
 # That cleanup is required, not optional: while `enablerepo` stays, a fresh
 # machine installs whatever is newest in updates-testing (v76 or later), not
 # the stable build.
+#
+# v73 is NEVER installed by this role (the user's hard rule). The package spec
+# is `>= 75`, not the bare name with `state: latest`, because a bare name
+# resolves to the newest build in whatever repos are enabled: if the testing
+# build were ever retracted or the mirror lost, that would silently settle on
+# v73 from `fedora`/`updates`. With the `>= 75` floor dnf has no candidate and
+# fails instead ("No match for argument ... >= 75", verified by a dry run
+# without updates-testing). The gate below also makes the task fire when v73 is
+# already installed (older than 75), so the spec upgrades it rather than
+# leaving it. Don't set skip_broken here: it would turn that failure back into
+# a silent skip.
 #
 # The task is gated on the installed version (absent, or older than 75) so a
 # converged re-run never reaches dnf and stays offline. Failure mode:
@@ -50,11 +62,11 @@
 #
 # Wayland can't hot-reload GNOME Shell — a newly installed system extension
 # takes effect at the next login.
-- name: Install Blur my Shell (v75+ from updates-testing) # noqa: package-latest
+- name: Install Blur my Shell (v75+ from updates-testing)
   become: true
   ansible.builtin.dnf5:
-    name: gnome-shell-extension-blur-my-shell
-    state: latest
+    name: gnome-shell-extension-blur-my-shell >= {{ blur_my_shell_min_version }}
+    state: present
     enablerepo: updates-testing
     update_cache: true
     install_weak_deps: false
