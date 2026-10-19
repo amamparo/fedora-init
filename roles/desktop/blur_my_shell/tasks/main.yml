@@ -77,6 +77,112 @@
     or ansible_facts.packages['gnome-shell-extension-blur-my-shell'][0].version
     is version(blur_my_shell_min_version, '<')
 
+# The rpm omits the extension's stylesheets, and without them the top bar stays
+# solid black (diagnosed live 2026-10-19 on 75-1.fc45, extension ACTIVE, both
+# blur switches true, no error in the journal). Upstream split its CSS into
+# src/styles/ after Fedora's meson patch (0001-Use-meson-build-system.patch,
+# upstream PR 626) was written: the shipped stylesheet.css is only ten
+# `@import url("styles/….css")` lines, the patch's src/meson.build installs
+# extension.js, prefs.js, stylesheet.css and five source dirs but NOT styles/,
+# and `rpm -ql` lists no styles/ file. So `#panel.transparent-panel`
+# (`background: transparent !important`, in styles/panel.css) exists nowhere,
+# the panel keeps GNOME's opaque stock background, and that background sits
+# on top of the blur actor the extension inserts BEHIND it in the panel box:
+# the blur renders and is never seen. Verified by unpacking the srpm, not by
+# observing the bar. The v75 "verified by unpacking" check above covered
+# panel.js and the schema and missed this: read the rpm's file list, not only
+# its code.
+#
+# The fix is to put the missing directory next to the rpm's stylesheet.css
+# (an @import resolves relative to the importing file, so it has to live
+# inside the extension dir; a user-local copy of the whole extension would
+# shadow the rpm wholesale and stop dnf updating it). files/styles/ is
+# upstream's v75 src/styles/ byte-for-byte (GPL-3.0-or-later, see
+# files/NOTICE.txt) — VENDORED, not fetched, so a fresh install needs no
+# extra network and a converged re-run needs none at all. It is written under
+# /usr/share, so become, as `copy` (per-file checksums keep it converged;
+# `synchronize` would add rsync flags for nothing) with `diff: false` — the
+# first run would otherwise print ~90 KB of CSS because install.sh always
+# passes --diff.
+#
+# Gated on CONTENT, never on a version number, so one guard covers every case:
+# a self-contained stylesheet.css (no @import, e.g. an older single-file
+# build) needs nothing; and once Fedora fixes the packaging, rpm owns
+# styles/panel.css, the task turns itself off, and rpm overwrites our unowned
+# copies on the upgrade that introduces them. The probes are read-only
+# (changed_when/check_mode off) and run after the install above, so a fresh
+# machine gets the styles in the same run as the package; both tolerate an
+# absent rpm (fresh --check, where the install was only simulated). Facts are
+# not used for the install gate: they predate this run's dnf transaction.
+#
+# REMOVE WHEN `rpm -ql gnome-shell-extension-blur-my-shell` lists styles/ (not
+# when v75 reaches `updates` — that build and v73 have the same hole): delete the five
+# tasks below this comment and files/styles/. The install task above reaching
+# stable `updates` does NOT fix this.
+- name: Read the installed Blur my Shell stylesheet
+  ansible.builtin.slurp:
+    src: /usr/share/gnome-shell/extensions/blur-my-shell@aunetx/stylesheet.css
+  register: blur_my_shell_stylesheet
+  failed_when: false
+
+- name: Check whether the rpm owns the extension's styles/panel.css # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: >-
+      rpm -qf --qf '%{NAME}\n'
+      /usr/share/gnome-shell/extensions/blur-my-shell@aunetx/styles/panel.css
+  register: blur_my_shell_styles_owner
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install the stylesheets the Blur my Shell rpm omits
+  become: true
+  ansible.builtin.copy:
+    src: styles/
+    dest: /usr/share/gnome-shell/extensions/blur-my-shell@aunetx/styles/
+    owner: root
+    group: root
+    mode: "0644"
+    directory_mode: "0755"
+  diff: false
+  register: blur_my_shell_styles
+  when:
+    - blur_my_shell_stylesheet.content is defined
+    - '"styles/" in (blur_my_shell_stylesheet.content | b64decode)'
+    - blur_my_shell_styles_owner.rc | default(0) != 0
+
+# A newer rpm that still omits styles/ would run against stale CSS (a later
+# release can add an import file or change a rule). Facts predate the install
+# above, so on the run that first pulls a newer build this stays quiet and the
+# next run says it; the warning is advisory, never fatal.
+- name: Warn when the vendored Blur my Shell styles may be stale
+  ansible.builtin.debug:
+    msg: >-
+      files/styles/ in the blur_my_shell role is upstream v75's, but the
+      installed rpm is
+      {{ ansible_facts.packages['gnome-shell-extension-blur-my-shell'][0].version }}.
+      Refresh it from that release's src/styles/ (byte-for-byte, as before),
+      or drop the shim if the rpm now ships styles/.
+  when:
+    - blur_my_shell_styles is not skipped
+    - "'gnome-shell-extension-blur-my-shell' in ansible_facts.packages"
+    - ansible_facts.packages['gnome-shell-extension-blur-my-shell'][0].version
+      is version('75', '!=')
+
+# The stylesheet is read when the extension is enabled, not at every frame, so
+# a bar that was black when the files landed stays black until it is reloaded.
+# Wayland can't restart the shell, so: log out and back in (always works), or,
+# if Blur my Shell was already loaded in the running session, toggle it.
+- name: Say how to pick up the new Blur my Shell stylesheets
+  ansible.builtin.debug:
+    msg: >-
+      Blur my Shell's stylesheets were just installed, so the top bar stays
+      solid black until the extension reloads them. Log out and back in; or,
+      if Blur my Shell was already running in this session, run
+      `gnome-extensions disable blur-my-shell@aunetx &&
+      gnome-extensions enable blur-my-shell@aunetx`.
+  when: blur_my_shell_styles is changed and not ansible_check_mode
+
 # Enablement is ADDITIVE (same rule as gnome_extension.yml and appindicator):
 # read the EFFECTIVE enabled list via gsettings — NOT `dconf read`; vendor
 # defaults like background-logo live in gschema overrides, invisible in the

@@ -1,0 +1,12 @@
+styles/ is Blur my Shell's own stylesheet directory, copied byte-for-byte
+from src/styles/ of the upstream v75 release
+(https://github.com/aunetx/blur-my-shell, tag v75; the same tarball Fedora's
+gnome-shell-extension-blur-my-shell-75-1.fc45 builds from).
+
+Licence: GPL-3.0-or-later, the extension's own (LICENSE in the upstream repo).
+Copyright its authors; no changes were made.
+
+It is vendored because Fedora's rpm ships stylesheet.css (ten @import lines)
+but not the styles/ directory they point at: the rpm's meson patch installs
+only the files it lists. The role installs this copy next to the rpm's
+stylesheet.css while the rpm omits it; see tasks/main.yml.

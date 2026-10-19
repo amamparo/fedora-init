@@ -433,13 +433,22 @@ Fedora's repos and enables it. The role switches on the two blurs that make up
 the look (`panel` and `overview`, both already the extension's defaults) and
 nothing else: blur strength, brightness and colour are yours to tune in
 Extension Manager or the extension's preferences, and a re-run never resets
-them. Takes effect at your next login. Fedora 45's regular build (v73) can
-stall login for up to about a minute; the fixed v75 sits in Fedora's
-`updates-testing` channel until the pre-release freeze lifts, so this role
-installs it from there, for this one package only, and the `updates` role keeps
-it current afterwards. The role will not install v73: it asks for "v75 or
-newer", so if no such build is reachable it fails instead of settling for the
-stable one.
+them. Takes effect at your next login.
+
+Fedora's rpm leaves out the extension's `styles/` directory (its
+`stylesheet.css` only `@import`s it), and without those stylesheets the top bar
+stays solid black however the blur is set. Until the rpm ships them itself the
+role installs a copy of upstream's next to the rpm's files. The bar picks them
+up when the extension next loads: log out and back in, or, if Blur my Shell is
+already running, `gnome-extensions disable blur-my-shell@aunetx &&
+gnome-extensions enable blur-my-shell@aunetx`.
+
+Fedora 45's regular build (v73) can stall login for up to about a minute; the
+fixed v75 sits in Fedora's `updates-testing` channel until the pre-release
+freeze lifts, so this role installs it from there, for this one package only,
+and the `updates` role keeps it current afterwards. The role will not install
+v73: it asks for "v75 or newer", so if no such build is reachable it fails
+instead of settling for the stable one.
 
 `./install.sh blur` runs only this role (`shell` and `my` hit it too).
 
