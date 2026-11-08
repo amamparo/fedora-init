@@ -108,6 +108,8 @@
       tags: claude-desktop
     - role: herdr
       tags: herdr
+    - role: herdr_app
+      tags: herdr-app
     - role: podman
       tags: podman
     - role: tailscale

@@ -1,0 +1,347 @@
+---
+# The official herdr DESKTOP app ("Herdr", github.com/herdrdev/herdr-app,
+# Apache-2.0) and herdr-core (github.com/herdrdev/herdr-core, the `hc`
+# server it runs agents on). It took over the app-grid slot from the herdr
+# role's retired Ghostty launcher (2026-11-08, the user's call), but it is a
+# different product, not a GUI for the TUI: the app talks only to
+# herdr-core, the TUI runs its own `herdr server`, and the two never share
+# agents (upstream herdr-app#63, closed by a maintainer: "the app won't
+# attach to a herdr tui server"). Both are installed side by side; the TUI
+# stays in roles/ai/herdr.
+#
+# One role for both, because the app is useless without a core: it finds the
+# core by name (`herdr-core` or `hc` answering `--version` with `hc …`;
+# the TUI's ~/.local/bin/herdr does NOT count), and with none present its
+# setup window offers to run `curl -fsSL …/core/install.sh | sh` itself.
+# Installing the core here, BEFORE the app, keeps that vendor pipe-to-sh from
+# ever running. Native Rust on GPUI (Zed's toolkit) over wgpu/Vulkan, no
+# WebKitGTK or Electron: its libraries (libxcb, libxkbcommon(-x11),
+# libvulkan + mesa's Intel ICD, libEGL, libwayland-client/-egl) are all
+# already on a Workstation install, so nothing is installed with dnf.
+#
+# No rpm, no COPR, no GitHub releases: releases.herdr.dev is the only source.
+# Trust is TLS to that host plus the per-target sha256 in its manifests
+# (app/latest.json, core/latest.json), which get_url verifies. The vendor's
+# own docs/security.md says the checksum is not an independent signature:
+# the herdr role's herdr.dev/latest.json trust class. Everything here is
+# per-user under $HOME, so NO become anywhere (the app's self-updater must be
+# able to rename inside ~/.local/share).
+#
+# Why the vendor installers are NOT run (releases.herdr.dev/app/install.sh,
+# core/install.sh): the app installer pipes a second script, fetched unpinned
+# at run time, into sh (the core installer, when no core exists yet); the
+# core installer run over an EXISTING core does `herdr-core update --from`,
+# which STARTS a core as a transient systemd user service carrying the
+# caller's whole environment (install.sh's BW_SESSION included) for as long
+# as that core lives; and neither knows check mode. The tasks below do what
+# their fresh-install branches do (unpack, place, symlink, desktop entry,
+# icon), verify the same sha256 with get_url, and start nothing.
+#
+# Updates: presence is terminal for BOTH (the claude_code class), so the
+# updates role has nothing for them.
+#   - The app updates ITSELF in place while it is open (checks
+#     app/latest.json 10 s after launch, then hourly; stages
+#     ~/.local/share/herdr-app.new beside the install and swaps it in on quit
+#     or restart, keeping herdr-app.old until the core update below works).
+#     It finds its install root through the ~/.local/bin/herdr-app SYMLINK
+#     and a herdr-app.svg beside the binary, so that link must stay a link
+#     and the install dir must never be synced or "repaired" by this role:
+#     a converged copy would revert or race the app's own renames. There is
+#     no setting to turn the updater off (v0.1.13).
+#   - The core never updates itself, but the app keeps it current: the first
+#     start after each app self-update runs `hc update --version <target>`
+#     (terminals kept), and Settings ▸ Updates offers newer cores. That is
+#     the vendor's design ("the app keeps it current after that"), and
+#     driving `herdr-core update --from` from the play instead would start or
+#     restart the user's running core with the play's environment.
+#
+# Side effects of the FIRST app launch, none of them ours (documented, not
+# managed): the app writes ~/.config/herdr-app/ (settings.json, mods,
+# frame/, a control socket) and sends a daily usage report by default
+# (`"telemetry": false` in that settings.json turns it off); `hc connect`
+# starts the core as transient systemd user units (hc-serve-*, hc-hold-*,
+# hc-shutdown-*.service; no unit files are written) with state in
+# ~/.local/state/herdr-core/ and sockets in $XDG_RUNTIME_DIR/herdr-core/,
+# and the core runs `loginctl enable-linger $USER` at every core start
+# while linger is off (polkit allows it without a prompt on F45; linger is
+# already on here), so `loginctl disable-linger` does not last while the
+# app is in use.
+
+# The core first: the app must find it on its first start.
+- name: Probe for herdr-core (~/.local/bin/herdr-core)
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin/herdr-core"
+  register: herdr_core_bin
+  check_mode: false
+
+# uri has no check-mode support and is skipped under --check, so the install
+# block guards on the registered content (the herdr/lazygit shape). Reached
+# only when the core is absent, so a converged run makes no network call.
+- name: Fetch the herdr-core release manifest
+  ansible.builtin.uri:
+    url: https://releases.herdr.dev/core/latest.json
+    return_content: true
+  register: herdr_core_latest
+  changed_when: false
+  when: not herdr_core_bin.stat.exists
+
+# The tarball holds herdr-core, LICENSE and THIRD-PARTY-NOTICES with no
+# top-level dir; the binary is static (musl), so it needs no libraries. It is
+# unpacked in the scratch dir and then placed with copy, which writes a temp
+# file beside the destination and renames it: presence of
+# ~/.local/bin/herdr-core is terminal, so a half-written file at that path
+# (tar cut short) would never be repaired, and the app rejects a core that
+# fails `--version` and falls back to its curl | sh. The core installer's
+# fresh branch is the same cp + chmod + rename, and starts nothing. No
+# version in the task names: Ansible templates a task name even when the
+# block's `when` skips it, and a converged run would warn about the
+# undefined manifest.
+- name: Install herdr-core
+  when: not herdr_core_bin.stat.exists and herdr_core_latest.content is defined
+  vars:
+    herdr_core_manifest: "{{ herdr_core_latest.content | from_json }}"
+  block:
+    - name: Ensure ~/.local/bin exists
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') }}/.local/bin"
+        state: directory
+        mode: "0755"
+
+    - name: Create a scratch dir for the herdr-core tarball
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: herdr-core
+      register: herdr_core_tmp
+
+    - name: Download the checksum-verified herdr-core tarball
+      ansible.builtin.get_url:
+        url: "{{ herdr_core_manifest.targets['linux-x86_64'].url }}"
+        checksum: "sha256:{{ herdr_core_manifest.targets['linux-x86_64'].sha256 }}"
+        dest: "{{ herdr_core_tmp.path }}/herdr-core.tar.gz"
+        mode: "0644"
+      when: herdr_core_tmp.path is defined
+
+    - name: Unpack herdr-core
+      ansible.builtin.unarchive:
+        src: "{{ herdr_core_tmp.path }}/herdr-core.tar.gz"
+        dest: "{{ herdr_core_tmp.path }}"
+        remote_src: true
+        include:
+          - herdr-core
+      when: herdr_core_tmp.path is defined
+
+    - name: Place herdr-core in ~/.local/bin
+      ansible.builtin.copy:
+        src: "{{ herdr_core_tmp.path }}/herdr-core"
+        dest: "{{ lookup('env', 'HOME') }}/.local/bin/herdr-core"
+        remote_src: true
+        mode: "0755"
+      when: herdr_core_tmp.path is defined
+  always:
+    - name: Remove the herdr-core scratch dir
+      ansible.builtin.file:
+        path: "{{ herdr_core_tmp.path }}"
+        state: absent
+      when: herdr_core_tmp.path is defined
+
+# `hc` is the name herdr's docs and the core's own help use; the binary calls
+# itself hc whatever it is started as. The vendor installer adds the link
+# only when no hc exists (some window managers ship one), and so does this:
+# a ~/.local/bin/hc of any kind, or an hc in the system dirs, is left alone.
+# The system lookup names its PATH explicitly because the play's PATH may or
+# may not contain ~/.local/bin.
+- name: Probe for an existing ~/.local/bin/hc
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin/hc"
+    follow: false
+  register: herdr_core_hc_link
+  check_mode: false
+
+- name: Probe for a system-wide hc
+  ansible.builtin.command: sh -c 'command -v hc'
+  environment:
+    PATH: /usr/local/bin:/usr/bin:/bin
+  register: herdr_core_system_hc
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Link hc to herdr-core
+  ansible.builtin.file:
+    src: herdr-core
+    dest: "{{ lookup('env', 'HOME') }}/.local/bin/hc"
+    state: link
+  when:
+    - not herdr_core_hc_link.stat.exists
+    - herdr_core_system_hc.rc != 0
+    - not ansible_check_mode or herdr_core_bin.stat.exists
+
+# The app. Guarded on the binary inside its install dir, never on the
+# ~/.local/bin link (which may be missing while the app is fine).
+- name: Probe for the herdr desktop app (~/.local/share/herdr-app/herdr-app)
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/herdr-app/herdr-app"
+  register: herdr_app_bin
+  check_mode: false
+
+- name: Fetch the herdr desktop app release manifest
+  ansible.builtin.uri:
+    url: https://releases.herdr.dev/app/latest.json
+    return_content: true
+  register: herdr_app_latest
+  changed_when: false
+  when: not herdr_app_bin.stat.exists
+
+# ~/.local/share/applications (and with it ~/.local/share) must exist for
+# the staging dir and the launcher below; the vendor installer mkdirs both.
+- name: Ensure ~/.local/share/applications exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/applications"
+    state: directory
+    mode: "0755"
+
+# The tarball holds one top-level dir, herdr-app/ (the binary, herdr-app.svg,
+# LICENSE, THIRD-PARTY-NOTICES; ~35 MB packed, ~99 MB unpacked). It is
+# unpacked in a staging dir NEXT TO the install dir, so the final step is one
+# atomic rename on the same filesystem (a /tmp scratch dir would turn it into
+# a copy that a crash can cut short) — what the vendor installer does with
+# `mv $home.new $home`. The staging dir has a FIXED name and is cleared
+# first, because an interrupted run skips `always:` and a random name would
+# strand up to ~130 MB in ~/.local/share for good. A herdr-app dir left without its
+# binary is a broken leftover and is replaced; the app's own siblings
+# (herdr-app.new, .old, .download, .new.json) belong to its updater and are
+# never touched.
+- name: Install the herdr desktop app
+  when: not herdr_app_bin.stat.exists and herdr_app_latest.content is defined
+  vars:
+    herdr_app_manifest: "{{ herdr_app_latest.content | from_json }}"
+    herdr_app_staging: "{{ lookup('env', 'HOME') }}/.local/share/.herdr-app-fedora-init-staging"
+  block:
+    - name: Clear a herdr app staging dir an interrupted run left
+      ansible.builtin.file:
+        path: "{{ herdr_app_staging }}"
+        state: absent
+
+    - name: Create the herdr app staging dir beside its install dir
+      ansible.builtin.file:
+        path: "{{ herdr_app_staging }}"
+        state: directory
+        mode: "0700"
+
+    - name: Download the checksum-verified herdr app tarball
+      ansible.builtin.get_url:
+        url: "{{ herdr_app_manifest.targets['linux-x86_64'].url }}"
+        checksum: "sha256:{{ herdr_app_manifest.targets['linux-x86_64'].sha256 }}"
+        dest: "{{ herdr_app_staging }}/herdr-app.tar.gz"
+        mode: "0644"
+
+    - name: Unpack the herdr app
+      ansible.builtin.unarchive:
+        src: "{{ herdr_app_staging }}/herdr-app.tar.gz"
+        dest: "{{ herdr_app_staging }}"
+        remote_src: true
+
+    - name: Remove a herdr app dir left without its binary
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') }}/.local/share/herdr-app"
+        state: absent
+
+    - name: Move the herdr app into place
+      ansible.builtin.command:
+        argv:
+          - mv
+          - --no-target-directory
+          - "{{ herdr_app_staging }}/herdr-app"
+          - "{{ lookup('env', 'HOME') }}/.local/share/herdr-app"
+        creates: "{{ lookup('env', 'HOME') }}/.local/share/herdr-app/herdr-app"
+  always:
+    - name: Remove the herdr app staging dir
+      ansible.builtin.file:
+        path: "{{ herdr_app_staging }}"
+        state: absent
+
+# Absolute target, as the vendor installer makes it (`ln -sfn`). A SYMLINK,
+# never a copy: the updater resolves its install root from the real path of
+# the running binary. A regular file already at this path makes the task
+# fail rather than be replaced.
+- name: Link herdr-app into ~/.local/bin
+  ansible.builtin.file:
+    src: "{{ lookup('env', 'HOME') }}/.local/share/herdr-app/herdr-app"
+    dest: "{{ lookup('env', 'HOME') }}/.local/bin/herdr-app"
+    state: link
+  when: not ansible_check_mode or herdr_app_bin.stat.exists
+
+# The vendor installer's desktop entry, verbatim (only $HOME rendered): the
+# app never writes or rewrites it, and no vendor copy exists anywhere else,
+# so this is not the claude_desktop shadow-a-vendor-entry trap — but it IS
+# a copy of the installer's heredoc, so re-diff it against
+# releases.herdr.dev/app/install.sh when the app changes shape. Exec is
+# absolute because gnome-shell's PATH has no ~/.local/bin (see the herdr
+# bullet in AGENTS.md). StartupWMClass matches the Wayland app_id the window
+# sets (`herdr-app`, unless HERDR_APP_ID is set — never set it here). Never
+# add DBusActivatable=true: a D-Bus launch ignores Exec.
+- name: Install the herdr app launcher
+  ansible.builtin.template:
+    src: herdr-app.desktop.j2
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/applications/herdr-app.desktop"
+    mode: "0644"
+  register: herdr_app_desktop_entry
+
+# Inline, not a handler: brave owns the handler names "Refresh the desktop
+# database" and "Refresh the user icon cache", and handler names resolve
+# play-wide (the claude_desktop/herdr precedent).
+- name: Refresh the desktop database after installing the herdr app launcher # noqa: no-handler
+  ansible.builtin.command: >-
+    update-desktop-database {{ lookup('env', 'HOME') }}/.local/share/applications
+  when: herdr_app_desktop_entry is changed
+  changed_when: herdr_app_desktop_entry is changed
+
+# The icon is copied from the INSTALLED app on every run, not vendored: the
+# updater replaces herdr-app.svg with each release but never touches the
+# theme copy, so copying from the install dir keeps the app-grid icon
+# current after self-updates (and stays unchanged otherwise). Gated on the
+# source, which a fresh --check never has.
+- name: Probe for the herdr app icon in its install dir
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/herdr-app/herdr-app.svg"
+  register: herdr_app_svg
+  check_mode: false
+
+- name: Ensure the user scalable icon dir exists
+  ansible.builtin.file:
+    path: "{{ lookup('env', 'HOME') }}/.local/share/icons/hicolor/scalable/apps"
+    state: directory
+    mode: "0755"
+
+- name: Install the herdr app icon
+  ansible.builtin.copy:
+    src: "{{ lookup('env', 'HOME') }}/.local/share/herdr-app/herdr-app.svg"
+    dest: "{{ lookup('env', 'HOME') }}/.local/share/icons/hicolor/scalable/apps/herdr-app.svg"
+    remote_src: true
+    mode: "0644"
+  when: herdr_app_svg.stat.exists
+  register: herdr_app_icon
+
+# Load-bearing, not cosmetic: an icon-theme.cache already sits in the user
+# hicolor dir (brave's handler leaves one) and hides a new file from GTK and
+# GNOME Shell until it is rewritten (see the brave bullet in AGENTS.md;
+# upstream herdr-app#189 is a missing icon after a fresh install).
+- name: Refresh the user icon cache after installing the herdr app icon # noqa: no-handler
+  ansible.builtin.command: >-
+    gtk-update-icon-cache -f -t {{ lookup('env', 'HOME') }}/.local/share/icons/hicolor
+  when: herdr_app_icon is changed
+  changed_when: herdr_app_icon is changed
+
+- name: Report the herdr app setup
+  ansible.builtin.debug:
+    msg: >-
+      The herdr desktop app {{ (herdr_app_latest.content | from_json).version }}
+      is installed: open "Herdr" from the app grid. Launch it from there, not
+      from a terminal, at least the first time: whatever starts herdr-core
+      first hands it its whole environment (exported tokens included), and
+      the core keeps it for as long as it runs. The app updates itself while
+      open and keeps herdr-core current. Its agents run on herdr-core, not on
+      the herdr TUI's server, so sessions in `herdr` do not show up in the
+      app. It sends a daily usage report unless you set "telemetry": false
+      in ~/.config/herdr-app/settings.json.
+  when: herdr_app_latest.content is defined and not ansible_check_mode

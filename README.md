@@ -518,9 +518,21 @@ not something this repo did.
 Service is `oo7`, which keeps its own encrypted keyring in
 `~/.local/share/keyrings/v1/`. The plaintext gnome-keyring file
 `~/.local/share/keyrings/login.keyring` from before the upgrade is still
-there and nothing uses it. The repo leaves it alone: whether `oo7` imported
-everything from it has not been verified. Once Brave and your Google
-accounts have behaved for a while, delete that one file by hand. (The
+there, and **you should keep it**: `oo7` never imported it, so it is the only
+copy of the keys Brave, VS Code, Claude Desktop and Chromium used before the
+upgrade. Anything they encrypted before then (saved passwords, cookies, VS
+Code's stored sign-ins) can only be read with those keys. The repo never
+deletes it. A later `oo7` update did try to import it, failed, and marked it
+`login.keyring.migrated`, so `oo7` won't look at it again. Don't delete that
+marker.
+
+**"Failed to store credentials in the keyring"** (GNOME Online Accounts
+asking you to sign in again, and the sign-in not sticking) on the first boot
+after that `oo7` update is a one-time `oo7` bug: its failed import left the
+running keyring service unable to save anything. Reboot (or log out and back
+in) once and it is gone for good, then sign in to the account again under
+Settings ▸ Online Accounts if it still asks. The details are in AGENTS.md
+(login_keyring). (The
 `login-keyring` role that used to blank that keyring so fingerprint login
 wouldn't prompt is retired, along with its module. Its two
 `/etc/pam.d/*.rpmsave` leftovers are inert.)
@@ -583,19 +595,50 @@ the role downloads the release binary straight from herdr's own manifest
 in-session self-update, but this role doesn't invoke it — the **updates**
 role re-checks the manifest and re-downloads when a newer release exists
 instead, the same way it stays hands-off with every other tool here that
-manages its own updates. Run `herdr` in a terminal to start it, or launch it
-from the app grid — the role adds a **herdr** entry (icon included) that
-opens straight into it inside a maximized Ghostty window — sized by GNOME
-to whichever display it opens on, with the top bar still visible. That
-window closes without Ghostty's "running process will be killed" warning: closing it only detaches the herdr client, while
-the herdr server keeps every agent pane running for the next `herdr` to
-re-attach. Both settings apply only to the Ghostty that launcher starts —
-including any tab or window you open from it, so keep other long-running
-work in a normal Ghostty. Every other Ghostty window keeps the normal close
-warning, including one where you typed `herdr` yourself. Nothing else is configured — herdr
+manages its own updates. Run `herdr` in a terminal to start it. (The
+**herdr** app-grid entry that opened it in Ghostty is gone, and the role
+deletes it from machines that still have it: the app-grid entry is now the
+herdr desktop app below, which is a separate product.) Nothing else is configured — herdr
 only watches panes, it never talks to a model API itself, so its own config
 under `~/.config/herdr` is yours: `just save` captures `config.toml`, and a
 fresh machine gets it seeded once — never managed afterwards.
+
+### herdr-app
+
+The official [herdr desktop app](https://herdr.dev) ("Herdr",
+[source](https://github.com/herdrdev/herdr-app), Apache-2.0) and
+[herdr-core](https://github.com/herdrdev/herdr-core), the small server its
+agents run on (`hc` on the command line). Open **Herdr** from the app grid,
+or run `herdr-app`. It's a separate product from the herdr TUI above, not a
+window onto it: the app runs agents on herdr-core and the TUI on its own
+server, so sessions you started in `herdr` don't show up in the app. Both
+stay installed. `./install.sh herdr` runs both roles; `./install.sh
+herdr-app` runs only this one.
+
+There's no Fedora package. The role downloads both from herdr's release
+server (`releases.herdr.dev`, sha256-verified) into your home: the app into
+`~/.local/share/herdr-app` (with `herdr-app` in `~/.local/bin`, an app-grid
+entry and its icon), the core into `~/.local/bin/herdr-core` (plus an `hc`
+link if you have no other `hc`). It installs the core first, so the app never
+has to run herdr's `curl … | sh` installer on its own, and it doesn't use
+herdr's install scripts at all: they pipe one script into another, and
+re-running the core's over an existing core starts herdr-core from inside
+the install. After that the app updates itself while it's open and keeps
+herdr-core current, so neither `./install.sh` nor the **updates** role
+touches them again.
+
+What the app does by itself, the first time you open it: it keeps its
+settings in `~/.config/herdr-app/`; it sends a daily usage report (with a
+random install ID) unless you add `"telemetry": false` to
+`~/.config/herdr-app/settings.json`; and it starts herdr-core as a
+background systemd user service, which keeps your agents running while the
+app is closed and, because herdr-core switches on systemd's "linger" for
+you whenever it is off, after you log out too (`loginctl disable-linger`
+won't stick while you use the app). Open it from the app grid, not from a
+terminal: whatever starts herdr-core first passes it that shell's whole
+environment, including any exported tokens and a herdr pane's settings,
+and the core keeps it, and hands it to every terminal it opens, until it is
+stopped.
 
 ### podman
 
