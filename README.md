@@ -429,28 +429,36 @@ it, so those tray icons appear. Takes effect at your next login.
 
 ### blur-my-shell
 
-Frosted-glass blur behind the top bar and the Activities overview, so the
-wallpaper's colours show through both. GNOME has no setting for this (checked
-on GNOME 51: Mutter's new native blur only lets *apps* blur their own windows,
-and leaves the shell's look alone), so this installs the
+Frosted-glass blur behind the Activities overview (the view Super opens, with
+the windows spread out), so the wallpaper's colours show through it. The top
+bar is *not* blurred: it stays GNOME's stock solid black, and turns
+see-through only while the overview is open, which is GNOME's own behaviour.
+GNOME has no setting for the blur (checked on GNOME 51: Mutter's new native
+blur only lets *apps* blur their own windows, and leaves the shell's look
+alone), so this installs the
 [Blur my Shell](https://github.com/aunetx/blur-my-shell) extension from
-Fedora's repos and enables it. The role switches on the two blurs that make up
-the look (`panel` and `overview`, both already the extension's defaults) and
-switches the extension's menu and popup blur *off*: on stock GNOME 51 it can't
-round its corners, so it draws a darkened square box behind Quick Settings and
-every other rounded popup. That setting is the role's (re-applied each run, so
-a toggle in the extension's preferences is reverted); it takes effect at once
-on `./install.sh blur`. Nothing else is managed: blur strength, brightness and
-colour are yours to tune in Extension Manager or the extension's preferences,
-and a re-run never resets them. The bar and overview blur take effect at your
-next login.
+Fedora's repos and enables it. The role switches the extension's `overview`
+blur on (already its default) and switches two of its other blurs *off*: the
+top bar (`panel`) and menus and popups. Popup blur is off because on stock
+GNOME 51 it can't round its corners, so it draws a darkened square box behind
+Quick Settings and every other rounded popup. All three switches are the role's (re-applied each
+run, so a toggle in the extension's preferences is reverted). Nothing else is
+managed: blur strength, brightness and colour are yours to tune in Extension
+Manager or the extension's preferences, and a re-run never resets them.
+
+When they take effect: the popup switch at once, on `./install.sh blur`; the
+overview blur at your next login. On a machine where the top bar was blurred
+before, log out and back in after `./install.sh blur`. Until you do, the bar
+can stay see-through with no blur (the extension leaves its transparent style
+on the running bar when its bar blur is switched off), and toggling the
+extension does not fix that. The run prints a reminder.
 
 Fedora's rpm leaves out the extension's `styles/` directory (its
-`stylesheet.css` only `@import`s it), and without those stylesheets the top bar
-stays solid black however the blur is set. Until the rpm ships them itself the
-role installs a copy of upstream's next to the rpm's files. The bar picks them
-up when the extension next loads: log out and back in, or, if Blur my Shell is
-already running, `gnome-extensions disable blur-my-shell@aunetx &&
+`stylesheet.css` only `@import`s it). Until the rpm ships it, the role
+installs a copy of upstream's next to the rpm's files. The overview needs it
+for the look of its search entry and tiles. It is picked up when the extension
+next loads: log out and back in, or, if Blur my Shell is already running,
+`gnome-extensions disable blur-my-shell@aunetx &&
 gnome-extensions enable blur-my-shell@aunetx`.
 
 Fedora 45's regular build (v73) can stall login for up to about a minute; the

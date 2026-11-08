@@ -1,6 +1,9 @@
 ---
-# Blur my Shell — a frosted-glass blur behind the top bar and the Activities
-# overview, so the wallpaper's colours bleed through both.
+# Blur my Shell — a frosted-glass blur behind the Activities overview (the view
+# Super opens, with the windows spread out), so the wallpaper's colours bleed
+# through it. The top bar is deliberately NOT blurred: it stays GNOME's stock
+# solid black, and turns see-through only inside the overview, which is stock
+# GNOME behaviour (see "Keep the top bar unblurred" below).
 #
 # There is NO native GNOME setting for this, on 50 or 51 (checked against the
 # F45 / GNOME 51 host 2026-10-19): `gsettings list-recursively` has no blur,
@@ -9,7 +12,7 @@
 # the `ext-background-effect-v1` Wayland protocol, which lets a CLIENT ask for
 # blur behind its own window; Shell's own look is deliberately unchanged. So an
 # extension is the only way, and Blur my Shell (UUID blur-my-shell@aunetx) is
-# the one that does both surfaces.
+# the extension that does it.
 #
 # Installed from Fedora's rpm rather than extensions.gnome.org, the appindicator
 # role's shape: dnf is the update channel (the updates role's `dnf upgrade`
@@ -143,9 +146,11 @@
     or ansible_facts.packages['gnome-shell-extension-blur-my-shell'][0].version
     is version(blur_my_shell_min_version, '<')
 
-# The rpm omits the extension's stylesheets, and without them the top bar stays
-# solid black (diagnosed live 2026-10-19 on 75-1.fc45, extension ACTIVE, both
-# blur switches true, no error in the journal). Upstream split its CSS into
+# The rpm omits the extension's stylesheets, and without them the top bar
+# stayed solid black while its blur was on (diagnosed live 2026-10-19 on
+# 75-1.fc45, extension ACTIVE, both blur switches true, no error in the
+# journal; the bar blur has since been turned off, see the paragraph after
+# this one and "Keep the top bar unblurred"). Upstream split its CSS into
 # src/styles/ after Fedora's meson patch (0001-Use-meson-build-system.patch,
 # upstream PR 626) was written: the shipped stylesheet.css is only ten
 # `@import url("styles/….css")` lines, the patch's src/meson.build installs
@@ -158,6 +163,15 @@
 # observing the bar. The v75 "verified by unpacking" check above covered
 # panel.js and the schema and missed this: read the rpm's file list, not only
 # its code.
+#
+# The top-bar blur is off now (2026-11-08), so styles/panel.css no longer
+# matters, but the shim stays: the overview blur uses styles/overview.css —
+# the `overview-components-light` look that the default `style-components` (1)
+# selects for the search entry, the app tiles, the dash, search results and
+# workspace thumbnails, and the
+# `.blurred-overview .workspace-animation` rule that lets the blurred
+# background the overview component adds behind a workspace-switch animation
+# show through. Without the shim those rules exist nowhere either.
 #
 # The fix is to put the missing directory next to the rpm's stylesheet.css
 # (an @import resolves relative to the importing file, so it has to live
@@ -236,15 +250,17 @@
       is version('75', '!=')
 
 # The stylesheet is read when the extension is enabled, not at every frame, so
-# a bar that was black when the files landed stays black until it is reloaded.
-# Wayland can't restart the shell, so: log out and back in (always works), or,
-# if Blur my Shell was already loaded in the running session, toggle it.
+# styles that land while the extension is running stay unused until it is
+# reloaded. Wayland can't restart the shell, so: log out and back in (always
+# works), or, if Blur my Shell was already loaded in the running session,
+# toggle it.
 - name: Say how to pick up the new Blur my Shell stylesheets
   ansible.builtin.debug:
     msg: >-
-      Blur my Shell's stylesheets were just installed, so the top bar stays
-      solid black until the extension reloads them. Log out and back in; or,
-      if Blur my Shell was already running in this session, run
+      Blur my Shell's stylesheets were just installed, so the overview's
+      search entry and tiles keep their stock look until the extension
+      reloads them. Log out and back in; or, if Blur my Shell was already
+      running in this session, run
       `gnome-extensions disable blur-my-shell@aunetx &&
       gnome-extensions enable blur-my-shell@aunetx`.
   when: blur_my_shell_styles is changed and not ansible_check_mode
@@ -270,11 +286,11 @@
           + ['blur-my-shell@aunetx']) | unique | list | string }}
     state: present
 
-# The three switches that ARE the requested look. panel/blur and overview/blur
-# already default to true (schema org.gnome.shell.extensions.blur-my-shell,
-# verified in the rpm), so those two state intent and keep the look if upstream
-# ever flips a default. popup/blur is the odd one out: it defaults to TRUE and
-# this role sets it FALSE, so it is a converged repo value like the aws region
+# The three switches that ARE the requested look. overview/blur already
+# defaults to true (schema org.gnome.shell.extensions.blur-my-shell, verified
+# in the rpm), so that task states intent and keeps the look if upstream ever
+# flips the default. panel/blur and popup/blur also default to TRUE and this
+# role sets both FALSE, so they are converged repo values like the aws region
 # (edit the task, not the extension's preferences, which the next run would
 # revert). Each key is a literal `key:` line on purpose:
 # dotfiles_common.declared_dconf_keys finds repo-owned keys with a per-line
@@ -289,11 +305,52 @@
 # other popup/* keys (static-blur, pipeline, corner radii, style-popup…) are
 # inert while popup blur is off, so they are left alone too.
 # GVariant text: a bare `true` / `false`.
-- name: Blur the top bar
+#
+# The top bar is NOT blurred (the user's call, 2026-11-08; it was blurred from
+# 2026-10-19 until then): it stays GNOME's stock solid black. With panel/blur
+# off, the extension's panel component never starts at login, so nothing adds
+# its `transparent-panel` class to the bar and the shell theme's own
+# `#panel { background-color: #000000 }` applies. The theme's
+# `#panel:overview { background-color: transparent }` is what still lets the
+# overview's blurred wallpaper show through the bar while the overview is open
+# (both rules read from GNOME 51's gnome-shell-theme.gresource, 2026-11-08).
+# So "solid outside the overview, see-through inside it" is stock GNOME plus
+# the overview blur, and needs no other panel/* key; the others (static-blur,
+# override-background, style-panel, unblur-in-overview…) are inert while
+# panel blur is off and stay unmanaged.
+#
+# Log out to see it. The extension applies a live switch of this key, but
+# reading the v75 source, switching it OFF in a running session leaves the bar
+# see-through and unblurred until the shell restarts: PanelBlur.disable() ->
+# destroy_blur() calls set_should_override_panel(actors, false), which with
+# the defaults override-background=true and override-background-dynamically
+# =false RE-ADDS the `transparent-panel` class to Main.panel instead of
+# removing it, and nothing removes it afterwards. Toggling the extension does
+# not clear it either (the class outlives the disable, and the enable loads
+# the stylesheet that styles it again). A new login is a new shell where the
+# class was never set. Read from the code, not observed on screen. Not worked
+# around with a second managed key: override-background=false would make the
+# live switch clean, but it would then be a converged value kept forever for a
+# one-time transition.
+#
+# To bring the bar blur back: set the value to "true", rename the task, and
+# delete or reword the nudge after it (its text assumes a switch-off).
+- name: Keep the top bar unblurred (stock solid black)
   community.general.dconf:
     key: /org/gnome/shell/extensions/blur-my-shell/panel/blur
-    value: "true"
+    value: "false"
     state: present
+  register: blur_my_shell_panel_switch
+
+- name: Say how to get the solid black top bar
+  ansible.builtin.debug:
+    msg: >-
+      Blur my Shell's top-bar blur was just switched off. Log out and back in
+      to get the solid black bar. If the bar was blurred in this session, it
+      can stay see-through without any blur until then (the extension leaves
+      its transparent-panel style on the running bar), and toggling the
+      extension does not clear that. The overview blur is unchanged.
+  when: blur_my_shell_panel_switch is changed and not ansible_check_mode
 
 - name: Blur the Activities overview
   community.general.dconf:
@@ -333,7 +390,7 @@
 # It takes effect live: the extension watches popup/blur and calls
 # PopupBlur.disable(), which removes the bms-popup-* style classes and destroys
 # every live surface, restoring each menu's own inline style. No logout, and
-# the styles/ shim above stays (the top bar still needs styles/panel.css).
+# the styles/ shim above stays (the overview still needs styles/overview.css).
 - name: Keep menus and popups unblurred
   community.general.dconf:
     key: /org/gnome/shell/extensions/blur-my-shell/popup/blur
