@@ -73,7 +73,8 @@ firmware via fwupd/LVFS (reboot-staged ones get called out), and flatpak
 updates (Podman Desktop, plus anything you've added). Runs first so the rest
 of the play resolves against fresh metadata. It also brings the out-of-dnf
 installs this repo owns current: herdr and lazygit (each re-downloaded from
-its latest release whenever the version moved), and Neovim — every plugin
+its latest release whenever the version moved), the Clojure CLI (its
+installer re-run for a new release), and Neovim — every plugin
 (`:Lazy sync`), treesitter parser and Mason language server/tool, updated
 headlessly, which is also what keeps JetBrains' kotlin-lsp alive (its builds
 expire) — skipped, with a note, while any `nvim` is open, so close Neovim
@@ -82,7 +83,8 @@ vendor download that 404s, say) is reported as a warning and the installed
 version stays, instead of stopping the whole run. Other out-of-dnf tools like Claude Code and reaper
 either self-update or are installed once and left alone. Under `--check` the herdr
 and lazygit version probes run and a pending upgrade is printed; nothing is
-actually re-downloaded, and the Neovim update is skipped.
+actually re-downloaded, and the Neovim update is skipped. The Clojure CLI's
+version check runs under `--check` the same way.
 
 ### snapshots
 
@@ -721,6 +723,29 @@ anything) per project or globally, reads existing
 no shims, none of nvm's startup drag. Get runtimes with
 `mise use -g node@lts python@3.13 java@temurin-21`, or drop the `-g` inside
 a project.
+
+### clojure
+
+What [clojure-dojo](https://github.com/amamparo/clojure-dojo) — or any
+`deps.edn` project — needs: a JDK, the official
+[Clojure CLI](https://clojure.org/guides/install_clojure) (`clojure`, and
+`clj` for the REPL), and `rlwrap`, which gives `clj` line editing and
+history. The dojo's third requirement, `just`, comes with cli-tools, and its
+linter, formatter and test runner (clj-kondo, zprint, eftest) are libraries
+the CLI downloads on first use. The CLI goes into `~/.local` through
+Clojure's own installer, and the **updates** role re-runs that installer
+when a new release is out.
+
+The JDK is Fedora's own JDK 25. The dojo calls JDK 21 its happy path, but
+Fedora 45 no longer packages 21, and the dojo runs the same on both (lint
+clean, formatting clean, the same red-by-design tests). To run a project on
+21 anyway, pin it there with mise: `mise use java@temurin-21`.
+
+In IntelliJ, Cursive resolves `deps.edn` on its own, without this CLI. A
+checkout opened as a plain folder comes up with no Clojure on the classpath
+(`clojure.test` "cannot be resolved"). Right-click `deps.edn` ▸ **Add as
+Deps Project**, then tick the `test` alias in the **Clojure Deps** tool
+window and refresh.
 
 ### pipewire
 

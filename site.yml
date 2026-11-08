@@ -118,6 +118,8 @@
       tags: tailscale
     - role: mise
       tags: mise
+    - role: clojure
+      tags: clojure
     - role: pipewire
       tags: pipewire
     - role: qpwgraph

@@ -1,0 +1,72 @@
+---
+# Clojure: what github.com/amamparo/clojure-dojo (and any deps.edn project)
+# needs to run — a JDK, the official Clojure CLI (`clojure`/`clj`, which reads
+# deps.edn and its -M/-X aliases), and rlwrap for the `clj` REPL. The dojo's
+# third prerequisite, `just`, comes from the cli_tools role, and everything
+# else it uses — clj-kondo, zprint, eftest, matcher-combinators — are Maven
+# deps the CLI fetches itself into ~/.m2 on first use, so nothing per-tool is
+# installed here.
+#
+# The JDK is Fedora's java-25-openjdk-headless, though the dojo's README calls
+# JDK 21 "the happy path": Fedora 45 no longer packages 21 (only 25, plus a
+# java-latest-openjdk EA build), and the dojo was run on both in a sandbox
+# (2026-10-25, Clojure CLI 1.12.6.1673, Clojure 1.12.5) with identical results —
+# `just lint` 0 errors/0 warnings, `just format` clean, `just test` the same
+# 154 tests red by design, no JDK warnings — so a vendor repo (Adoptium's
+# temurin-21) would buy nothing. A project that wants 21 exactly pins it with
+# mise (`mise use java@temurin-21` in the checkout): the CLI runs JAVA_CMD if
+# set, else the first `java` on PATH, else JAVA_HOME/bin/java. The same rpm is the neovim
+# role's ktlint JVM; naming it here too keeps Clojure working without that
+# role. Headless is enough: nothing here opens an AWT window.
+#
+# Fedora's own `clojure` rpm is NOT the CLI: it ships the bare language jar
+# and a /usr/bin/clojure that only launches it (no deps.edn, no aliases), so
+# it is not installed — and if it ever were, ~/.local/bin comes first on PATH.
+#
+# The CLI never updates itself: presence of ~/.local/bin/clojure is the
+# first-install guard, and the updates role re-resolves the latest release and
+# re-runs the shared include when the installed version lags (the lazygit
+# shape). Substring: `./install.sh clojure` hits only this role; `clj`
+# matches nothing (the tag `clojure` does not contain it).
+
+# rlwrap: `clj` is `clojure` wrapped in rlwrap for line editing and history,
+# and without it prints "Please install rlwrap for command editing or use
+# "clojure" instead." and exits 1 — the REPL is where the dojo's DENSHO.md
+# sends you.
+- name: Install a JDK and rlwrap for the Clojure CLI
+  become: true
+  ansible.builtin.dnf5:
+    name: "{{ clojure_rpms | difference(ansible_facts.packages.keys() | list) }}"
+    state: present
+  vars:
+    clojure_rpms:
+      - java-25-openjdk-headless
+      - rlwrap
+  when: clojure_rpms | difference(ansible_facts.packages.keys() | list) | length > 0
+
+- name: Probe for the Clojure CLI (~/.local/bin/clojure)
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin/clojure"
+  register: clojure_bin
+  check_mode: false
+
+# GitHub answers /releases/latest with a 302 to /releases/tag/<version> (the
+# CLI's tags carry no "v") — the version without the unauthenticated API's
+# rate limit. uri has no check-mode support, so under --check this is skipped
+# and the include below guards on the registered location.
+- name: Resolve the latest Clojure CLI release
+  ansible.builtin.uri:
+    url: https://github.com/clojure/brew-install/releases/latest
+    follow_redirects: none
+    status_code: 302
+  register: clojure_latest
+  changed_when: false
+  when: not clojure_bin.stat.exists
+
+- name: Install the latest Clojure CLI release
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: clojure_install
+  vars:
+    clojure_version: "{{ clojure_latest.location | regex_search('/tag/([0-9][0-9.]*)$', '\\1') | first }}"
+  when: not clojure_bin.stat.exists and clojure_latest.location is defined

@@ -1,0 +1,75 @@
+---
+# Install (or upgrade to) ONE Clojure CLI release. Shared by roles/dev/clojure
+# (first install) and roles/system/updates (upgrade) via include_role (name:
+# common, tasks_from: clojure_install), the lazygit_install precedent.
+#
+# Parameter: clojure_version — a release tag such as "1.12.6.1673" (no "v"),
+# resolved by the caller from GitHub's /releases/latest redirect.
+#
+# Runs the vendor's own linux-install.sh for that release (the documented
+# Linux install, clojure.org/guides/install_clojure) with --prefix ~/.local, so
+# it is a per-user install like herdr/lazygit and NO become: bin/clojure and
+# bin/clj land in ~/.local/bin (on PATH via the zsh role's zshrc), the jars in
+# ~/.local/lib/clojure, the man pages in ~/.local/share/man/man1. The script is
+# not re-implemented here on purpose — it is 50 lines that copy files and
+# substitute the install paths into the launchers, and following the vendor's
+# copy means a future release that ships another file still installs right.
+# Trust anchor: the script pins the tarball's sha256 inside itself and checks
+# it with sha256sum before unpacking (it fails the task on a mismatch); the
+# script comes over TLS from the same GitHub release as the tarball's own
+# .sha256, so there is no stronger anchor to check it against. It downloads
+# into its working directory, hence chdir into a scratch dir.
+#
+# tempfile has no check-mode support: under --check it is skipped and the
+# tasks after it guard on `.path is defined` (the lazygit include shape).
+- name: Install Clojure CLI {{ clojure_version }}
+  block:
+    - name: Create a scratch dir for the Clojure installer
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: clojure
+      register: clojure_tmp
+
+    - name: Download the Clojure CLI installer {{ clojure_version }}
+      ansible.builtin.get_url:
+        url: https://github.com/clojure/brew-install/releases/download/{{ clojure_version }}/linux-install.sh
+        dest: "{{ clojure_tmp.path }}/linux-install.sh"
+        mode: "0644"
+      when: clojure_tmp.path is defined
+
+    - name: Run the Clojure CLI installer into ~/.local
+      ansible.builtin.command:
+        argv:
+          - bash
+          - "{{ clojure_tmp.path }}/linux-install.sh"
+          - --prefix
+          - "{{ lookup('env', 'HOME') }}/.local"
+        chdir: "{{ clojure_tmp.path }}"
+      changed_when: true
+      when: clojure_tmp.path is defined
+
+    # The installer adds libexec/clojure-tools-<version>.jar and never removes
+    # the previous release's, so every upgrade would leave a ~12 MB jar behind.
+    # The launcher names its own version's jar, so the others are dead weight.
+    - name: Find superseded Clojure CLI jars
+      ansible.builtin.find:
+        paths: "{{ lookup('env', 'HOME') }}/.local/lib/clojure/libexec"
+        patterns: clojure-tools-*.jar
+        excludes: clojure-tools-{{ clojure_version }}.jar
+      register: clojure_old_jars
+      when: clojure_tmp.path is defined
+
+    - name: Remove superseded Clojure CLI jars
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ clojure_old_jars.files | default([]) }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+  always:
+    - name: Remove the Clojure installer scratch dir
+      ansible.builtin.file:
+        path: "{{ clojure_tmp.path }}"
+        state: absent
+      diff: false
+      when: clojure_tmp.path is defined

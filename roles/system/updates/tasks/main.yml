@@ -2,7 +2,8 @@
 # Bring the system current — everything Fedora's Software app would report:
 # rpm updates (dnf), firmware (fwupd/LVFS), and flatpaks when present — plus
 # the out-of-dnf installs this repo owns that never update themselves:
-# herdr, lazygit, and Neovim's plugins/parsers/language servers.
+# herdr, lazygit, the Clojure CLI, and Neovim's plugins/parsers/language
+# servers.
 #
 # This role is the repo's DELIBERATE exception to the zero-network
 # converged-re-run rule: its concern is drift from upstream, which is
@@ -194,6 +195,65 @@
   when:
     - updates_lazygit_bin.stat.exists
     - updates_lazygit_installed != lazygit_version
+
+# Clojure CLI (roles/dev/clojure): installed by the vendor's script into
+# ~/.local, and it never updates itself — the lazygit shape above. The
+# installed version comes from `clojure --version` ("Clojure CLI version
+# 1.12.6.1673"; the launcher answers that before it looks for java), the
+# latest from the /releases/latest redirect (tags carry no "v"). Both probes
+# are read-only and forced under --check so a dry run can report a pending
+# upgrade; the upgrade itself is skipped there (tempfile has no check-mode
+# support — see the include).
+- name: Probe for the Clojure CLI
+  ansible.builtin.stat:
+    path: "{{ lookup('env', 'HOME') }}/.local/bin/clojure"
+  register: updates_clojure_bin
+  check_mode: false
+
+- name: Read the installed Clojure CLI version
+  ansible.builtin.command:
+    argv:
+      - "{{ lookup('env', 'HOME') }}/.local/bin/clojure"
+      - --version
+  register: updates_clojure_version
+  changed_when: false
+  check_mode: false
+  when: updates_clojure_bin.stat.exists
+
+- name: Resolve the latest Clojure CLI release
+  ansible.builtin.uri:
+    url: https://github.com/clojure/brew-install/releases/latest
+    follow_redirects: none
+    status_code: 302
+  register: updates_clojure_latest
+  changed_when: false
+  check_mode: false
+  when: updates_clojure_bin.stat.exists
+
+- name: Report a pending Clojure CLI upgrade under --check
+  ansible.builtin.debug:
+    msg: >-
+      Clojure CLI {{ updates_clojure_installed }} is installed and
+      {{ updates_clojure_wanted }} is the latest release — a real run
+      re-runs its installer.
+  vars:
+    updates_clojure_installed: "{{ updates_clojure_version.stdout | regex_search('version ([0-9][0-9.]*)', '\\1') | first }}"
+    updates_clojure_wanted: "{{ updates_clojure_latest.location | regex_search('/tag/([0-9][0-9.]*)$', '\\1') | first }}"
+  when:
+    - ansible_check_mode
+    - updates_clojure_bin.stat.exists
+    - updates_clojure_installed != updates_clojure_wanted
+
+- name: Upgrade the Clojure CLI to the latest release
+  ansible.builtin.include_role:
+    name: common
+    tasks_from: clojure_install
+  vars:
+    clojure_version: "{{ updates_clojure_latest.location | regex_search('/tag/([0-9][0-9.]*)$', '\\1') | first }}"
+    updates_clojure_installed: "{{ updates_clojure_version.stdout | regex_search('version ([0-9][0-9.]*)', '\\1') | first }}"
+  when:
+    - updates_clojure_bin.stat.exists
+    - updates_clojure_installed != clojure_version
 
 # Neovim (roles/dev/neovim): plugins, treesitter parsers and Mason packages
 # live outside dnf and never update on their own (the config turns lazy.nvim's
