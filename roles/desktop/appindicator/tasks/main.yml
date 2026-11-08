@@ -2,7 +2,8 @@
 # AppIndicator / KStatusNotifierItem tray support for GNOME Shell. GNOME
 # dropped legacy status-tray icons in 3.26 and never restored them, so apps
 # that still publish a tray icon — Claude Desktop (its resources/TrayIconLinux
-# .png) and the Tailscale applet, both installed by this repo — show NOTHING
+# .png), the Tailscale applet and JetBrains Toolbox, all installed by this
+# repo — show NOTHING
 # in the top bar without this extension. Fedora already ships it as a package
 # (present as a Workstation dep), UUID appindicatorsupport@rgcjonas.gmail.com
 # under /usr/share/gnome-shell/extensions — but ships it DISABLED. So the work

@@ -1,0 +1,655 @@
+---
+# JetBrains Toolbox App (jetbrains.com/toolbox-app) — JetBrains' own
+# installer/updater for its IDEs — plus IntelliJ IDEA, pre-installed THROUGH
+# Toolbox so Toolbox manages and updates it. IntelliJ is an add-on here (the
+# caveman/claude_code rule): installed this way it is meaningless without
+# Toolbox.
+#
+# No rpm, dnf repo or flatpak from JetBrains (it declined package managers in
+# TBX-1902), nothing in Fedora's repos, and the COPRs fail on evidence
+# (2026-10-25): the only live Toolbox COPR pinned 3.8.1 against upstream 3.9
+# and installs root-owned into /opt, which blocks Toolbox's self-update; the
+# IntelliJ COPRs and the community Flathub wrapper are invisible to Toolbox
+# (it cannot manage a root-owned or sandboxed IDE). So: the official tarball,
+# checksum-verified, the lazygit/herdr shape.
+#
+# Since 2.7 the Linux build is a plain tarball (bin/ with a native launcher
+# and a bundled JRE) — no AppImage, so no FUSE/fuse-libs. Every library it and
+# IntelliJ need is already on Workstation (verified with ldd/readelf against
+# this machine; JetBrains' support lists name Fedora 42-44, not 45).
+#
+# Toolbox updates itself, in place, and updates its IDEs: presence is the
+# terminal state (the claude_code class) — guard on the launcher, never
+# version-probe, and the updates role has nothing to do here.
+#
+# Everything is $HOME, so NO become anywhere (root's Toolbox otherwise).
+#
+# NEVER start the desktop app from the play: with a display it opens a window
+# or tray icon and stays resident (the play would hang), and its first real
+# start leaves the jetbrainsd daemon running. Only two one-shot commands that
+# exit on their own are run (tbcli and `--integrate-into-system`), both
+# through `env -i` (see vars/main.yml for why the environment matters); a
+# jetbrainsd the latter may launch is stopped again at the end. Verified end to end with real ansible-playbook
+# against scratch homes in a bwrap sandbox (2026-10-25): fresh --check, the
+# install, offline converged re-runs (changed=0), a reinstall on a later run,
+# the running-Toolbox skip and the tbcli rescue.
+
+- name: Probe for the Toolbox launcher
+  ansible.builtin.stat:
+    path: "{{ jetbrains_toolbox_launcher }}"
+  register: jetbrains_toolbox_probe
+  check_mode: false
+
+# Two independent signs that Toolbox already has IntelliJ: its launcher in the
+# default apps dir, and a channel file (Toolbox's record of a managed tool,
+# kept even if the IDE landed elsewhere — e.g. apps/intellij-idea-2, which
+# tbcli picks when stale Toolbox launchers still name intellij-idea). Either
+# one skips the pre-install — the guard is load-bearing, not an optimisation:
+# tbcli's `install` is NOT idempotent and a second run lays down a second full
+# 4.3 GB copy (verified). The channels are counted with a fileglob lookup
+# (controller == target here), and only once channels/ exists: both `find`
+# and the fileglob lookup print a warning for a missing directory, which is
+# every fresh machine (and a run interrupted before the integrate task).
+- name: Probe for a Toolbox-installed IntelliJ IDEA (launcher)
+  ansible.builtin.stat:
+    path: "{{ jetbrains_intellij_launcher }}"
+  register: jetbrains_intellij_probe
+  check_mode: false
+
+- name: Probe for Toolbox's channels dir
+  ansible.builtin.stat:
+    path: "{{ jetbrains_toolbox_dir }}/channels"
+  register: jetbrains_toolbox_channels
+  check_mode: false
+
+# tbcli defers to a running Toolbox (same single-instance lock, same data
+# dir): it exits rc 54 without installing, and with --run-as-main-instance it
+# waits for the desktop app to quit, which in a live session is forever. So a
+# running Toolbox skips the pre-install (the neovim role's running-nvim
+# rule) — and after the first login Toolbox IS running, started minimized by
+# its autostart entry, which this pattern was verified to match. It also
+# decides how the launcher migration below finishes. -f matches any extracted
+# copy; pgrep never matches itself and the command module runs it without a
+# shell. rc 1 = nothing running.
+- name: Check whether a Toolbox instance is running
+  ansible.builtin.command:
+    argv:
+      - pgrep
+      - -u
+      - "{{ lookup('env', 'USER') }}"
+      - -f
+      - /bin/jetbrains-toolbox( |$)
+  register: jetbrains_toolbox_running
+  changed_when: false
+  failed_when: jetbrains_toolbox_running.rc not in [0, 1]
+  check_mode: false
+
+- name: Decide whether IntelliJ IDEA gets pre-installed this run
+  ansible.builtin.set_fact:
+    jetbrains_intellij_present: "{{ jetbrains_intellij_probe.stat.exists or jetbrains_intellij_channels | int > 0 }}"
+    jetbrains_intellij_wanted: >-
+      {{ not jetbrains_intellij_probe.stat.exists
+         and jetbrains_intellij_channels | int == 0
+         and jetbrains_toolbox_running.rc != 0 }}
+  vars:
+    # A conditional expression, so the lookup only runs when the dir exists.
+    jetbrains_intellij_channels: >-
+      {{ query('fileglob', jetbrains_toolbox_dir ~ '/channels/IDEA-U-*.json') | length
+         if jetbrains_toolbox_channels.stat.isdir | default(false) else 0 }}
+
+# TBA is the Toolbox App. Read-only, so it also runs under --check (uri has no
+# check-mode support of its own) and the dry run can say what it would
+# install. A converged run never gets here. IntelliJ's own lookup lives inside
+# the rescued tbcli block below, so a data.services hiccup on an IntelliJ-only
+# run cannot abort the play — only a Toolbox install, which needs this, can.
+- name: Look up the latest Toolbox release
+  ansible.builtin.uri:
+    url: https://data.services.jetbrains.com/products/releases?code=TBA&latest=true&type=release
+    return_content: true
+  register: jetbrains_toolbox_releases
+  changed_when: false
+  check_mode: false
+  when: not jetbrains_toolbox_probe.stat.exists
+
+- name: Report the pending Toolbox install under --check
+  ansible.builtin.debug:
+    msg: >-
+      JetBrains Toolbox {{ jetbrains_toolbox_releases.json.TBA[0].build }} would be
+      installed into {{ jetbrains_toolbox_dir }}/bin, then IntelliJ IDEA through it.
+  when: ansible_check_mode and not jetbrains_toolbox_probe.stat.exists and jetbrains_toolbox_releases.json is defined
+
+# The tarball's top dir is versioned (jetbrains-toolbox-3.9.0.88839/bin/…), so
+# --strip-components=2 unpacks bin/'s contents — byte-identical (diff -rq) to
+# what the vendor's own `--install` puts in Toolbox/bin, without `--install`'s
+# side effect of starting a detached GUI instance plus the jetbrainsd daemon.
+# NOT the documented "extract anywhere and run it": Toolbox treats wherever it
+# was first run from as its installation and the launchers it writes point
+# there, so it has to sit at its final path before it ever runs.
+#
+# Unpacked into a staging dir beside bin/ and renamed into place (the same
+# move Toolbox's self-update makes with bin.next) as the LAST step: the
+# launcher's presence is terminal, so anything this block leaves undone once
+# bin/ exists — a cut-short unpack, the marker, the settings seed — would
+# never be repaired. A leftover staging dir from an interrupted run is
+# cleared first.
+- name: Install the JetBrains Toolbox App
+  when: not jetbrains_toolbox_probe.stat.exists and jetbrains_toolbox_releases.json is defined
+  vars:
+    jetbrains_toolbox_release: "{{ jetbrains_toolbox_releases.json.TBA[0] }}"
+    jetbrains_toolbox_staging: "{{ jetbrains_toolbox_dir }}/bin.fedora-init-staging"
+  block:
+    - name: Clear any staging dir an interrupted install left behind
+      ansible.builtin.file:
+        path: "{{ jetbrains_toolbox_staging }}"
+        state: absent
+      diff: false
+
+    - name: Create the staging dir for the Toolbox files
+      ansible.builtin.file:
+        path: "{{ jetbrains_toolbox_staging }}"
+        state: directory
+        mode: "0755"
+      diff: false
+
+    # tempfile has no check-mode support: under --check it is skipped and the
+    # tasks after it guard on `.path is defined` (the lazygit include shape).
+    - name: Create a scratch dir for the Toolbox tarball
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: jetbrains-toolbox
+      register: jetbrains_toolbox_tmp
+
+    # The direct versioned link, never data.services' generic products/
+    # download URL: get_url looks the checksum up by the file name in its OWN
+    # url (url_filename), not the redirect target, so the generic URL would
+    # search the .sha256 for "download" and fail (verified with ansible-core
+    # 2.22). The .sha256 is one GNU binary-mode line ("<hash> *<file>"), which
+    # get_url's parser accepts. Task names here carry no versions: ansible
+    # templates the names of skipped tasks too, and the release is undefined
+    # whenever this block is skipped (a warning on every converged run).
+    - name: Download the checksum-verified Toolbox tarball
+      ansible.builtin.get_url:
+        url: "{{ jetbrains_toolbox_release.downloads.linux.link }}"
+        checksum: "sha256:{{ jetbrains_toolbox_release.downloads.linux.checksumLink }}"
+        dest: "{{ jetbrains_toolbox_tmp.path }}/jetbrains-toolbox.tar.gz"
+        mode: "0644"
+      when: jetbrains_toolbox_tmp.path is defined
+
+    # No `mode`: the archive's own bits are what make the launcher and the
+    # bundled JRE (bin/jre/bin/java, lib/jspawnhelper) executable.
+    - name: Unpack Toolbox into the staging dir
+      ansible.builtin.unarchive:
+        src: "{{ jetbrains_toolbox_tmp.path }}/jetbrains-toolbox.tar.gz"
+        dest: "{{ jetbrains_toolbox_staging }}"
+        remote_src: true
+        extra_opts:
+          - --strip-components=2
+      when: jetbrains_toolbox_tmp.path is defined
+
+    # The one file `--install` writes outside bin/: the start type, "APP" with
+    # no newline (InstallationTypeTrackerImpl.writeInstallationType writes
+    # ApplicationStartType.name() and nothing else). Written so this install
+    # matches the vendor's own exactly.
+    - name: Mark the install as a desktop-app install (as `--install` does)
+      ansible.builtin.copy:
+        content: APP
+        dest: "{{ jetbrains_toolbox_dir }}/.installation-type"
+        mode: "0644"
+        force: false
+      when: jetbrains_toolbox_tmp.path is defined
+
+    # Seeded BEFORE Toolbox first runs, and only when absent: Toolbox merges
+    # its own keys into this file and rewrites it, so it is the user's from
+    # then on (Toolbox ▸ Settings; the bookmark rule). One key, set to the
+    # default dir spelled out — which is NOT the same as leaving it unset:
+    # with the location blank, Toolbox "adds its scripts dir to PATH" by
+    # appending to ~/.profile, which zsh never reads (bash doesn't either here:
+    # ~/.bash_profile exists and wins), so `idea` would never be on PATH and a
+    # dead ~/.profile would appear. A non-blank location skips that edit
+    # entirely (ShellLaunchersDirectoryManagerImpl only calls
+    # addDefaultDirectoryToPath when the location is blank; verified), and the
+    # zsh role's zshrc puts the dir on PATH instead (the mise rule).
+    #
+    # Deliberately NOT ~/.local/bin, though it is already on PATH: Toolbox
+    # decides which launcher files are its own by NAME alone (it keeps no list
+    # and never reads its "Generated by" header), so it overwrites any existing
+    # <dir>/idea (or idea1, pycharm…) on every start and deletes it when the
+    # IDE is uninstalled or the location changes (all shown in a sandbox) — a
+    # standing hazard in a dir holding claude, herdr, lazygit and bw. In its
+    # own dir it can clobber nothing.
+    #
+    # Autostart and update policy are left at Toolbox's defaults: it starts
+    # minimized at login and offers IDE updates.
+    - name: Seed the Toolbox settings (shell launchers in Toolbox's own dir)
+      ansible.builtin.copy:
+        content: "{{ {'shell_scripts': {'location': jetbrains_toolbox_scripts}} | to_nice_json }}\n"
+        dest: "{{ jetbrains_toolbox_dir }}/.settings.json"
+        mode: "0644"
+        force: false
+      when: jetbrains_toolbox_tmp.path is defined
+
+    # rename(2) on one filesystem: bin/ appears complete or not at all.
+    - name: Move the Toolbox files into place
+      ansible.builtin.command:
+        argv:
+          - mv
+          - --no-target-directory
+          - "{{ jetbrains_toolbox_staging }}"
+          - "{{ jetbrains_toolbox_dir }}/bin"
+        creates: "{{ jetbrains_toolbox_launcher }}"
+      when: jetbrains_toolbox_tmp.path is defined
+  always:
+    # diff: false — install.sh always passes --diff, and removing a tree
+    # prints a listing of every file in it.
+    - name: Remove the Toolbox scratch dir
+      ansible.builtin.file:
+        path: "{{ jetbrains_toolbox_tmp.path }}"
+        state: absent
+      diff: false
+      when: jetbrains_toolbox_tmp.path is defined
+
+    # Gone already after a successful move; this clears a failed unpack.
+    - name: Remove the Toolbox staging dir
+      ansible.builtin.file:
+        path: "{{ jetbrains_toolbox_staging }}"
+        state: absent
+      diff: false
+      when: jetbrains_toolbox_tmp.path is defined
+
+- name: Report the Toolbox install
+  ansible.builtin.debug:
+    msg: >-
+      JetBrains Toolbox is installed. Open it once from the app grid to accept
+      its user agreement and sign in to your JetBrains Account — that sign-in
+      also unlocks your IntelliJ IDEA subscription. It then starts minimized at
+      every login, keeps itself current and offers IDE updates (Toolbox ▸
+      Settings changes either). Its tray icon needs the AppIndicator extension
+      (enabled by the appindicator role, after your next login).
+  when: not jetbrains_toolbox_probe.stat.exists and jetbrains_toolbox_releases.json is defined and not ansible_check_mode
+
+# A Toolbox installed by this role's first draft (2026-10-25) was seeded with
+# shell_scripts.location = ~/.local/bin — the hazard described at the seed
+# task. Toolbox's settings are the user's after the seed, so this touches the
+# key only when it holds exactly that value, and moves it to the dir a fresh
+# install gets (the claude_desktop precedent: a role cleans up what an earlier
+# revision of itself wrote). The merge keeps every other key Toolbox wrote;
+# idempotent on the logical value, not on bytes (Toolbox reformats the file).
+#
+# How it finishes depends on whether Toolbox is running. Running (the normal
+# case: it starts at login): it watches .settings.json and reloads an outside
+# edit within ~0.6 s, removes its launchers from the old dir by name and
+# writes them to the new one (verified in a sandbox: "Removing shell
+# launchers from …/.local/bin", then "Updating shell launchers in …").
+# Stopped: an edited location is simply read at the next start and the old
+# launchers stay behind (also verified), so the removal below and the
+# integrate task at the end do that part.
+- name: Read the Toolbox settings
+  ansible.builtin.slurp:
+    src: "{{ jetbrains_toolbox_dir }}/.settings.json"
+  register: jetbrains_toolbox_settings_file
+  failed_when: false
+  check_mode: false
+  when: jetbrains_toolbox_probe.stat.exists
+
+- name: Move Toolbox's IDE launchers out of ~/.local/bin (an earlier revision put them there)
+  ansible.builtin.copy:
+    content: "{{ jetbrains_toolbox_settings | combine({'shell_scripts': {'location': jetbrains_toolbox_scripts}}, recursive=true) | to_nice_json }}\n"
+    dest: "{{ jetbrains_toolbox_dir }}/.settings.json"
+    mode: "0644"
+  vars:
+    jetbrains_toolbox_settings: "{{ jetbrains_toolbox_settings_file.content | b64decode | from_json }}"
+  register: jetbrains_launchers_moved
+  when:
+    - jetbrains_toolbox_settings_file.content is defined
+    - jetbrains_toolbox_settings.shell_scripts.location | default('') == lookup('env', 'HOME') ~ '/.local/bin'
+
+# Only files whose first lines carry Toolbox's own "#Generated by JetBrains
+# Toolbox" header (its launchers are a #!/bin/bash line, that header, then
+# one exec line), matched under the launcher names Toolbox uses — never
+# claude, herdr, lazygit or anything else in the dir. A running Toolbox may
+# already have removed them; `state: absent` doesn't mind. Inline rather than
+# handlers: both must finish before the integrate task at the end of this
+# role, and handlers only flush at the end of the play.
+- name: Find Toolbox's launchers left in ~/.local/bin # noqa: no-handler
+  ansible.builtin.find:
+    paths: "{{ lookup('env', 'HOME') }}/.local/bin"
+    patterns: [idea*, pycharm*, goland*, webstorm*, clion*, rider*, rubymine*, phpstorm*, datagrip*, dataspell*, rustrover*, gateway*, mps*]
+    contains: "#Generated by JetBrains Toolbox"
+    # Any byte decodes as latin-1: a binary under one of these names would
+    # otherwise abort the whole scan with a UTF-8 decode error.
+    encoding: latin-1
+  register: jetbrains_stray_launchers
+  check_mode: false
+  when: jetbrains_launchers_moved is changed
+
+- name: Remove Toolbox's launchers from ~/.local/bin # noqa: no-handler
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ jetbrains_stray_launchers.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: jetbrains_launchers_moved is changed
+
+# Whether Toolbox's launchers are expected in the role's dir: a fresh install
+# seeded it, the migration above just set it, or the settings already say so.
+# A user who moved them elsewhere is not second-guessed by the launcher check
+# at the end of the role.
+- name: Note whether Toolbox writes its launchers to the role's dir
+  ansible.builtin.set_fact:
+    jetbrains_launchers_ours: >-
+      {{ not jetbrains_toolbox_probe.stat.exists
+         or jetbrains_launchers_moved is changed
+         or (jetbrains_toolbox_settings_file.content is defined
+             and ((jetbrains_toolbox_settings_file.content | b64decode | from_json).shell_scripts | default({})).location
+                 | default('') == jetbrains_toolbox_scripts) }}
+
+# The Toolbox build actually on disk (11 bytes, "3.9.0.88839", no newline),
+# which is the tbcli build to fetch: JetBrains publishes one tbcli per Toolbox
+# build and asks for an exact match. Read from disk rather than the release
+# API so a Toolbox that has already updated itself gets its own tbcli.
+# Absent on a fresh --check (the unpack was skipped), hence failed_when: false
+# and the `.content is defined` guard below.
+- name: Read the installed Toolbox build number
+  ansible.builtin.slurp:
+    src: "{{ jetbrains_toolbox_dir }}/bin/build.txt"
+  register: jetbrains_toolbox_build
+  failed_when: false
+  check_mode: false
+  when: jetbrains_intellij_wanted | bool
+
+# tbcli is JetBrains' Toolbox CLI: the headless remote-development agent,
+# published for each Toolbox build. Its `install <toolId> <build>` installs an
+# IDE into the SAME ~/.local/share/JetBrains/Toolbox state the desktop app
+# uses — verified in a sandbox: the desktop app then lists the IDE, writes its
+# launcher and marks it managed. It is the only non-GUI path (the desktop
+# binary has no install command: TBX-653 "toolbox cli" is still open), and
+# only semi-official: JetBrains documents the agent's download URL for
+# offline remote development, and its CLI help page says "very much
+# work-in-progress" (its `IU` example is stale; the id is IDEA-U).
+#
+# Hence a rescue, unlike the Toolbox install above: a broken tbcli (or an
+# unreachable data.services) must not abort the rest of ./install.sh (the
+# neovim Mason-upgrade lesson) — it warns and points at the Toolbox UI, and
+# the next run retries, since nothing marks IntelliJ as installed until it is.
+#
+# Fetched into a temp dir and deleted afterwards: nothing needs it once the
+# IDE is in, and a kept copy would be a second binary that never updates.
+- name: Pre-install IntelliJ IDEA through Toolbox (tbcli)
+  when:
+    - jetbrains_intellij_wanted | bool
+    - jetbrains_toolbox_build.content is defined
+  vars:
+    jetbrains_toolbox_build_number: "{{ jetbrains_toolbox_build.content | b64decode | trim }}"
+    jetbrains_tbcli_url: https://download.jetbrains.com/toolbox/agent/tbcli-linux-x64-{{ jetbrains_toolbox_build_number }}-nojre.tar.gz
+    jetbrains_intellij_release: "{{ jetbrains_intellij_releases.json.IIU[0] }}"
+  block:
+    # IIU is IntelliJ IDEA — the old "Ultimate" code; Community's IIC stopped
+    # at 2025.3 when the two merged. Read-only, so it runs under --check too.
+    - name: Look up the latest IntelliJ IDEA release
+      ansible.builtin.uri:
+        url: https://data.services.jetbrains.com/products/releases?code=IIU&latest=true&type=release
+        return_content: true
+      register: jetbrains_intellij_releases
+      changed_when: false
+      check_mode: false
+
+    - name: Report the pending IntelliJ IDEA install under --check
+      ansible.builtin.debug:
+        msg: >-
+          IntelliJ IDEA {{ jetbrains_intellij_release.version }} would be installed
+          through Toolbox (tbcli).
+      when: ansible_check_mode
+
+    - name: Create a scratch dir for tbcli
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: tbcli
+      register: jetbrains_tbcli_tmp
+
+    # The -nojre build, run on Toolbox's own JRE (TB_JAVA_HOME below): the
+    # bundled-JRE tarball ships jre/bin/java and jre/lib/jspawnhelper WITHOUT
+    # exec bits (3.5.0 onwards, still in 3.9.0.88839), so its launcher
+    # silently falls back to whatever `java` is on PATH, and with only java
+    # fixed the IDE extract dies with "posix_spawn failed, error: 13". Its
+    # .sha256 is a single bare hash, get_url's checksum-only form.
+    - name: Download the checksum-verified tbcli for the installed Toolbox build
+      ansible.builtin.get_url:
+        url: "{{ jetbrains_tbcli_url }}"
+        checksum: "sha256:{{ jetbrains_tbcli_url }}.sha256"
+        dest: "{{ jetbrains_tbcli_tmp.path }}/tbcli.tar.gz"
+        mode: "0644"
+      when: jetbrains_tbcli_tmp.path is defined
+
+    # --strip-components=1: the archive's top dir was tbcli-linux-x64/ up to
+    # 3.4.3 and is tbcli/ since 3.5.0, so the name is never hard-coded.
+    - name: Unpack tbcli
+      ansible.builtin.unarchive:
+        src: "{{ jetbrains_tbcli_tmp.path }}/tbcli.tar.gz"
+        dest: "{{ jetbrains_tbcli_tmp.path }}"
+        remote_src: true
+        extra_opts:
+          - --strip-components=1
+      when: jetbrains_tbcli_tmp.path is defined
+
+    # tbcli unpacks into ~/.cache/JetBrains/Toolbox/temp and then moves the
+    # tree into apps/. Into an apps/ that does not exist yet, that move fell
+    # back to copy-and-delete on every first install observed (later installs
+    # into an existing apps/ moved atomically) — and a copy cut short could
+    # leave bin/idea beside a partial tree that the launcher probe above
+    # would accept forever. Creating apps/ first is what makes the move one
+    # rename.
+    - name: Create the Toolbox apps dir before tbcli installs into it
+      ansible.builtin.file:
+        path: "{{ jetbrains_toolbox_dir }}/apps"
+        state: directory
+        mode: "0755"
+      when: jetbrains_tbcli_tmp.path is defined
+
+    # The CURRENT release build, never an older one: installing the latest
+    # gives an unpinned Release channel (future versions, majors included, are
+    # offered), while an older build pins the channel to its major version.
+    # tbcli also only resolves the newest build of each major — anything else,
+    # even a build its feed lists, it cannot find. `timeout` is mandatory:
+    # every tbcli failure path seen (a failed extract, an unresolvable build)
+    # logs the failure and then never exits; 124/137 fail the task into the
+    # rescue. A good run downloads 1.6 GB and unpacks 4.3 GB — 76 s on this
+    # connection, sha256-verified against the signed Toolbox feed; the limit
+    # (vars/main.yml) leaves room for a slow link. No sign-in or licence
+    # prompt; the IDE asks for both at its own first start.
+    # --no-exception-submitter: tbcli reports its exceptions to JetBrains
+    # unless told not to.
+    - name: Install IntelliJ IDEA through Toolbox
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '--kill-after=1m', jetbrains_tbcli_timeout, 'env', '-i']
+             + jetbrains_toolbox_env
+             + ['TB_JAVA_HOME=' ~ jetbrains_toolbox_dir ~ '/bin/jre',
+                jetbrains_tbcli_tmp.path ~ '/bin/tbcli',
+                '--no-exception-submitter', 'install', 'IDEA-U', jetbrains_intellij_release.build] }}
+        creates: "{{ jetbrains_intellij_launcher }}"
+      register: jetbrains_intellij_install
+      when: jetbrains_tbcli_tmp.path is defined
+
+    - name: Report the IntelliJ IDEA install
+      ansible.builtin.debug:
+        msg: >-
+          IntelliJ IDEA {{ jetbrains_intellij_release.version }} is installed and
+          managed by Toolbox (its updates arrive through Toolbox). Launch it from
+          the app grid, or with `idea` in a new terminal. Its first start asks you
+          to accept JetBrains' user agreement; Ultimate features then run on a
+          30-day trial, or on your subscription once you sign in.
+      when: jetbrains_intellij_install is changed and not ansible_check_mode
+  rescue:
+    - name: Warn that IntelliJ IDEA was not pre-installed
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: the IntelliJ IDEA pre-install failed at "{{ ansible_failed_task.name }}"
+          ({{ ansible_failed_result.msg | default('no message') | regex_replace('\.$', '') }}{{
+          ', rc ' ~ ansible_failed_result.rc ~ (' — tbcli did not finish within ' ~ jetbrains_tbcli_timeout
+          ~ ': a slow download, or a tbcli hang' if ansible_failed_result.rc in [124, 137] else '')
+          if ansible_failed_result.rc is defined else '' }}). If tbcli got as far as
+          running, its own log is ~/.local/share/JetBrains/Toolbox/logs/toolbox-cli.latest.log. The rest of
+          the run continues, and the next ./install.sh run made while Toolbox is
+          not running retries. To install it now, open JetBrains Toolbox and
+          install IntelliJ IDEA from its list; if a half-installed IntelliJ shows
+          up there, uninstall it first.
+  always:
+    - name: Remove the tbcli scratch dir
+      ansible.builtin.file:
+        path: "{{ jetbrains_tbcli_tmp.path }}"
+        state: absent
+      diff: false
+      when: jetbrains_tbcli_tmp.path is defined
+
+- name: Report that a running Toolbox blocked the IntelliJ IDEA pre-install
+  ansible.builtin.debug:
+    msg: >-
+      IntelliJ IDEA was not pre-installed because JetBrains Toolbox is running.
+      Install it from Toolbox's list, or quit Toolbox (tray icon ▸ Quit) and
+      run ./install.sh toolbox.
+  when: jetbrains_toolbox_running.rc == 0 and not jetbrains_intellij_present | bool
+
+# Toolbox's own OS integration, generated by Toolbox: the app-grid entry
+# (~/.local/share/applications/jetbrains-toolbox.desktop), the autostart entry,
+# its icon, and the shell launchers for installed IDEs (so it runs AFTER the
+# IntelliJ install, and `idea` exists right away). Never templated or seeded
+# by the role: Toolbox REWRITES both .desktop files on every start whenever
+# they differ from what it would generate (verified — an edited Name=/Exec=
+# was reset), so a repo copy would be a frozen snapshot of vendor-owned
+# values (the claude_desktop rule), and autostart is switched off through
+# Toolbox's settings, never by deleting the file.
+#
+# `--integrate-into-system` is undocumented (read from Toolbox's CommandLine
+# class; it runs only the startup OS-integration tasks): headless it exits rc
+# 0 within seconds (2-5 s measured) with nothing left holding stdout, so it
+# cannot hang the play (`timeout` is a backstop, not a fix). Two quirks are
+# handled after the second integrate task: its launcher pass sometimes runs
+# before the installed IDEs have loaded and writes nothing (about 1 run in
+# 16), and once Toolbox has started for real (so the jetbrainsd bundle is
+# unpacked) it also launches jetbrainsd, which stays resident. `creates:`
+# keeps it to once —
+# and re-runs it if the entry ever goes missing (unless Toolbox is running:
+# whether this mode defers to a running instance the way tbcli does is
+# untested, and a running Toolbox rewrites the entry at its next start
+# anyway). Under --check it reports what it would do. (No changed_when: with
+# creates: satisfied the module reports unchanged, and a forced
+# `changed_when: true` would turn every converged run changed.)
+# Whether a jetbrainsd is already running (Toolbox, an IDE or the Station
+# plugin may have started one) — the end of the role stops only one that the
+# launcher passes below started. -f with the bundle path never matches pgrep.
+- name: Check whether the JetBrains daemon is running
+  ansible.builtin.command:
+    argv:
+      - pgrep
+      - -u
+      - "{{ lookup('env', 'USER') }}"
+      - -f
+      - /JetBrains/Daemon/bundles/current/jetbrainsd/bin/jetbrainsd( |$)
+  register: jetbrains_daemon_before
+  changed_when: false
+  failed_when: jetbrains_daemon_before.rc not in [0, 1]
+  check_mode: false
+
+- name: Let Toolbox write its app-grid entry, autostart entry and IDE launchers
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '--kill-after=30s', '5m', 'env', '-i']
+         + jetbrains_toolbox_env
+         + [jetbrains_toolbox_launcher, '--integrate-into-system'] }}
+    creates: "{{ lookup('env', 'HOME') }}/.local/share/applications/jetbrains-toolbox.desktop"
+  register: jetbrains_toolbox_integrated
+  when: jetbrains_toolbox_running.rc != 0
+
+# The same command again whenever launchers changed but the task above did
+# not run: IntelliJ went in on a LATER run than Toolbox (a retry after a
+# failure, or after quitting Toolbox — tbcli writes only the IDE's .desktop
+# entry, so without this `idea` and Toolbox's state.json entry would wait for
+# Toolbox's next start; verified both ways), or the launcher migration above
+# ran while Toolbox was stopped (nothing else would write the new dir).
+- name: Let Toolbox rewrite its IDE launchers
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '--kill-after=30s', '5m', 'env', '-i']
+         + jetbrains_toolbox_env
+         + [jetbrains_toolbox_launcher, '--integrate-into-system'] }}
+  register: jetbrains_toolbox_reintegrated
+  changed_when: true
+  when:
+    - jetbrains_toolbox_integrated is not changed
+    - jetbrains_toolbox_running.rc != 0
+    - >-
+      (jetbrains_intellij_install is defined and jetbrains_intellij_install is changed
+       and jetbrains_intellij_install is not failed)
+      or jetbrains_launchers_moved is changed
+
+# The launcher pass of `--integrate-into-system` races Toolbox's own loading
+# of the installed IDEs: when it runs first it writes nothing and the process
+# exits all the same (seen in 2 of 17 sandbox runs; the log shows "Updating
+# shell launchers in …" before "Listening for tool status IntelliJ IDEA"), so
+# `idea` would be missing until Toolbox's next real start. Checked only after
+# a launcher pass ran this run, IntelliJ is installed, and the launchers are
+# expected in the role's dir; then the same command is retried until `idea`
+# appears. failed_when: false keeps an exhausted retry from failing the play
+# (verified: until exhaustion then ends failed=False) — the warning below
+# says what happened instead.
+- name: Probe for the IntelliJ IDEA shell launcher
+  ansible.builtin.stat:
+    path: "{{ jetbrains_toolbox_scripts }}/idea"
+  register: jetbrains_idea_script
+  check_mode: false
+  when:
+    - jetbrains_toolbox_integrated is changed or jetbrains_toolbox_reintegrated is changed
+    - jetbrains_intellij_launcher is exists
+    - jetbrains_launchers_ours | bool
+
+- name: Let Toolbox redo its launcher pass until `idea` exists
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '--kill-after=30s', '5m', 'env', '-i']
+         + jetbrains_toolbox_env
+         + [jetbrains_toolbox_launcher, '--integrate-into-system'] }}
+  register: jetbrains_toolbox_launcher_retry
+  until: (jetbrains_toolbox_scripts ~ '/idea') is exists
+  retries: 3
+  delay: 1
+  changed_when: true
+  failed_when: false
+  when: jetbrains_idea_script.stat is defined and not jetbrains_idea_script.stat.exists
+
+- name: Warn that Toolbox did not write the idea launcher
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: Toolbox did not write {{ jetbrains_toolbox_scripts }}/idea after
+      three tries. It will at its next start (login, or open Toolbox from the app
+      grid); until then launch IntelliJ IDEA from the app grid.
+  when:
+    - jetbrains_toolbox_launcher_retry is not skipped
+    - jetbrains_toolbox_launcher_retry.attempts is defined
+    - not (jetbrains_toolbox_scripts ~ '/idea') is exists
+    - not ansible_check_mode
+
+# A launcher pass on a machine where Toolbox has run before also launches
+# jetbrainsd (verified: "Daemon launched" in its launcher log, before the
+# integrate process exits), and that daemon stays resident — started under
+# `env -i` without the session bus or XDG_RUNTIME_DIR, so it even falls back
+# to a file keychain and a socket in /tmp the desktop Toolbox would not look
+# for. Stopped here unless one was already running before the passes; the
+# desktop Toolbox starts its own at its next start.
+- name: Stop the JetBrains daemon a launcher pass started
+  ansible.builtin.command:
+    argv:
+      - pkill
+      - -u
+      - "{{ lookup('env', 'USER') }}"
+      - -f
+      - /JetBrains/Daemon/bundles/current/jetbrainsd/bin/jetbrainsd( |$)
+  register: jetbrains_daemon_stopped
+  changed_when: jetbrains_daemon_stopped.rc == 0
+  failed_when: jetbrains_daemon_stopped.rc not in [0, 1]
+  when:
+    - jetbrains_daemon_before.rc != 0
+    - >-
+      jetbrains_toolbox_integrated is changed
+      or jetbrains_toolbox_reintegrated is changed
+      or jetbrains_toolbox_launcher_retry is not skipped

@@ -1,0 +1,43 @@
+---
+# Paths the tasks share. Toolbox keeps everything under XDG_DATA_HOME/
+# JetBrains/Toolbox (unset on this machine, so ~/.local/share), and the bin/
+# subdir is the code's own DefaultInstallationPath — where the vendor's
+# undocumented `--install` puts itself and where its self-update swaps
+# builds in place (bin.next/bin.prev renames), so the path is permanent.
+jetbrains_toolbox_dir: "{{ lookup('env', 'HOME') }}/.local/share/JetBrains/Toolbox"
+jetbrains_toolbox_launcher: "{{ jetbrains_toolbox_dir }}/bin/jetbrains-toolbox"
+
+# Where Toolbox puts IntelliJ IDEA: the dir is named after the product
+# ("IntelliJ IDEA"), NOT intellij-idea-ultimate — Ultimate and Community
+# merged into one product in 2025.3, and Toolbox's IDEA-U entry is now just
+# "IntelliJ IDEA". Toolbox updates the IDE in place, so bin/idea is stable.
+jetbrains_intellij_launcher: "{{ jetbrains_toolbox_dir }}/apps/intellij-idea/bin/idea"
+
+# Where Toolbox writes its IDE launchers (`idea`…): its own default dir,
+# spelled out in the seeded .settings.json, and appended to PATH by the zsh
+# role's zshrc. tasks/main.yml says why it is not ~/.local/bin.
+jetbrains_toolbox_scripts: "{{ jetbrains_toolbox_dir }}/scripts"
+
+# The hard limit on the tbcli IntelliJ install (coreutils `timeout` syntax).
+# It has to cover a 1.6 GB download plus ~45 s of unpacking: 90m still
+# finishes at ~2.5 Mbit/s, while every tbcli failure path seen hangs forever,
+# so the limit is also what turns a hang into a warning. A slower link can
+# raise it for one run: ./install.sh toolbox -e jetbrains_tbcli_timeout=4h
+jetbrains_tbcli_timeout: 90m
+
+# The whole environment both JetBrains binaries get when the play runs them.
+# Toolbox (and tbcli, same codebase) writes EVERY environment variable, name
+# and value, to ~/.local/share/JetBrains/Toolbox/logs/ on startup and masks
+# only password-like names — a BW_SESSION exported by install.sh was logged
+# in clear text in testing. `env -i` with this list keeps secrets out of that
+# log, and leaves out DISPLAY/WAYLAND_DISPLAY/DBUS_SESSION_BUS_ADDRESS, which
+# is what keeps both runs headless: with a display, Toolbox opens its window
+# or tray icon and stays resident, which would hang the play. PATH must still
+# reach tar/gzip (both extract with them) and gtk-update-icon-cache/
+# update-desktop-database (Toolbox refreshes the user caches itself).
+jetbrains_toolbox_env:
+  - "HOME={{ lookup('env', 'HOME') }}"
+  - "USER={{ lookup('env', 'USER') }}"
+  - "LOGNAME={{ lookup('env', 'USER') }}"
+  - "LANG={{ lookup('env', 'LANG') | default('C.UTF-8', true) }}"
+  - PATH=/usr/bin:/bin

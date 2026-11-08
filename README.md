@@ -206,7 +206,9 @@ theme, `plugins=(git)` only), and makes zsh the login shell. A pre-existing
 `~/.zshrc` that differs is backed up once to `~/.zshrc.pre-fedora-init`.
 Once Neovim is installed the zshrc makes it the editor: `EDITOR`/`VISUAL`
 are `nvim` (git commit messages, `crontab -e`, Ctrl-X Ctrl-E), and `vim`
-— and with it `vi` — opens `nvim`. `\vim` still runs real Vim.
+— and with it `vi` — opens `nvim`. `\vim` still runs real Vim. JetBrains
+Toolbox's launcher directory is on PATH too (appended), so `idea .` works
+once the jetbrains-toolbox role has run.
 
 ### cli-tools
 
@@ -418,8 +420,8 @@ best any extension can do.
 ### appindicator
 
 GNOME dropped legacy tray icons years ago, so apps that still use them —
-Claude Desktop and the Tailscale applet, both installed here — show nothing in
-the top bar. Fedora already ships the AppIndicator extension (usually as a
+Claude Desktop, JetBrains Toolbox and the Tailscale applet, all installed
+here — show nothing in the top bar. Fedora already ships the AppIndicator extension (usually as a
 dependency) but leaves it off; this role installs it if missing and enables
 it, so those tray icons appear. Takes effect at your next login.
 
@@ -542,6 +544,54 @@ wouldn't prompt is retired, along with its module. Its two
 VS Code from [Microsoft's official repo](https://code.visualstudio.com/docs/setup/linux)
 (`roles/dev/vscode/files/vscode.repo`, the documented content verbatim,
 gpg-verified). Updates then arrive with normal `dnf upgrade`.
+
+### jetbrains-toolbox
+
+[JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/), JetBrains' own
+installer and updater for its IDEs, with **IntelliJ IDEA** pre-installed
+*through* it, so Toolbox manages and updates the IDE like one you installed
+by hand. JetBrains publishes no rpm or repo, so the role unpacks the official
+tarball (sha256-verified) into `~/.local/share/JetBrains/Toolbox/bin`, where
+Toolbox keeps itself up to date, and has Toolbox write its own app-grid and
+login entries. IntelliJ goes in through JetBrains' Toolbox CLI (`tbcli`, the
+headless agent JetBrains ships for remote development), the only way to make
+Toolbox install an IDE without clicking through its window.
+
+Since 2025.3 there is no separate "Ultimate" download: Community and Ultimate
+merged into one product, IntelliJ IDEA, and Ultimate features run on a 30-day
+trial or your subscription. The first install downloads about 1.8 GB and
+needs about 6 GB of disk (Toolbox keeps the IDE tarball in its cache).
+
+After the run:
+
+- **Open Toolbox once** from the app grid to accept its user agreement and
+  sign in to your JetBrains Account; that sign-in also unlocks your IntelliJ
+  subscription. Toolbox then starts minimized at every login and offers IDE
+  updates (Toolbox ▸ Settings changes either). Its tray icon needs the
+  AppIndicator extension, which the appindicator role turns on.
+- **Launch IntelliJ** from the app grid, or with `idea` in a new terminal.
+  Toolbox writes its IDE launchers to its own
+  `~/.local/share/JetBrains/Toolbox/scripts`, which the zshrc puts on PATH.
+  Left alone, Toolbox would add that directory to PATH through `~/.profile`,
+  which zsh never reads. The role also keeps the launchers out of
+  `~/.local/bin`: Toolbox overwrites and deletes launcher files by name, and
+  would replace any of your own commands that happened to be called `idea`.
+  (An early version of this role did point them at `~/.local/bin`; on a
+  machine that ran it, the role moves them out once, and leaves your other
+  files there alone.)
+- **If Toolbox is already running** when the role wants to install IntelliJ,
+  that step is skipped with a note (`tbcli` cannot run alongside it). Install
+  it from Toolbox's list, or quit Toolbox and run `./install.sh toolbox`.
+  Toolbox starts at every login, so this is the normal case on any run after
+  the first.
+- **If the IntelliJ step fails**, the run carries on with a warning, and the
+  next run made while Toolbox isn't running tries again. The download is
+  allowed 90 minutes; on a slow link, give it longer with
+  `./install.sh toolbox -e jetbrains_tbcli_timeout=4h`.
+- **IntelliJ is part of this machine's setup**: if you uninstall it in
+  Toolbox, every `./install.sh` reminds you it is missing, and one run while
+  Toolbox is closed puts it back. To drop it for good, remove it from the
+  role.
 
 ### claude-code
 
